@@ -1,0 +1,30 @@
+{
+  "name": "kushlov",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kushlov — a production-ready dating & live streaming platform",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "dev:web": "pnpm --filter @kushlov/web dev",
+    "dev:server": "pnpm --filter @kushlov/server dev",
+    "build": "pnpm -r build",
+    "start": "pnpm --parallel --filter \"./apps/*\" start",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r exec rimraf dist .next node_modules"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "eslint": "^9.15.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.15.0"
+  }
+}

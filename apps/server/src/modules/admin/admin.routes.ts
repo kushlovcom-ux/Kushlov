@@ -1,0 +1,101 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import {
+  AccountStatus,
+  ReportStatus,
+  VerificationStatus,
+  WithdrawStatus,
+} from '@kushlov/types';
+import { authenticate, authorize } from '../../middleware/auth';
+import { Role } from '@kushlov/types';
+import { validate } from '../../middleware/validate';
+import { uploadImage } from '../../middleware/upload';
+import * as ctrl from './admin.controller';
+
+const router = Router();
+router.use(authenticate, authorize(Role.Admin));
+
+// Dashboard
+router.get('/analytics', ctrl.analytics);
+
+// Users
+router.get('/users', ctrl.listUsers);
+router.patch(
+  '/users/:id/status',
+  validate({
+    body: z.object({
+      status: z.nativeEnum(AccountStatus),
+      reason: z.string().optional(),
+      suspendedUntil: z.string().optional(),
+    }),
+  }),
+  ctrl.updateUserStatus,
+);
+router.delete('/users/:id', ctrl.deleteUser);
+
+// Host verification
+router.get('/verifications', ctrl.listVerifications);
+router.get('/verifications/:id', ctrl.getVerification);
+router.patch(
+  '/verifications/:id/review',
+  validate({
+    body: z.object({ decision: z.nativeEnum(VerificationStatus), note: z.string().optional() }),
+  }),
+  ctrl.reviewVerification,
+);
+
+// Admin instructions
+router.get('/instructions', ctrl.listInstructions);
+router.post(
+  '/instructions',
+  validate({
+    body: z.object({
+      text: z.string().min(2),
+      category: z.enum(['selfie', 'video', 'general']).optional(),
+      isActive: z.boolean().optional(),
+      sortOrder: z.number().optional(),
+    }),
+  }),
+  ctrl.createInstruction,
+);
+router.patch('/instructions/:id', ctrl.updateInstruction);
+router.delete('/instructions/:id', ctrl.deleteInstruction);
+
+// Reports
+router.get('/reports', ctrl.listReports);
+router.patch(
+  '/reports/:id',
+  validate({
+    body: z.object({ status: z.nativeEnum(ReportStatus), resolutionNote: z.string().optional() }),
+  }),
+  ctrl.resolveReport,
+);
+
+// Payments / transactions / subscriptions
+router.get('/payments', ctrl.listPayments);
+router.get('/transactions', ctrl.listTransactions);
+router.get('/subscriptions', ctrl.listSubscriptions);
+
+// Withdrawals
+router.get('/withdrawals', ctrl.listWithdrawals);
+router.patch(
+  '/withdrawals/:id',
+  validate({ body: z.object({ status: z.nativeEnum(WithdrawStatus), note: z.string().optional() }) }),
+  ctrl.reviewWithdrawal,
+);
+
+// Gifts
+router.get('/gifts', ctrl.listAllGifts);
+router.post('/gifts', uploadImage.single('image'), ctrl.createGift);
+router.patch('/gifts/:id', uploadImage.single('image'), ctrl.updateGift);
+router.delete('/gifts/:id', ctrl.deleteGift);
+
+// Live moderation
+router.get('/live', ctrl.listAllLive);
+router.post('/live/:id/force-end', ctrl.forceEndLive);
+
+// Settings
+router.get('/settings', ctrl.getAdminSettings);
+router.patch('/settings', ctrl.updateSettings);
+
+export default router;

@@ -1,0 +1,60 @@
+import express, { Application, Request, Response } from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import compression from 'compression';
+import { pinoHttp } from 'pino-http';
+import { corsOrigins } from './config/env';
+import { logger } from './config/logger';
+import { globalLimiter } from './middleware/rateLimit';
+import { errorHandler, notFound } from './middleware/error';
+import { apiRouter } from './routes';
+
+/** Build and configure the Express application (no network binding here). */
+export function createApp(): Application {
+  const app = express();
+
+  app.set('trust proxy', 1);
+
+  // Security headers
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
+
+  // CORS with credentialed cookies
+  app.use(
+    cors({
+      origin: (origin, cb) => {
+        if (!origin || corsOrigins.includes(origin) || corsOrigins.includes('*')) {
+          return cb(null, true);
+        }
+        return cb(new Error(`Not allowed by CORS: ${origin}`));
+      },
+      credentials: true,
+    }),
+  );
+
+  // Stripe-style webhooks need the raw body; capture it before json parsing.
+  app.use('/api/payments/webhook', express.raw({ type: '*/*' }));
+
+  app.use(express.json({ limit: '2mb' }));
+  app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser());
+  app.use(compression());
+  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
+
+  // Liveness/readiness probe
+  app.get('/health', (_req: Request, res: Response) =>
+    res.json({ success: true, data: { status: 'ok', uptime: process.uptime() } }),
+  );
+
+  // Rate limit + mount the API
+  app.use('/api', globalLimiter, apiRouter);
+
+  app.use(notFound);
+  app.use(errorHandler);
+
+  return app;
+}

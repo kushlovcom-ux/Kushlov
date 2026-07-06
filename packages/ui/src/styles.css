@@ -1,0 +1,7 @@
+/* Shared brand tokens for consumers that import @kushlov/ui/styles.css */
+:root {
+  --brand-pink: 330 90% 56%;
+  --brand-purple: 270 85% 60%;
+  --brand-blue: 205 90% 55%;
+  --brand-orange: 22 95% 55%;
+}
