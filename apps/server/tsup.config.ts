@@ -5,7 +5,7 @@ import { defineConfig } from 'tsup';
  * (workspace packages, extensionless imports) is handled at build time.
  */
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: ['src/index.ts', 'src/serverless.ts'],
   format: ['esm'],
   target: 'node20',
   platform: 'node',

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "cd ../.. && pnpm --filter @kushlov/server build",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30
+    }
+  }
+}

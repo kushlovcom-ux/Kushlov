@@ -50,6 +50,20 @@ export function createApp(): Application {
     res.json({ success: true, data: { status: 'ok', uptime: process.uptime() } }),
   );
 
+  app.get('/', (_req: Request, res: Response) =>
+    res.json({
+      success: true,
+      data: {
+        name: 'Kushlov API',
+        version: '1.0.0',
+        health: '/health',
+        api: '/api',
+      },
+    }),
+  );
+
+  app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
+
   // Rate limit + mount the API
   app.use('/api', globalLimiter, apiRouter);
 
