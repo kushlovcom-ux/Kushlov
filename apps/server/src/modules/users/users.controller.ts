@@ -7,10 +7,10 @@ import { asyncHandler } from '../../utils/asyncHandler';
 import { ok } from '../../utils/response';
 import { uploadBuffer, deleteMedia } from '../../services/media.service';
 import {
-  DISCOVERY_RADIUS_KM,
-  assertUsersWithinRange,
+  EXCLUSION_RADIUS_KM,
+  assertUsersCanConnect,
   distanceBetweenUsers,
-  getNearbyUserIds,
+  getDiscoverableUserIds,
   requireUserCoordinates,
 } from '../../services/location.service';
 import { haversineKm } from '@kushlov/utils';
@@ -21,10 +21,10 @@ export const getUser = asyncHandler(async (req: Request, res: Response) => {
   if (!user) throw ApiError.notFound('User not found');
 
   try {
-    await assertUsersWithinRange(req.user!.id, req.params.id);
+    await assertUsersCanConnect(req.user!.id, req.params.id);
   } catch (err) {
     if (err instanceof ApiError && err.statusCode === 403) throw err;
-    throw ApiError.forbidden('This profile is outside your discovery range.');
+    throw ApiError.forbidden('This profile is within your local exclusion zone.');
   }
 
   const profile = await Profile.findOne({ user: user._id });
@@ -50,7 +50,8 @@ export const getMyLocation = asyncHandler(async (req: Request, res: Response) =>
     city: profile?.city,
     country: profile?.country,
     locationUpdatedAt: profile?.locationUpdatedAt,
-    discoveryRadiusKm: DISCOVERY_RADIUS_KM,
+    discoveryRadiusKm: EXCLUSION_RADIUS_KM,
+    exclusionRadiusKm: EXCLUSION_RADIUS_KM,
   });
 });
 
@@ -183,16 +184,16 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
   const exclude = [...blocked.map(String), req.user!.id];
 
-  // Only show users within discovery radius (OpenStreetMap coordinates).
-  const nearbyIds = await getNearbyUserIds(req.user!.id, exclude);
-  if (nearbyIds.length === 0) {
+  // Only show users outside the local exclusion zone.
+  const discoverableIds = await getDiscoverableUserIds(req.user!.id, exclude);
+  if (discoverableIds.length === 0) {
     return ok(res, buildPaginated([], page, limit, 0));
   }
 
   const [myLng, myLat] = await requireUserCoordinates(req.user!.id);
 
   const userFilter: Record<string, unknown> = {
-    _id: { $nin: exclude, $in: nearbyIds },
+    _id: { $nin: exclude, $in: discoverableIds },
     status: 'active',
   };
   if (role && Object.values(Role).includes(role as Role)) userFilter.role = role;
@@ -201,7 +202,7 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   if (q) userFilter.$text = { $search: q };
 
   if (country) {
-    const profileUserIds = await Profile.find({ country, user: { $in: nearbyIds } }).distinct(
+    const profileUserIds = await Profile.find({ country, user: { $in: discoverableIds } }).distinct(
       'user',
     );
     userFilter._id = { $nin: exclude, $in: profileUserIds };
@@ -210,7 +211,7 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const [users, total, profiles] = await Promise.all([
     User.find(userFilter).sort({ isOnline: -1, createdAt: -1 }).skip(skip).limit(limit),
     User.countDocuments(userFilter),
-    Profile.find({ user: { $in: nearbyIds } }).select('user location'),
+    Profile.find({ user: { $in: discoverableIds } }).select('user location'),
   ]);
 
   const profileMap = new Map(profiles.map((p) => [p.user.toString(), p]));
@@ -228,14 +229,14 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, buildPaginated(items, page, limit, total));
 });
 
-/** GET /users/hosts — list approved hosts within discovery radius. */
+/** GET /users/hosts — list approved hosts outside the local exclusion zone. */
 export const listHosts = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
   const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
-  const nearbyIds = await getNearbyUserIds(req.user!.id, blocked);
+  const discoverableIds = await getDiscoverableUserIds(req.user!.id, blocked);
 
   const filter = {
-    _id: { $in: nearbyIds },
+    _id: { $in: discoverableIds },
     role: Role.Host,
     isHostApproved: true,
     status: 'active',

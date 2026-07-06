@@ -7,7 +7,7 @@ import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
 import { notify } from '../../services/notification.service';
-import { assertUsersWithinRange } from '../../services/location.service';
+import { assertUsersCanConnect } from '../../services/location.service';
 
 /** POST /social/like/:userId — like a user; creates a Match if mutual. */
 export const likeUser = asyncHandler(async (req: Request, res: Response) => {
@@ -15,7 +15,7 @@ export const likeUser = asyncHandler(async (req: Request, res: Response) => {
   const target = req.params.userId;
   if (me === target) throw ApiError.badRequest('You cannot like yourself');
 
-  await assertUsersWithinRange(me, target);
+  await assertUsersCanConnect(me, target);
 
   const targetUser = await User.findById(target).select('displayName');
   if (!targetUser) throw ApiError.notFound('User not found');
@@ -112,7 +112,7 @@ export const followUser = asyncHandler(async (req: Request, res: Response) => {
   const target = req.params.userId;
   if (me === target) throw ApiError.badRequest('You cannot follow yourself');
 
-  await assertUsersWithinRange(me, target);
+  await assertUsersCanConnect(me, target);
 
   const targetUser = await User.findById(target);
   if (!targetUser) throw ApiError.notFound('User not found');

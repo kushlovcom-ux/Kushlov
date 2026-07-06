@@ -1725,29 +1725,31 @@ async function deleteMedia(publicId, resourceType = "image") {
 }
 
 // src/services/location.service.ts
-var DISCOVERY_RADIUS_KM = Number(
+var EXCLUSION_RADIUS_KM = Number(
   process.env.DISCOVERY_RADIUS_KM ?? DEFAULT_DISCOVERY_RADIUS_KM
 );
-var DISCOVERY_RADIUS_METERS = DISCOVERY_RADIUS_KM * 1e3;
+var EXCLUSION_RADIUS_METERS = EXCLUSION_RADIUS_KM * 1e3;
 async function requireUserCoordinates(userId) {
   const profile = await Profile.findOne({ user: userId }).select("location");
   if (!profile?.location?.coordinates?.length) {
     throw ApiError.badRequest(
-      "Please set your location using the map to discover and connect with nearby users."
+      "Please set your location using the map to discover users outside your local area."
     );
   }
   return profile.location.coordinates;
 }
-async function getNearbyUserIds(userId, excludeIds = []) {
+async function getDiscoverableUserIds(userId, excludeIds = []) {
   const [lng, lat] = await requireUserCoordinates(userId);
   const exclude = /* @__PURE__ */ new Set([userId, ...excludeIds.map(String)]);
+  const radiusRadians = EXCLUSION_RADIUS_KM / 6378.1;
   const profiles = await Profile.find({
     user: { $nin: [...exclude] },
     "location.coordinates": { $exists: true, $ne: null },
     location: {
-      $near: {
-        $geometry: { type: "Point", coordinates: [lng, lat] },
-        $maxDistance: DISCOVERY_RADIUS_METERS
+      $not: {
+        $geoWithin: {
+          $centerSphere: [[lng, lat], radiusRadians]
+        }
       }
     }
   }).select("user");
@@ -1763,7 +1765,7 @@ async function distanceBetweenUsers(userA, userB) {
   const [lng2, lat2] = b.location.coordinates;
   return haversineKm(lat1, lng1, lat2, lng2);
 }
-async function assertUsersWithinRange(userId, targetUserId) {
+async function assertUsersCanConnect(userId, targetUserId) {
   if (userId === targetUserId) return;
   const actor = await User.findById(userId).select("role");
   if (actor?.role === "admin" /* Admin */) return;
@@ -1774,9 +1776,9 @@ async function assertUsersWithinRange(userId, targetUserId) {
   }
   const [lng2, lat2] = targetProfile.location.coordinates;
   const km = haversineKm(lat1, lng1, lat2, lng2);
-  if (km > DISCOVERY_RADIUS_KM) {
+  if (km <= EXCLUSION_RADIUS_KM) {
     throw ApiError.forbidden(
-      `You can only connect with users within ${DISCOVERY_RADIUS_KM} km. This user is ${km.toFixed(1)} km away.`
+      `Users within ${EXCLUSION_RADIUS_KM} km cannot see or connect with each other. This user is only ${km.toFixed(1)} km away.`
     );
   }
 }
@@ -1786,10 +1788,10 @@ var getUser = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) throw ApiError.notFound("User not found");
   try {
-    await assertUsersWithinRange(req.user.id, req.params.id);
+    await assertUsersCanConnect(req.user.id, req.params.id);
   } catch (err) {
     if (err instanceof ApiError && err.statusCode === 403) throw err;
-    throw ApiError.forbidden("This profile is outside your discovery range.");
+    throw ApiError.forbidden("This profile is within your local exclusion zone.");
   }
   const profile = await Profile.findOne({ user: user._id });
   const distanceKm = await distanceBetweenUsers(req.user.id, req.params.id);
@@ -1812,7 +1814,8 @@ var getMyLocation = asyncHandler(async (req, res) => {
     city: profile?.city,
     country: profile?.country,
     locationUpdatedAt: profile?.locationUpdatedAt,
-    discoveryRadiusKm: DISCOVERY_RADIUS_KM
+    discoveryRadiusKm: EXCLUSION_RADIUS_KM,
+    exclusionRadiusKm: EXCLUSION_RADIUS_KM
   });
 });
 var updateMyLocation = asyncHandler(async (req, res) => {
@@ -1918,13 +1921,13 @@ var searchUsers = asyncHandler(async (req, res) => {
   const { q, gender, country, role, online } = req.query;
   const blocked = await Block.find({ blocker: req.user.id }).distinct("blocked");
   const exclude = [...blocked.map(String), req.user.id];
-  const nearbyIds = await getNearbyUserIds(req.user.id, exclude);
-  if (nearbyIds.length === 0) {
+  const discoverableIds = await getDiscoverableUserIds(req.user.id, exclude);
+  if (discoverableIds.length === 0) {
     return ok(res, buildPaginated([], page, limit, 0));
   }
   const [myLng, myLat] = await requireUserCoordinates(req.user.id);
   const userFilter = {
-    _id: { $nin: exclude, $in: nearbyIds },
+    _id: { $nin: exclude, $in: discoverableIds },
     status: "active"
   };
   if (role && Object.values(Role).includes(role)) userFilter.role = role;
@@ -1932,7 +1935,7 @@ var searchUsers = asyncHandler(async (req, res) => {
   if (online === "true") userFilter.isOnline = true;
   if (q) userFilter.$text = { $search: q };
   if (country) {
-    const profileUserIds = await Profile.find({ country, user: { $in: nearbyIds } }).distinct(
+    const profileUserIds = await Profile.find({ country, user: { $in: discoverableIds } }).distinct(
       "user"
     );
     userFilter._id = { $nin: exclude, $in: profileUserIds };
@@ -1940,7 +1943,7 @@ var searchUsers = asyncHandler(async (req, res) => {
   const [users, total, profiles] = await Promise.all([
     User.find(userFilter).sort({ isOnline: -1, createdAt: -1 }).skip(skip).limit(limit),
     User.countDocuments(userFilter),
-    Profile.find({ user: { $in: nearbyIds } }).select("user location")
+    Profile.find({ user: { $in: discoverableIds } }).select("user location")
   ]);
   const profileMap = new Map(profiles.map((p) => [p.user.toString(), p]));
   const items = users.map((u) => {
@@ -1957,9 +1960,9 @@ var searchUsers = asyncHandler(async (req, res) => {
 var listHosts = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
   const blocked = await Block.find({ blocker: req.user.id }).distinct("blocked");
-  const nearbyIds = await getNearbyUserIds(req.user.id, blocked);
+  const discoverableIds = await getDiscoverableUserIds(req.user.id, blocked);
   const filter = {
-    _id: { $in: nearbyIds },
+    _id: { $in: discoverableIds },
     role: "host" /* Host */,
     isHostApproved: true,
     status: "active"
@@ -2062,7 +2065,7 @@ var likeUser = asyncHandler(async (req, res) => {
   const me2 = req.user.id;
   const target = req.params.userId;
   if (me2 === target) throw ApiError.badRequest("You cannot like yourself");
-  await assertUsersWithinRange(me2, target);
+  await assertUsersCanConnect(me2, target);
   const targetUser = await User.findById(target).select("displayName");
   if (!targetUser) throw ApiError.notFound("User not found");
   await Like.updateOne({ from: me2, to: target }, { $setOnInsert: { from: me2, to: target } }, { upsert: true });
@@ -2136,7 +2139,7 @@ var followUser = asyncHandler(async (req, res) => {
   const me2 = req.user.id;
   const target = req.params.userId;
   if (me2 === target) throw ApiError.badRequest("You cannot follow yourself");
-  await assertUsersWithinRange(me2, target);
+  await assertUsersCanConnect(me2, target);
   const targetUser = await User.findById(target);
   if (!targetUser) throw ApiError.notFound("User not found");
   const result = await Follower.updateOne(
@@ -2698,7 +2701,7 @@ async function getOrCreateDirectConversation(a, b) {
     ]
   });
   if (blocked) throw ApiError.forbidden("Conversation not allowed (blocked)");
-  await assertUsersWithinRange(a, b);
+  await assertUsersCanConnect(a, b);
   const participants = [new Types15.ObjectId(a), new Types15.ObjectId(b)];
   let conversation = await Conversation.findOne({
     isGroup: false,
@@ -2966,7 +2969,7 @@ var modelFor = (type) => type === "audio" /* Audio */ ? AudioCall : VideoCall;
 var initiateCall = asyncHandler(async (req, res) => {
   const { type, calleeId } = req.body;
   if (calleeId === req.user.id) throw ApiError.badRequest("You cannot call yourself");
-  await assertUsersWithinRange(req.user.id, calleeId);
+  await assertUsersCanConnect(req.user.id, calleeId);
   const callee = await User.findById(calleeId).select("displayName role isHostApproved");
   if (!callee) throw ApiError.notFound("Callee not found");
   if (callee.role === "host" /* Host */ && !callee.isHostApproved) {
@@ -3163,8 +3166,8 @@ var endLive = asyncHandler(async (req, res) => {
 });
 var listLive = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const nearbyIds = await getNearbyUserIds(req.user.id);
-  const filter = { status: "live" /* Live */, host: { $in: nearbyIds } };
+  const discoverableIds = await getDiscoverableUserIds(req.user.id);
+  const filter = { status: "live" /* Live */, host: { $in: discoverableIds } };
   const [items, total] = await Promise.all([
     LiveStream.find(filter).sort({ viewerCount: -1, startedAt: -1 }).skip(skip).limit(limit).populate("host", "displayName username avatarUrl isHostApproved"),
     LiveStream.countDocuments(filter)
@@ -3178,7 +3181,7 @@ var getLive = asyncHandler(async (req, res) => {
   );
   if (!live) throw ApiError.notFound("Stream not found");
   if (live.host._id?.toString() !== req.user.id) {
-    await assertUsersWithinRange(req.user.id, live.host._id.toString());
+    await assertUsersCanConnect(req.user.id, live.host._id.toString());
   }
   return ok(res, live);
 });
@@ -3186,7 +3189,7 @@ var joinLive = asyncHandler(async (req, res) => {
   const live = await LiveStream.findById(req.params.id);
   if (!live || live.status !== "live" /* Live */) throw ApiError.notFound("Stream is not live");
   if (live.host.toString() !== req.user.id) {
-    await assertUsersWithinRange(req.user.id, live.host.toString());
+    await assertUsersCanConnect(req.user.id, live.host.toString());
   }
   if (live.bannedUsers.some((u) => u.toString() === req.user.id)) {
     throw ApiError.forbidden("You are banned from this stream");

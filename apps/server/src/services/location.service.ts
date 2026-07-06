@@ -4,43 +4,55 @@ import { haversineKm, DEFAULT_DISCOVERY_RADIUS_KM } from '@kushlov/utils';
 import { Profile, User } from '../models';
 import { ApiError } from '../utils/ApiError';
 
-export const DISCOVERY_RADIUS_KM = Number(
+/** Local exclusion zone — users closer than this cannot see or connect (privacy). */
+export const EXCLUSION_RADIUS_KM = Number(
   process.env.DISCOVERY_RADIUS_KM ?? DEFAULT_DISCOVERY_RADIUS_KM,
 );
-export const DISCOVERY_RADIUS_METERS = DISCOVERY_RADIUS_KM * 1000;
+export const EXCLUSION_RADIUS_METERS = EXCLUSION_RADIUS_KM * 1000;
+
+/** @deprecated Use EXCLUSION_RADIUS_KM */
+export const DISCOVERY_RADIUS_KM = EXCLUSION_RADIUS_KM;
+/** @deprecated Use EXCLUSION_RADIUS_METERS */
+export const DISCOVERY_RADIUS_METERS = EXCLUSION_RADIUS_METERS;
 
 /** Get [lng, lat] for a user or throw if location is not set. */
 export async function requireUserCoordinates(userId: string): Promise<[number, number]> {
   const profile = await Profile.findOne({ user: userId }).select('location');
   if (!profile?.location?.coordinates?.length) {
     throw ApiError.badRequest(
-      'Please set your location using the map to discover and connect with nearby users.',
+      'Please set your location using the map to discover users outside your local area.',
     );
   }
   return profile.location.coordinates as [number, number];
 }
 
-/** User ids within the discovery radius of the given user (excluding self). */
-export async function getNearbyUserIds(
+/** User ids OUTSIDE the exclusion zone (can be discovered / connected). */
+export async function getDiscoverableUserIds(
   userId: string,
   excludeIds: (string | Types.ObjectId)[] = [],
 ): Promise<Types.ObjectId[]> {
   const [lng, lat] = await requireUserCoordinates(userId);
   const exclude = new Set([userId, ...excludeIds.map(String)]);
 
+  const radiusRadians = EXCLUSION_RADIUS_KM / 6378.1;
+
   const profiles = await Profile.find({
     user: { $nin: [...exclude] },
     'location.coordinates': { $exists: true, $ne: null },
     location: {
-      $near: {
-        $geometry: { type: 'Point', coordinates: [lng, lat] },
-        $maxDistance: DISCOVERY_RADIUS_METERS,
+      $not: {
+        $geoWithin: {
+          $centerSphere: [[lng, lat], radiusRadians],
+        },
       },
     },
   }).select('user');
 
   return profiles.map((p) => p.user as Types.ObjectId);
 }
+
+/** @deprecated Use getDiscoverableUserIds */
+export const getNearbyUserIds = getDiscoverableUserIds;
 
 /** Distance in km between two users, or null if either has no location. */
 export async function distanceBetweenUsers(
@@ -58,10 +70,10 @@ export async function distanceBetweenUsers(
 }
 
 /**
- * Enforce the 20 km proximity rule before likes, messages, calls, etc.
+ * Block connections when users are within the exclusion zone (default 20 km).
  * Admins bypass this check.
  */
-export async function assertUsersWithinRange(
+export async function assertUsersCanConnect(
   userId: string,
   targetUserId: string,
 ): Promise<void> {
@@ -77,9 +89,12 @@ export async function assertUsersWithinRange(
   }
   const [lng2, lat2] = targetProfile.location.coordinates;
   const km = haversineKm(lat1, lng1, lat2, lng2);
-  if (km > DISCOVERY_RADIUS_KM) {
+  if (km <= EXCLUSION_RADIUS_KM) {
     throw ApiError.forbidden(
-      `You can only connect with users within ${DISCOVERY_RADIUS_KM} km. This user is ${km.toFixed(1)} km away.`,
+      `Users within ${EXCLUSION_RADIUS_KM} km cannot see or connect with each other. This user is only ${km.toFixed(1)} km away.`,
     );
   }
 }
+
+/** @deprecated Use assertUsersCanConnect */
+export const assertUsersWithinRange = assertUsersCanConnect;

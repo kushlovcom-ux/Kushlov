@@ -4,7 +4,7 @@ import { Block, Conversation, Message } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { emitToUser } from '../../socket/io';
 import { notify } from '../../services/notification.service';
-import { assertUsersWithinRange } from '../../services/location.service';
+import { assertUsersCanConnect } from '../../services/location.service';
 
 /** Find or create a 1:1 conversation between two users. */
 export async function getOrCreateDirectConversation(a: string, b: string) {
@@ -18,7 +18,7 @@ export async function getOrCreateDirectConversation(a: string, b: string) {
   });
   if (blocked) throw ApiError.forbidden('Conversation not allowed (blocked)');
 
-  await assertUsersWithinRange(a, b);
+  await assertUsersCanConnect(a, b);
 
   const participants = [new Types.ObjectId(a), new Types.ObjectId(b)];
   let conversation = await Conversation.findOne({

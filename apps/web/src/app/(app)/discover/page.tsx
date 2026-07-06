@@ -50,7 +50,7 @@ export default function DiscoverPage() {
     <div>
       <PageHeader
         title="Discover"
-        subtitle={`People & hosts within ${radius} km of you`}
+        subtitle={`People & hosts more than ${radius} km from you`}
         action={
           <div className="relative w-full max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
@@ -79,7 +79,7 @@ export default function DiscoverPage() {
               >
                 OpenStreetMap
               </a>{' '}
-              so you only see and connect with users within {radius} km.
+              so users within {radius} km are hidden — you only see and connect with people farther away.
             </p>
           </div>
         )}
@@ -145,7 +145,7 @@ export default function DiscoverPage() {
 
             {!isLoading && !error && data?.items.length === 0 && (
               <p className="py-12 text-center text-white/40">
-                No one within {radius} km yet. Try updating your location on the map above.
+                No users found more than {radius} km away. Try updating your location on the map above.
               </p>
             )}
 

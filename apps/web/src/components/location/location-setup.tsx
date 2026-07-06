@@ -116,7 +116,7 @@ export function LocationSetup({ compact, onSaved }: Props) {
             >
               OpenStreetMap
             </a>
-            . Only users within <strong>{radius} km</strong> can see and connect with each other.
+            . Users within <strong>{radius} km</strong> cannot see or connect with each other — only people farther away appear.
           </p>
           {data?.locationLabel && (
             <p className="mt-2 text-xs text-white/40 line-clamp-2">{data.locationLabel}</p>

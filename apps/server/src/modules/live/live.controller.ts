@@ -17,7 +17,7 @@ import { spendDiamonds } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
 import { notify } from '../../services/notification.service';
 import { emitToRoom } from '../../socket/io';
-import { assertUsersWithinRange, getNearbyUserIds } from '../../services/location.service';
+import { assertUsersCanConnect, getDiscoverableUserIds } from '../../services/location.service';
 
 const roomOf = (id: string) => `live:${id}`;
 
@@ -102,8 +102,8 @@ export const endLive = asyncHandler(async (req: Request, res: Response) => {
 /** GET /live — list currently live streams (hosts within discovery radius). */
 export const listLive = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const nearbyIds = await getNearbyUserIds(req.user!.id);
-  const filter = { status: LiveStatus.Live, host: { $in: nearbyIds } };
+  const discoverableIds = await getDiscoverableUserIds(req.user!.id);
+  const filter = { status: LiveStatus.Live, host: { $in: discoverableIds } };
   const [items, total] = await Promise.all([
     LiveStream.find(filter)
       .sort({ viewerCount: -1, startedAt: -1 })
@@ -123,7 +123,7 @@ export const getLive = asyncHandler(async (req: Request, res: Response) => {
   );
   if (!live) throw ApiError.notFound('Stream not found');
   if (live.host._id?.toString() !== req.user!.id) {
-    await assertUsersWithinRange(req.user!.id, live.host._id.toString());
+    await assertUsersCanConnect(req.user!.id, live.host._id.toString());
   }
   return ok(res, live);
 });
@@ -133,7 +133,7 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
   const live = await LiveStream.findById(req.params.id);
   if (!live || live.status !== LiveStatus.Live) throw ApiError.notFound('Stream is not live');
   if (live.host.toString() !== req.user!.id) {
-    await assertUsersWithinRange(req.user!.id, live.host.toString());
+    await assertUsersCanConnect(req.user!.id, live.host.toString());
   }
   if (live.bannedUsers.some((u) => u.toString() === req.user!.id)) {
     throw ApiError.forbidden('You are banned from this stream');

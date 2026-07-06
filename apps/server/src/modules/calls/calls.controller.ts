@@ -16,7 +16,7 @@ import { createLiveKitToken } from '../../services/livekit.service';
 import { spendDiamonds } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
 import { emitToUser } from '../../socket/io';
-import { assertUsersWithinRange } from '../../services/location.service';
+import { assertUsersCanConnect } from '../../services/location.service';
 
 const modelFor = (type: CallType) => (type === CallType.Audio ? AudioCall : VideoCall);
 
@@ -25,7 +25,7 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   const { type, calleeId } = req.body as { type: CallType; calleeId: string };
   if (calleeId === req.user!.id) throw ApiError.badRequest('You cannot call yourself');
 
-  await assertUsersWithinRange(req.user!.id, calleeId);
+  await assertUsersCanConnect(req.user!.id, calleeId);
 
   const callee = await User.findById(calleeId).select('displayName role isHostApproved');
   if (!callee) throw ApiError.notFound('Callee not found');
