@@ -1267,7 +1267,12 @@ function setRefreshCookie(res, token) {
   });
 }
 function clearRefreshCookie(res) {
-  res.clearCookie(REFRESH_COOKIE, { path: "/" });
+  res.clearCookie(REFRESH_COOKIE, {
+    path: "/",
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax"
+  });
 }
 
 // ../../packages/utils/src/index.ts
@@ -3811,18 +3816,23 @@ function createApp() {
     "/health",
     (_req, res) => res.json({ success: true, data: { status: "ok", uptime: process.uptime() } })
   );
-  app.get(
-    "/",
-    (_req, res) => res.json({
+  app.get("/", (req, res) => {
+    const wantsHtml = req.headers.accept?.includes("text/html");
+    const frontend = env.CLIENT_URL?.replace(/\/$/, "");
+    if (wantsHtml && frontend && frontend !== "http://localhost:3000") {
+      return res.redirect(302, frontend);
+    }
+    return res.json({
       success: true,
       data: {
         name: "Kushlov API",
         version: "1.0.0",
         health: "/health",
-        api: "/api"
+        api: "/api",
+        frontend: frontend ?? null
       }
-    })
-  );
+    });
+  });
   app.get("/favicon.ico", (_req, res) => res.status(204).end());
   if (process.env.VERCEL) {
     app.use(vercelDbMiddleware);

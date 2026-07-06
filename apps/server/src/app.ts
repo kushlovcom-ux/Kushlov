@@ -45,17 +45,23 @@ export function createApp(): Application {
     res.json({ success: true, data: { status: 'ok', uptime: process.uptime() } }),
   );
 
-  app.get('/', (_req: Request, res: Response) =>
-    res.json({
+  app.get('/', (req: Request, res: Response) => {
+    const wantsHtml = req.headers.accept?.includes('text/html');
+    const frontend = env.CLIENT_URL?.replace(/\/$/, '');
+    if (wantsHtml && frontend && frontend !== 'http://localhost:3000') {
+      return res.redirect(302, frontend);
+    }
+    return res.json({
       success: true,
       data: {
         name: 'Kushlov API',
         version: '1.0.0',
         health: '/health',
         api: '/api',
+        frontend: frontend ?? null,
       },
-    }),
-  );
+    });
+  });
 
   app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
 
