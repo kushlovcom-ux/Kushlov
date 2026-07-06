@@ -1,3 +1,0 @@
-# Only the bundled api/index.js should run on Vercel — not raw TypeScript sources.
-src/
-dist/
