@@ -19,10 +19,11 @@ import { config as loadEnv } from "dotenv";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { z } from "zod";
-var EnvSchema, parsed, env, isProd, isDev, corsOrigins, hasCloudinary, hasLiveKit;
+var EnvSchema, parsed, env, isProd, isDev, hasCloudinary, hasLiveKit;
 var init_env = __esm({
   "src/config/env.ts"() {
     "use strict";
+    init_cors();
     for (const candidate of [".env", resolve(process.cwd(), "../../.env")]) {
       if (existsSync(candidate)) loadEnv({ path: candidate });
     }
@@ -97,11 +98,39 @@ var init_env = __esm({
     };
     isProd = env.NODE_ENV === "production";
     isDev = env.NODE_ENV === "development";
-    corsOrigins = env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean);
     hasCloudinary = Boolean(
       env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET
     );
     hasLiveKit = Boolean(env.LIVEKIT_URL && env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET);
+  }
+});
+
+// src/config/cors.ts
+function getAllowedOrigins() {
+  const origins = /* @__PURE__ */ new Set();
+  for (const entry of env.CORS_ORIGINS.split(",")) {
+    const trimmed = entry.trim().replace(/\/$/, "");
+    if (trimmed && trimmed !== "*") origins.add(trimmed);
+  }
+  const client2 = env.CLIENT_URL?.trim().replace(/\/$/, "");
+  if (client2) origins.add(client2);
+  return [...origins];
+}
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  const normalized = origin.replace(/\/$/, "");
+  if (getAllowedOrigins().includes(normalized)) return true;
+  if (process.env.VERCEL && /^https:\/\/[\w.-]+\.vercel\.app$/i.test(normalized)) {
+    return true;
+  }
+  return env.CORS_ORIGINS.split(",").some((o) => o.trim() === "*");
+}
+var corsOrigins;
+var init_cors = __esm({
+  "src/config/cors.ts"() {
+    "use strict";
+    init_env();
+    corsOrigins = getAllowedOrigins();
   }
 });
 
@@ -162,6 +191,7 @@ var init_db = __esm({
 });
 
 // src/app.ts
+init_cors();
 init_env();
 init_db();
 init_logger();
@@ -3791,7 +3821,11 @@ if (process.argv[1]?.includes("seed")) {
 
 // src/app.ts
 var vercelDbReady = null;
-function vercelDbMiddleware(_req, _res, next) {
+function vercelDbMiddleware(req, _res, next) {
+  if (req.method === "OPTIONS") {
+    next();
+    return;
+  }
   if (!env.MONGODB_URI || !env.JWT_SECRET || env.JWT_SECRET === "missing") {
     next(
       new Error(
@@ -3834,25 +3868,26 @@ function createApp() {
     });
   });
   app.get("/favicon.ico", (_req, res) => res.status(204).end());
-  if (process.env.VERCEL) {
-    app.use(vercelDbMiddleware);
-  }
+  app.use(
+    cors({
+      origin: (origin, cb) => {
+        if (isOriginAllowed(origin)) return cb(null, true);
+        logger.warn({ origin }, "CORS blocked origin");
+        return cb(null, false);
+      },
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+    })
+  );
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: "cross-origin" }
     })
   );
-  app.use(
-    cors({
-      origin: (origin, cb) => {
-        if (!origin || corsOrigins.includes(origin) || corsOrigins.includes("*")) {
-          return cb(null, true);
-        }
-        return cb(new Error(`Not allowed by CORS: ${origin}`));
-      },
-      credentials: true
-    })
-  );
+  if (process.env.VERCEL) {
+    app.use(vercelDbMiddleware);
+  }
   app.use("/api/payments/webhook", express.raw({ type: "*/*" }));
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ extended: true }));

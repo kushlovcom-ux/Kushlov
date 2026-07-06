@@ -1,7 +1,7 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server as IOServer, Socket } from 'socket.io';
 import { SocketEvents } from '@kushlov/types';
-import { corsOrigins } from '../config/env';
+import { getAllowedOrigins } from '../config/cors';
 import { logger } from '../config/logger';
 import { verifyAccessToken } from '../utils/jwt';
 import { User } from '../models';
@@ -15,7 +15,7 @@ interface AuthedSocket extends Socket {
 /** Initialize Socket.io, wire authentication and realtime event handlers. */
 export function initSocket(httpServer: HttpServer): IOServer {
   const io = new IOServer(httpServer, {
-    cors: { origin: corsOrigins, credentials: true },
+    cors: { origin: getAllowedOrigins(), credentials: true },
     maxHttpBufferSize: 5 * 1024 * 1024,
   });
   setIO(io);

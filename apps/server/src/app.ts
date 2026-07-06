@@ -4,7 +4,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import { pinoHttp } from 'pino-http';
-import { corsOrigins, env } from './config/env';
+import { isOriginAllowed } from './config/cors';
+import { env } from './config/env';
 import { connectDatabase } from './config/db';
 import { logger } from './config/logger';
 import { globalLimiter } from './middleware/rateLimit';
@@ -15,7 +16,12 @@ import { ensureSeed } from './seed';
 let vercelDbReady: Promise<void> | null = null;
 
 /** Connect MongoDB + seed on first request when running as a Vercel serverless function. */
-function vercelDbMiddleware(_req: Request, _res: Response, next: NextFunction): void {
+function vercelDbMiddleware(req: Request, _res: Response, next: NextFunction): void {
+  // Preflight must succeed before DB — CORS middleware runs earlier.
+  if (req.method === 'OPTIONS') {
+    next();
+    return;
+  }
   if (!env.MONGODB_URI || !env.JWT_SECRET || env.JWT_SECRET === 'missing') {
     next(
       new Error(
@@ -65,29 +71,29 @@ export function createApp(): Application {
 
   app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
 
-  if (process.env.VERCEL) {
-    app.use(vercelDbMiddleware);
-  }
+  // CORS first — preflight OPTIONS must get headers before DB/auth middleware.
+  app.use(
+    cors({
+      origin: (origin, cb) => {
+        if (isOriginAllowed(origin)) return cb(null, true);
+        logger.warn({ origin }, 'CORS blocked origin');
+        return cb(null, false);
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    }),
+  );
 
-  // Security headers
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );
 
-  // CORS with credentialed cookies
-  app.use(
-    cors({
-      origin: (origin, cb) => {
-        if (!origin || corsOrigins.includes(origin) || corsOrigins.includes('*')) {
-          return cb(null, true);
-        }
-        return cb(new Error(`Not allowed by CORS: ${origin}`));
-      },
-      credentials: true,
-    }),
-  );
+  if (process.env.VERCEL) {
+    app.use(vercelDbMiddleware);
+  }
 
   // Stripe-style webhooks need the raw body; capture it before json parsing.
   app.use('/api/payments/webhook', express.raw({ type: '*/*' }));

@@ -102,9 +102,7 @@ export const env = parsed.success
 export const isProd = env.NODE_ENV === 'production';
 export const isDev = env.NODE_ENV === 'development';
 
-export const corsOrigins = env.CORS_ORIGINS.split(',')
-  .map((o) => o.trim())
-  .filter(Boolean);
+export { corsOrigins, getAllowedOrigins, isOriginAllowed } from './cors';
 
 export const hasCloudinary = Boolean(
   env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
