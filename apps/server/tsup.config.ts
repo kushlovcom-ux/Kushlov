@@ -1,21 +1,32 @@
 import { defineConfig } from 'tsup';
 
-/**
- * Bundle the API server into a single ESM file so runtime module resolution
- * (workspace packages, extensionless imports) is handled at build time.
- */
-export default defineConfig({
-  entry: ['src/index.ts', 'src/serverless.ts'],
-  format: ['esm'],
-  target: 'node20',
-  platform: 'node',
-  outDir: 'dist',
-  clean: true,
+const shared = {
+  format: ['esm'] as const,
+  target: 'node20' as const,
+  platform: 'node' as const,
   sourcemap: true,
   splitting: false,
   minify: false,
-  // Bundle the workspace packages (they ship .ts source and have no build step).
   noExternal: [/^@kushlov\//],
-  // These are optional native/peer deps; keep them external so bundling never fails.
   external: ['ioredis', 'rate-limit-redis'],
-});
+};
+
+/**
+ * Bundle the API server:
+ * - dist/index.js  → long-running Node server (Railway, Render, local)
+ * - api/index.js   → self-contained Vercel serverless function (no dist/ import)
+ */
+export default defineConfig([
+  {
+    ...shared,
+    entry: ['src/index.ts'],
+    outDir: 'dist',
+    clean: true,
+  },
+  {
+    ...shared,
+    entry: { index: 'src/server.ts' },
+    outDir: 'api',
+    clean: true,
+  },
+]);

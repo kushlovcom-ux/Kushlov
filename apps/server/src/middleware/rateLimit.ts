@@ -1,4 +1,5 @@
-import rateLimit, { Options } from 'express-rate-limit';
+import rateLimit, { Options, RateLimitRequestHandler } from 'express-rate-limit';
+import type { RequestHandler } from 'express';
 import { env } from '../config/env';
 import { getRedis } from '../config/redis';
 import { logger } from '../config/logger';
@@ -7,7 +8,7 @@ import { logger } from '../config/logger';
  * Build a rate limiter backed by Redis when available (so limits are shared
  * across instances), otherwise the default in-memory store.
  */
-function buildLimiter(options: Partial<Options>) {
+function buildLimiter(options: Partial<Options>): RateLimitRequestHandler {
   const redis = getRedis();
   let store: Options['store'] | undefined;
 
@@ -19,7 +20,7 @@ function buildLimiter(options: Partial<Options>) {
       store = new RedisStore({
         sendCommand: (...args: string[]) => (redis.call as (...a: string[]) => unknown)(...args),
       });
-    } catch (err) {
+    } catch {
       logger.warn('rate-limit-redis unavailable, using memory store');
     }
   }
@@ -35,11 +36,19 @@ function buildLimiter(options: Partial<Options>) {
   });
 }
 
+function lazyLimiter(options: Partial<Options> = {}): RequestHandler {
+  let limiter: RateLimitRequestHandler | undefined;
+  return (req, res, next) => {
+    if (!limiter) limiter = buildLimiter(options);
+    return limiter(req, res, next);
+  };
+}
+
 /** Global limiter applied to the whole API. */
-export const globalLimiter = buildLimiter({});
+export const globalLimiter = lazyLimiter();
 
 /** Stricter limiter for auth endpoints to slow down brute-force attempts. */
-export const authLimiter = buildLimiter({
+export const authLimiter = lazyLimiter({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { success: false, message: 'Too many auth attempts, please try again later.' },

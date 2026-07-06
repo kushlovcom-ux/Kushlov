@@ -7,6 +7,8 @@ dist/
 build/
 .next/
 out/
+apps/server/api/index.js
+apps/server/api/index.js.map
 
 # env
 .env

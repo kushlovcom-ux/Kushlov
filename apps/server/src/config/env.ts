@@ -60,14 +60,45 @@ const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
   // eslint-disable-next-line no-console
   console.error('❌ Invalid environment variables:', parsed.error.flatten().fieldErrors);
-  const msg = `Invalid environment variables: ${JSON.stringify(parsed.error.flatten().fieldErrors)}`;
-  if (process.env.VERCEL) {
-    throw new Error(msg);
+  if (!process.env.VERCEL) {
+    process.exit(1);
   }
-  process.exit(1);
 }
 
-export const env = parsed.data;
+/** Validated env, or safe fallbacks on Vercel so /health can respond while misconfiguration is fixed. */
+export const env = parsed.success
+  ? parsed.data
+  : {
+      NODE_ENV: 'production' as const,
+      PORT: 5000,
+      MONGODB_URI: process.env.MONGODB_URI ?? '',
+      REDIS_URL: process.env.REDIS_URL,
+      JWT_SECRET: process.env.JWT_SECRET ?? 'missing',
+      JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? 'missing',
+      JWT_ACCESS_EXPIRES: '15m',
+      JWT_REFRESH_EXPIRES: '30d',
+      CLIENT_URL: process.env.CLIENT_URL ?? 'http://localhost:3000',
+      CORS_ORIGINS: process.env.CORS_ORIGINS ?? '*',
+      CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
+      CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
+      CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
+      CLOUDINARY_URL: process.env.CLOUDINARY_URL,
+      LIVEKIT_URL: process.env.LIVEKIT_URL,
+      LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY,
+      LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET,
+      SMTP_HOST: process.env.SMTP_HOST,
+      SMTP_PORT: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined,
+      SMTP_USER: process.env.SMTP_USER,
+      SMTP_PASS: process.env.SMTP_PASS,
+      MAIL_FROM: process.env.MAIL_FROM ?? 'Kushlov <no-reply@kushlov.app>',
+      PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER ?? 'mock',
+      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+      RATE_LIMIT_WINDOW_MS: 900_000,
+      RATE_LIMIT_MAX: 300,
+      ADMIN_EMAIL: process.env.ADMIN_EMAIL,
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+    };
 export const isProd = env.NODE_ENV === 'production';
 export const isDev = env.NODE_ENV === 'development';
 

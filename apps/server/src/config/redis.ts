@@ -14,7 +14,7 @@ export function getRedis(): Redis | null {
 
   client = new Redis(env.REDIS_URL, {
     maxRetriesPerRequest: 2,
-    lazyConnect: false,
+    lazyConnect: Boolean(process.env.VERCEL),
     retryStrategy: (times) => Math.min(times * 200, 2000),
   });
 
