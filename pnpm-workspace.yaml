@@ -2,12 +2,9 @@ packages:
   - "apps/*"
   - "packages/*"
 
-onlyBuiltDependencies:
-  - esbuild
-  - "@tailwindcss/oxide"
-  - sharp
-  - unrs-resolver
+# pnpm 11: allow lifecycle scripts for packages that need native/postinstall builds
 allowBuilds:
-  esbuild: set this to true or false
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  "@tailwindcss/oxide": true
