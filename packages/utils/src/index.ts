@@ -74,7 +74,21 @@ export const maskEmail = (email: string): string => {
 
 /** Format an amount of currency for display. */
 export const formatCurrency = (value: number, currency = 'USD'): string =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value);
+  new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
+    style: 'currency',
+    currency,
+  }).format(value);
+
+/** India → INR (₹), all other countries → USD ($). */
+export const getCurrencyForCountry = (country?: string | null): 'INR' | 'USD' =>
+  country?.trim() === 'India' ? 'INR' : 'USD';
+
+/** Format money using the user's country to pick ₹ vs $. */
+export const formatMoney = (value: number, country?: string | null): string =>
+  formatCurrency(value, getCurrencyForCountry(country));
+
+export { COUNTRIES, DEFAULT_COUNTRY } from './countries';
+export type { CountryName } from './countries';
 
 /** Format a compact number, e.g. 12.3K, 1.2M. */
 export const formatCompact = (value: number): string =>

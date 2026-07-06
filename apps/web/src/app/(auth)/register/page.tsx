@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
+import { DEFAULT_COUNTRY } from '@kushlov/utils';
+import { CountrySelect } from '@/components/ui/country-select';
 import { useRegister } from '@/hooks/use-auth';
 
 const passwordRules = z
@@ -29,6 +31,7 @@ const schema = z
     email: z.string().email('Enter a valid email'),
     password: passwordRules,
     confirmPassword: z.string().min(1, 'Please confirm your password'),
+    country: z.string().min(2, 'Select your country'),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',
@@ -47,10 +50,11 @@ function RegisterForm() {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<Form>({
     resolver: zodResolver(schema),
-    defaultValues: { accountType: initialType },
+    defaultValues: { accountType: initialType, country: DEFAULT_COUNTRY },
   });
 
   useEffect(() => {
@@ -62,6 +66,8 @@ function RegisterForm() {
     setAccountType(type);
     setValue('accountType', type);
   };
+
+  const country = watch('country');
 
   return (
     <div>
@@ -123,6 +129,19 @@ function RegisterForm() {
           <Label htmlFor="username">Username</Label>
           <Input id="username" placeholder="alexr" {...register('username')} />
           {errors.username && <p className="text-xs text-red-400">{errors.username.message}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="country">Country</Label>
+          <CountrySelect
+            id="country"
+            value={country}
+            onChange={(v) => setValue('country', v, { shouldValidate: true })}
+            required
+          />
+          {errors.country && <p className="text-xs text-red-400">{errors.country.message}</p>}
+          <p className="text-xs text-white/40">
+            India shows prices in ₹; other countries show $.
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="email">Email</Label>

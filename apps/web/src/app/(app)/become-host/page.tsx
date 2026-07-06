@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { DEFAULT_COUNTRY } from '@kushlov/utils';
+import { CountrySelect } from '@/components/ui/country-select';
 import { IdentityLiveCapture } from '@/components/verification/identity-live-capture';
 
 interface Instruction {
@@ -40,13 +42,21 @@ export default function BecomeHostPage() {
     queryFn: () => unwrap<Instruction[]>(api.get('/verification/instructions')),
   });
 
-  const [basic, setBasic] = useState({
+  const [basic, setBasic] = useState<{
+    name: string;
+    username: string;
+    bio: string;
+    gender: Gender;
+    dob: string;
+    country: string;
+    languages: string;
+  }>({
     name: '',
     username: '',
     bio: '',
     gender: Gender.Male,
     dob: '',
-    country: '',
+    country: DEFAULT_COUNTRY,
     languages: '',
   });
 
@@ -181,7 +191,10 @@ export default function BecomeHostPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Country</Label>
-                <Input value={basic.country} onChange={(e) => setBasic({ ...basic, country: e.target.value })} />
+                <CountrySelect
+                  value={basic.country}
+                  onChange={(country) => setBasic({ ...basic, country })}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Languages (comma separated)</Label>

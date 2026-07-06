@@ -3,7 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Gem, Coins, TrendingUp, TrendingDown } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatCompact, formatCurrency } from '@kushlov/utils';
+import { formatCompact } from '@kushlov/utils';
+import { useFormatMoney } from '@/hooks/use-format-money';
 import { api, apiError, unwrap } from '@/lib/api';
 import { relativeTime } from '@/lib/utils';
 import { PageHeader } from '@/components/app/page-header';
@@ -36,6 +37,7 @@ interface Txn {
 
 export default function WalletPage() {
   const qc = useQueryClient();
+  const formatPrice = useFormatMoney();
 
   const wallet = useQuery({
     queryKey: ['wallet'],
@@ -120,7 +122,7 @@ export default function WalletPage() {
                     loading={buy.isPending && buy.variables === p.id}
                     onClick={() => buy.mutate(p.id)}
                   >
-                    {formatCurrency(p.price, p.currency)}
+                    {formatPrice(p.price)}
                   </Button>
                 </div>
               ))}

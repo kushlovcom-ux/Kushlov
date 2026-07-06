@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Role } from '@kushlov/types';
-import { User } from '../../models';
+import { User, Profile } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
@@ -29,7 +29,7 @@ function issueTokens(user: { id: string; role: Role; tokenVersion: number }) {
 }
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
-  const { email, username, displayName, password, accountType = 'user' } = req.body;
+  const { email, username, displayName, password, accountType = 'user', country } = req.body;
 
   const exists = await User.findOne({ $or: [{ email }, { username }] });
   if (exists) throw ApiError.conflict('Email or username already in use');
@@ -43,7 +43,13 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     password: await hashPassword(password),
     role: isHostSignup ? Role.Host : Role.User,
     isHostApproved: false,
+    country,
   });
+  await Profile.findOneAndUpdate(
+    { user: user._id },
+    { $set: { country, user: user._id } },
+    { upsert: true },
+  );
   await ensureWallet(user._id);
 
   const tokens = issueTokens({ id: user._id.toString(), role: user.role, tokenVersion: user.tokenVersion });

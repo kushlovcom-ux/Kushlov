@@ -76,12 +76,25 @@ export const updateMyLocation = asyncHandler(async (req: Request, res: Response)
 
 /** PATCH /users/me — update the current user's core identity fields. */
 export const updateMe = asyncHandler(async (req: Request, res: Response) => {
-  const { displayName, bio, gender } = req.body;
+  const { displayName, bio, gender, country } = req.body;
+  const update: Record<string, unknown> = {};
+  if (displayName !== undefined) update.displayName = displayName;
+  if (bio !== undefined) update.bio = bio;
+  if (gender !== undefined) update.gender = gender;
+  if (country !== undefined) update.country = country;
+
   const user = await User.findByIdAndUpdate(
     req.user!.id,
-    { $set: { displayName, bio, gender } },
+    { $set: update },
     { new: true, runValidators: true },
   );
+  if (country !== undefined) {
+    await Profile.findOneAndUpdate(
+      { user: req.user!.id },
+      { $set: { country } },
+      { upsert: true },
+    );
+  }
   return ok(res, (user as any)?.toPublic(), 'Profile updated');
 });
 

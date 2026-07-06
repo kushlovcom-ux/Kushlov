@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { LocationSetup } from '@/components/location/location-setup';
+import { CountrySelect } from '@/components/ui/country-select';
 
 export default function ProfilePage() {
   const { user, setUser } = useAuthStore();
@@ -21,16 +22,18 @@ export default function ProfilePage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
+  const [country, setCountry] = useState('India');
 
   useEffect(() => {
     if (user) {
       setDisplayName(user.displayName);
       setBio(user.bio ?? '');
+      setCountry(user.country ?? 'India');
     }
   }, [user]);
 
   const save = useMutation({
-    mutationFn: () => api.patch('/users/me', { displayName, bio }),
+    mutationFn: () => api.patch('/users/me', { displayName, bio, country }),
     onSuccess: (res) => {
       setUser(res.data.data);
       toast.success('Profile updated');
@@ -82,6 +85,11 @@ export default function ProfilePage() {
         <div className="space-y-1.5">
           <Label>Display name</Label>
           <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Country</Label>
+          <CountrySelect value={country} onChange={setCountry} />
+          <p className="text-xs text-white/40">India: ₹ · Other countries: $</p>
         </div>
         <div className="space-y-1.5">
           <Label>Bio</Label>

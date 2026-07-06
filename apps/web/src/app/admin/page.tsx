@@ -7,11 +7,12 @@ import {
   ShieldCheck,
   Flag,
   Banknote,
-  DollarSign,
-  UserPlus,
   Crown,
+  UserPlus,
+  IndianRupee,
 } from 'lucide-react';
-import { formatCompact, formatCurrency } from '@kushlov/utils';
+import { formatCompact } from '@kushlov/utils';
+import { useFormatMoney } from '@/hooks/use-format-money';
 import { api, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -29,6 +30,7 @@ interface Analytics {
 }
 
 export default function AdminDashboard() {
+  const formatPrice = useFormatMoney();
   const { data, isLoading } = useQuery({
     queryKey: ['admin-analytics'],
     queryFn: () => unwrap<Analytics>(api.get('/admin/analytics')),
@@ -39,7 +41,7 @@ export default function AdminDashboard() {
     { label: 'Hosts', value: formatCompact(data?.totalHosts ?? 0), icon: Crown, color: 'text-amber-400' },
     { label: 'Approved Hosts', value: formatCompact(data?.approvedHosts ?? 0), icon: ShieldCheck, color: 'text-emerald-400' },
     { label: 'Live Now', value: formatCompact(data?.liveNow ?? 0), icon: Radio, color: 'text-red-400' },
-    { label: 'Revenue', value: formatCurrency(data?.revenue ?? 0), icon: DollarSign, color: 'text-emerald-400' },
+    { label: 'Revenue', value: formatPrice(data?.revenue ?? 0), icon: IndianRupee, color: 'text-emerald-400' },
     { label: 'New Users (7d)', value: formatCompact(data?.newUsers7d ?? 0), icon: UserPlus, color: 'text-brand-pink' },
     { label: 'Pending Verifications', value: data?.pendingVerifications ?? 0, icon: ShieldCheck, color: 'text-amber-400' },
     { label: 'Open Reports', value: data?.openReports ?? 0, icon: Flag, color: 'text-red-400' },

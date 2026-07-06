@@ -4,7 +4,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import { pinoHttp } from 'pino-http';
-import { isOriginAllowed } from './config/cors';
+import { corsOptions } from './config/cors';
 import { env } from './config/env';
 import { connectDatabase } from './config/db';
 import { logger } from './config/logger';
@@ -71,19 +71,9 @@ export function createApp(): Application {
 
   app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
 
-  // CORS first — preflight OPTIONS must get headers before DB/auth middleware.
-  app.use(
-    cors({
-      origin: (origin, cb) => {
-        if (isOriginAllowed(origin)) return cb(null, true);
-        logger.warn({ origin }, 'CORS blocked origin');
-        return cb(null, false);
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    }),
-  );
+  // CORS first — explicit OPTIONS handler so preflight never falls through to route handlers.
+  app.options(/.*/, cors(corsOptions));
+  app.use(cors(corsOptions));
 
   app.use(
     helmet({

@@ -5,6 +5,7 @@ export const updateMeSchema = z.object({
   displayName: z.string().min(2).max(60).optional(),
   bio: z.string().max(500).optional(),
   gender: z.nativeEnum(Gender).optional(),
+  country: z.string().min(2).max(80).optional(),
 });
 
 export const updateProfileSchema = z.object({

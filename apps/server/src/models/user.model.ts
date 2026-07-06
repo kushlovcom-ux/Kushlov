@@ -14,6 +14,7 @@ export interface IUser extends Document {
   coverUrl?: string;
   bio?: string;
   gender?: Gender;
+  country?: string;
 
   // host lifecycle
   isHostApproved: boolean;
@@ -71,6 +72,7 @@ const userSchema = new Schema<IUser>(
     coverUrl: String,
     bio: { type: String, maxlength: 500 },
     gender: { type: String, enum: Object.values(Gender) },
+    country: { type: String, trim: true, maxlength: 80, default: 'India' },
 
     isHostApproved: { type: Boolean, default: false },
     hostSince: Date,
@@ -105,6 +107,7 @@ userSchema.methods.toPublic = function toPublic() {
     coverUrl: u.coverUrl,
     bio: u.bio,
     gender: u.gender,
+    country: u.country,
     isHostApproved: u.isHostApproved,
     isOnline: u.isOnline,
     createdAt: u.createdAt?.toISOString(),

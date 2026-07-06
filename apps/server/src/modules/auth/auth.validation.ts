@@ -18,6 +18,7 @@ export const registerSchema = z.object({
   displayName: z.string().min(2).max(60),
   password,
   accountType: z.enum(['user', 'host']).default('user'),
+  country: z.string().min(2, 'Select your country').max(80),
 });
 
 export const loginSchema = z.object({

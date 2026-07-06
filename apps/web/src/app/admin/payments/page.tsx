@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { formatCurrency } from '@kushlov/utils';
+import { formatMoney } from '@kushlov/utils';
+import { useAuthStore } from '@/store/auth';
 import { api, unwrap } from '@/lib/api';
 import { relativeTime } from '@/lib/utils';
 import { PageHeader } from '@/components/app/page-header';
@@ -9,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AdminPaymentsPage() {
+  const country = useAuthStore((s) => s.user?.country);
   const { data, isLoading } = useQuery({
     queryKey: ['admin-payments'],
     queryFn: () => unwrap<{ items: any[] }>(api.get('/admin/payments')),
@@ -40,7 +42,7 @@ export default function AdminPaymentsPage() {
               {data?.items.map((p) => (
                 <tr key={p._id} className="border-t border-white/5">
                   <td className="p-4">{p.user?.displayName ?? p.user?.email}</td>
-                  <td className="p-4">{formatCurrency(p.amount, p.currency)}</td>
+                  <td className="p-4">{formatMoney(p.amount, country)}</td>
                   <td className="p-4">{p.diamonds} 💎</td>
                   <td className="p-4">
                     <Badge variant={p.status === 'succeeded' ? 'success' : p.status === 'failed' ? 'destructive' : 'warning'}>

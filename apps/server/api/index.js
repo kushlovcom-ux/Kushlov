@@ -23,7 +23,6 @@ var EnvSchema, parsed, env, isProd, isDev, hasCloudinary, hasLiveKit;
 var init_env = __esm({
   "src/config/env.ts"() {
     "use strict";
-    init_cors();
     for (const candidate of [".env", resolve(process.cwd(), "../../.env")]) {
       if (existsSync(candidate)) loadEnv({ path: candidate });
     }
@@ -105,35 +104,6 @@ var init_env = __esm({
   }
 });
 
-// src/config/cors.ts
-function getAllowedOrigins() {
-  const origins = /* @__PURE__ */ new Set();
-  for (const entry of env.CORS_ORIGINS.split(",")) {
-    const trimmed = entry.trim().replace(/\/$/, "");
-    if (trimmed && trimmed !== "*") origins.add(trimmed);
-  }
-  const client2 = env.CLIENT_URL?.trim().replace(/\/$/, "");
-  if (client2) origins.add(client2);
-  return [...origins];
-}
-function isOriginAllowed(origin) {
-  if (!origin) return true;
-  const normalized = origin.replace(/\/$/, "");
-  if (getAllowedOrigins().includes(normalized)) return true;
-  if (process.env.VERCEL && /^https:\/\/[\w.-]+\.vercel\.app$/i.test(normalized)) {
-    return true;
-  }
-  return env.CORS_ORIGINS.split(",").some((o) => o.trim() === "*");
-}
-var corsOrigins;
-var init_cors = __esm({
-  "src/config/cors.ts"() {
-    "use strict";
-    init_env();
-    corsOrigins = getAllowedOrigins();
-  }
-});
-
 // src/config/logger.ts
 import pino from "pino";
 var isLocalDev, logger;
@@ -191,16 +161,47 @@ var init_db = __esm({
 });
 
 // src/app.ts
-init_cors();
-init_env();
-init_db();
-init_logger();
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import compression from "compression";
 import { pinoHttp } from "pino-http";
+
+// src/config/cors.ts
+init_env();
+var LOCAL_DEV_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+function isLocalDevOrigin(origin) {
+  return LOCAL_DEV_ORIGIN.test(origin.replace(/\/$/, ""));
+}
+function getAllowedOrigins() {
+  const origins = /* @__PURE__ */ new Set([
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ]);
+  for (const entry of env.CORS_ORIGINS.split(",")) {
+    const trimmed = entry.trim().replace(/\/$/, "");
+    if (trimmed && trimmed !== "*") origins.add(trimmed);
+  }
+  const client2 = env.CLIENT_URL?.trim().replace(/\/$/, "");
+  if (client2) origins.add(client2);
+  return [...origins];
+}
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  const normalized = origin.replace(/\/$/, "");
+  if (isLocalDevOrigin(normalized)) return true;
+  if (getAllowedOrigins().includes(normalized)) return true;
+  if (/^https:\/\/[\w.-]+\.vercel\.app$/i.test(normalized)) {
+    return true;
+  }
+  return env.CORS_ORIGINS.split(",").some((o) => o.trim() === "*");
+}
+
+// src/app.ts
+init_env();
+init_db();
+init_logger();
 
 // src/middleware/rateLimit.ts
 init_env();
@@ -584,6 +585,7 @@ var userSchema = new Schema(
     coverUrl: String,
     bio: { type: String, maxlength: 500 },
     gender: { type: String, enum: Object.values(Gender) },
+    country: { type: String, trim: true, maxlength: 80, default: "India" },
     isHostApproved: { type: Boolean, default: false },
     hostSince: Date,
     tokenVersion: { type: Number, default: 0 },
@@ -611,6 +613,7 @@ userSchema.methods.toPublic = function toPublic() {
     coverUrl: u.coverUrl,
     bio: u.bio,
     gender: u.gender,
+    country: u.country,
     isHostApproved: u.isHostApproved,
     isOnline: u.isOnline,
     createdAt: u.createdAt?.toISOString()
@@ -1504,7 +1507,7 @@ function issueTokens(user) {
   };
 }
 var register = asyncHandler(async (req, res) => {
-  const { email, username, displayName, password: password2, accountType = "user" } = req.body;
+  const { email, username, displayName, password: password2, accountType = "user", country } = req.body;
   const exists = await User.findOne({ $or: [{ email }, { username }] });
   if (exists) throw ApiError.conflict("Email or username already in use");
   const isHostSignup = accountType === "host";
@@ -1514,8 +1517,14 @@ var register = asyncHandler(async (req, res) => {
     displayName,
     password: await hashPassword(password2),
     role: isHostSignup ? "host" /* Host */ : "user" /* User */,
-    isHostApproved: false
+    isHostApproved: false,
+    country
   });
+  await Profile.findOneAndUpdate(
+    { user: user._id },
+    { $set: { country, user: user._id } },
+    { upsert: true }
+  );
   await ensureWallet(user._id);
   const tokens = issueTokens({ id: user._id.toString(), role: user.role, tokenVersion: user.tokenVersion });
   setRefreshCookie(res, tokens.refreshToken);
@@ -1601,7 +1610,8 @@ var registerSchema = z2.object({
   username: z2.string().min(3).max(30).regex(/^[a-z0-9_]+$/i, "Only letters, numbers and underscores"),
   displayName: z2.string().min(2).max(60),
   password,
-  accountType: z2.enum(["user", "host"]).default("user")
+  accountType: z2.enum(["user", "host"]).default("user"),
+  country: z2.string().min(2, "Select your country").max(80)
 });
 var loginSchema = z2.object({
   email: z2.string().email(),
@@ -1836,12 +1846,24 @@ var updateMyLocation = asyncHandler(async (req, res) => {
   return ok(res, profile, "Location updated");
 });
 var updateMe = asyncHandler(async (req, res) => {
-  const { displayName, bio, gender } = req.body;
+  const { displayName, bio, gender, country } = req.body;
+  const update = {};
+  if (displayName !== void 0) update.displayName = displayName;
+  if (bio !== void 0) update.bio = bio;
+  if (gender !== void 0) update.gender = gender;
+  if (country !== void 0) update.country = country;
   const user = await User.findByIdAndUpdate(
     req.user.id,
-    { $set: { displayName, bio, gender } },
+    { $set: update },
     { new: true, runValidators: true }
   );
+  if (country !== void 0) {
+    await Profile.findOneAndUpdate(
+      { user: req.user.id },
+      { $set: { country } },
+      { upsert: true }
+    );
+  }
   return ok(res, user?.toPublic(), "Profile updated");
 });
 var getMyProfile = asyncHandler(async (req, res) => {
@@ -1979,7 +2001,8 @@ import { z as z3 } from "zod";
 var updateMeSchema = z3.object({
   displayName: z3.string().min(2).max(60).optional(),
   bio: z3.string().max(500).optional(),
-  gender: z3.nativeEnum(Gender).optional()
+  gender: z3.nativeEnum(Gender).optional(),
+  country: z3.string().min(2).max(80).optional()
 });
 var updateProfileSchema = z3.object({
   dob: z3.coerce.date().optional(),
@@ -3874,7 +3897,8 @@ function createApp() {
   app.use(
     cors({
       origin: (origin, cb) => {
-        if (isOriginAllowed(origin)) return cb(null, true);
+        if (!origin) return cb(null, true);
+        if (isOriginAllowed(origin)) return cb(null, origin);
         logger.warn({ origin }, "CORS blocked origin");
         return cb(null, false);
       },

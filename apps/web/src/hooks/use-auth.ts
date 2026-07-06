@@ -40,6 +40,7 @@ export function useRegister() {
       displayName: string;
       password: string;
       accountType?: 'user' | 'host';
+      country: string;
     }) => {
       const res = await api.post('/auth/register', payload);
       return res.data.data as AuthResult & { accountType?: 'user' | 'host' };

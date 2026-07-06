@@ -226,6 +226,7 @@ export interface PublicUser {
   coverUrl?: string;
   bio?: string;
   gender?: Gender;
+  country?: string;
   isHostApproved?: boolean;
   isOnline?: boolean;
   createdAt: string;

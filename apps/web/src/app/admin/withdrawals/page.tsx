@@ -3,7 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { WithdrawStatus } from '@kushlov/types';
-import { formatCurrency } from '@kushlov/utils';
+import { formatMoney } from '@kushlov/utils';
+import { useAuthStore } from '@/store/auth';
 import { api, apiError, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AdminWithdrawalsPage() {
   const qc = useQueryClient();
+  const country = useAuthStore((s) => s.user?.country);
   const { data, isLoading } = useQuery({
     queryKey: ['admin-withdrawals'],
     queryFn: () => unwrap<{ items: any[] }>(api.get('/admin/withdrawals')),
@@ -54,7 +56,7 @@ export default function AdminWithdrawalsPage() {
                 <tr key={w._id} className="border-t border-white/5">
                   <td className="p-4">{w.host?.displayName ?? w.host?.email}</td>
                   <td className="p-4">{w.goldAmount} 🪙</td>
-                  <td className="p-4">{formatCurrency(w.fiatAmount, w.currency)}</td>
+                  <td className="p-4">{formatMoney(w.fiatAmount, country)}</td>
                   <td className="p-4">
                     <Badge variant={w.status === 'paid' ? 'success' : w.status === 'rejected' ? 'destructive' : 'warning'}>
                       {w.status}
