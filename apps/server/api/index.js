@@ -3855,9 +3855,9 @@ function createApp() {
   return app;
 }
 
-// src/server.ts
-var server_default = createApp();
+// src/vercel-bundle.ts
+var vercel_bundle_default = createApp();
 export {
-  server_default as default
+  vercel_bundle_default as default
 };
 //# sourceMappingURL=index.js.map

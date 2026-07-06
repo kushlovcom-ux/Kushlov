@@ -25,7 +25,7 @@ export default defineConfig([
   },
   {
     ...shared,
-    entry: { index: 'src/server.ts' },
+    entry: { index: 'src/vercel-bundle.ts' },
     outDir: 'api',
     clean: true,
   },
