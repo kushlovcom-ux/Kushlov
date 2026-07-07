@@ -60,6 +60,18 @@ function Messages() {
     });
   }, [toUser, qc]);
 
+  // Mark conversation read when opened — clears nav badge counts.
+  useEffect(() => {
+    if (!activeId) return;
+    api
+      .patch(`/chat/conversations/${activeId}/read`)
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ['conversations'] });
+        qc.invalidateQueries({ queryKey: ['nav-badges'] });
+      })
+      .catch(() => {});
+  }, [activeId, qc]);
+
   const messages = useQuery({
     queryKey: ['messages', activeId],
     queryFn: () => unwrap<{ items: Message[] }>(api.get(`/chat/conversations/${activeId}/messages`)),
@@ -73,6 +85,7 @@ function Messages() {
       setText('');
       qc.invalidateQueries({ queryKey: ['messages', activeId] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['nav-badges'] });
     },
   });
 
@@ -81,6 +94,7 @@ function Messages() {
     if (!socket) return;
     const handler = (msg: Message & { conversation: string }) => {
       qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['nav-badges'] });
       if (msg.conversation === activeId) qc.invalidateQueries({ queryKey: ['messages', activeId] });
     };
     socket.on(SocketEvents.MessageNew, handler);
@@ -102,6 +116,9 @@ function Messages() {
       <div className="w-full max-w-xs border-r border-white/10">
         <div className="border-b border-white/10 px-5 py-5">
           <h1 className="text-xl font-bold">Messages</h1>
+          <p className="mt-1 text-xs text-white/40">
+            Chat with hosts costs diamonds per message. Calls are billed per minute.
+          </p>
         </div>
         <div className="space-y-1 overflow-y-auto p-2">
           {conversations.isLoading &&

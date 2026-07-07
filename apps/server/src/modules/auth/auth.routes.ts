@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate';
 import * as ctrl from './auth.controller';
 import {
   forgotSchema,
+  googleSchema,
   loginSchema,
   registerSchema,
   resetSchema,
@@ -14,6 +15,7 @@ const router = Router();
 
 router.post('/register', authLimiter, validate({ body: registerSchema }), ctrl.register);
 router.post('/login', authLimiter, validate({ body: loginSchema }), ctrl.login);
+router.post('/google', authLimiter, validate({ body: googleSchema }), ctrl.googleLogin);
 router.post('/refresh', ctrl.refresh);
 router.post('/logout', ctrl.logout);
 router.get('/me', authenticate, ctrl.me);

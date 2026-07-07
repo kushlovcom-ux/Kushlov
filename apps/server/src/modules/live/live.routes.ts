@@ -7,10 +7,10 @@ import * as ctrl from './live.controller';
 
 const router = Router();
 
+router.use(authenticate);
+
 router.get('/', ctrl.listLive);
 router.get('/:id', ctrl.getLive);
-
-router.use(authenticate);
 
 // Host-only stream lifecycle
 router.post('/start', requireApprovedHost, uploadImage.single('thumbnail'), ctrl.startLive);

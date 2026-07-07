@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { SocketEvents } from '@kushlov/types';
 import { clientEnv } from '@/lib/env';
 import { useAuthStore } from '@/store/auth';
@@ -19,6 +20,7 @@ export const useSocket = () => useContext(SocketContext);
 /** Establishes an authenticated Socket.io connection tied to the session. */
 export function SocketProvider({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const qc = useQueryClient();
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
 
@@ -42,13 +44,19 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     socket.on(SocketEvents.Notification, (n: { title: string; body?: string }) => {
       toast(n.title, { description: n.body });
+      qc.invalidateQueries({ queryKey: ['nav-badges'] });
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+    });
+
+    socket.on(SocketEvents.MessageNew, () => {
+      qc.invalidateQueries({ queryKey: ['nav-badges'] });
     });
 
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [accessToken]);
+  }, [accessToken, qc]);
 
   return (
     <SocketContext.Provider value={{ socket: socketRef.current, connected }}>

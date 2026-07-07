@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bell, CheckCheck } from 'lucide-react';
 import { api, unwrap } from '@/lib/api';
@@ -19,15 +20,34 @@ interface Notif {
 
 export default function NotificationsPage() {
   const qc = useQueryClient();
+  const markedRead = useRef(false);
   const { data, isLoading } = useQuery({
     queryKey: ['notifications'],
     queryFn: () =>
       unwrap<{ items: Notif[]; unread: number }>(api.get('/notifications', { params: { limit: 50 } })),
   });
 
+  // Opening the page counts as "seen" — clear unread badges automatically.
+  useEffect(() => {
+    if (!data?.unread || markedRead.current) return;
+    markedRead.current = true;
+    api
+      .patch('/notifications/read-all')
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ['notifications'] });
+        qc.invalidateQueries({ queryKey: ['nav-badges'] });
+      })
+      .catch(() => {
+        markedRead.current = false;
+      });
+  }, [data?.unread, qc]);
+
   const markAll = useMutation({
     mutationFn: () => api.patch('/notifications/read-all'),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+      qc.invalidateQueries({ queryKey: ['nav-badges'] });
+    },
   });
 
   return (

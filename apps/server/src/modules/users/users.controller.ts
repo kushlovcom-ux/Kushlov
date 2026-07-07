@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { Role } from '@kushlov/types';
 import { buildPaginated, parsePagination } from '@kushlov/utils';
-import { Block, Follower, Like, Profile, User } from '../../models';
+import { Block, Conversation, Follower, Like, Notification, Profile, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok } from '../../utils/response';
@@ -14,6 +14,40 @@ import {
   requireUserCoordinates,
 } from '../../services/location.service';
 import { haversineKm } from '@kushlov/utils';
+import { getUserInteractionHistory } from '../../services/interaction.service';
+
+/** GET /users/me/search-contacts — search opposite role by name (no location filter). */
+export const searchContacts = asyncHandler(async (req: Request, res: Response) => {
+  const me = await User.findById(req.user!.id).select('role');
+  if (!me) throw ApiError.notFound('User not found');
+
+  const q = (req.query.q as string)?.trim();
+  if (!q || q.length < 2) return ok(res, { items: [] });
+
+  const oppositeRole = me.role === Role.Host ? Role.User : Role.Host;
+  const filter: Record<string, unknown> = {
+    role: oppositeRole,
+    status: 'active',
+    _id: { $ne: me._id },
+    $or: [{ displayName: new RegExp(q, 'i') }, { username: new RegExp(q, 'i') }],
+  };
+  if (oppositeRole === Role.Host) filter.isHostApproved = true;
+
+  const users = await User.find(filter).sort({ isOnline: -1, displayName: 1 }).limit(20);
+  return ok(res, { items: users.map((u) => (u as any).toPublic()) });
+});
+
+/** GET /users/me/interactions — chat/call/live-chat history with opposite role. */
+export const getMyInteractions = asyncHandler(async (req: Request, res: Response) => {
+  const me = await User.findById(req.user!.id).select('role');
+  if (!me) throw ApiError.notFound('User not found');
+  const { q, limit } = req.query as Record<string, string>;
+  const result = await getUserInteractionHistory(me._id.toString(), me.role, {
+    q,
+    limit: limit ? Number(limit) : undefined,
+  });
+  return ok(res, result);
+});
 
 /** GET /users/:id — public profile of a user + their rich profile. */
 export const getUser = asyncHandler(async (req: Request, res: Response) => {
@@ -240,6 +274,17 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   });
 
   return ok(res, buildPaginated(items, page, limit, total));
+});
+
+/** GET /users/me/badges — unread counts for nav badges (messages, notifications). */
+export const getMyBadges = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const [notifications, conversations] = await Promise.all([
+    Notification.countDocuments({ user: userId, isRead: false }),
+    Conversation.find({ participants: userId }).select('unread'),
+  ]);
+  const messages = conversations.reduce((sum, c) => sum + (c.unread.get(userId) ?? 0), 0);
+  return ok(res, { notifications, messages });
 });
 
 /** GET /users/hosts — list approved hosts outside the local exclusion zone. */

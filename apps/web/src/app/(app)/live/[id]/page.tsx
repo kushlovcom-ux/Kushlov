@@ -26,6 +26,7 @@ export default function LiveRoomPage() {
   const me = useAuthStore((s) => s.user);
   const { socket } = useSocket();
   const [token, setToken] = useState<string>();
+  const [livekitUrl, setLivekitUrl] = useState<string>();
   const [chat, setChat] = useState<LiveChatMsg[]>([]);
   const [text, setText] = useState('');
   const [viewers, setViewers] = useState(0);
@@ -47,6 +48,7 @@ export default function LiveRoomPage() {
     req
       .then((res) => {
         setToken(res.data.data.token);
+        if (res.data.data.livekitUrl) setLivekitUrl(res.data.data.livekitUrl);
         if (res.data.data.viewerCount != null) setViewers(res.data.data.viewerCount);
       })
       .catch((e) => toast.error(apiError(e)));
@@ -114,7 +116,12 @@ export default function LiveRoomPage() {
         </Button>
         <div className="h-full">
           {token ? (
-            <LiveKitStage token={token} onDisconnected={leave} />
+            <LiveKitStage
+              token={token}
+              serverUrl={livekitUrl}
+              isHost={Boolean(isHost)}
+              onDisconnected={leave}
+            />
           ) : (
             <div className="flex h-full items-center justify-center text-white/40">Connecting…</div>
           )}

@@ -27,7 +27,16 @@ export default function AdminSettingsPage() {
   const [newInstruction, setNewInstruction] = useState('');
 
   useEffect(() => {
-    if (settings.data && !form) setForm(settings.data);
+    if (settings.data && !form) {
+      setForm({
+        ...settings.data,
+        landing: settings.data.landing ?? {
+          membersLabel: '120k+',
+          verifiedHostsLabel: '8k+',
+          liveRoomsLabel: '24/7',
+        },
+      });
+    }
   }, [settings.data, form]);
 
   const save = useMutation({
@@ -37,10 +46,13 @@ export default function AdminSettingsPage() {
         rates: form.rates,
         features: form.features,
         withdraw: form.withdraw,
+        diamondPackages: form.diamondPackages,
+        landing: form.landing,
       }),
     onSuccess: () => {
       toast.success('Settings saved');
       qc.invalidateQueries({ queryKey: ['admin-settings'] });
+      qc.invalidateQueries({ queryKey: ['platform-stats'] });
     },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -104,6 +116,14 @@ export default function AdminSettingsPage() {
               />
             </div>
             <div className="space-y-1.5">
+              <Label>Host DM chat / message (diamonds)</Label>
+              <Input
+                type="number"
+                value={form.rates.chatPerMessage ?? form.rates.liveChatPerMessage}
+                onChange={(e) => setForm({ ...form, rates: { ...form.rates, chatPerMessage: +e.target.value } })}
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label>Live chat / message (diamonds)</Label>
               <Input
                 type="number"
@@ -134,6 +154,114 @@ export default function AdminSettingsPage() {
                 type="number"
                 value={form.withdraw.minGold}
                 onChange={(e) => setForm({ ...form, withdraw: { ...form.withdraw, minGold: +e.target.value } })}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Diamond packages (USD & INR)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {(form.diamondPackages ?? []).map((pkg: any, idx: number) => (
+              <div
+                key={pkg.id ?? idx}
+                className="grid gap-3 rounded-xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                <div className="space-y-1.5">
+                  <Label>Label</Label>
+                  <Input
+                    value={pkg.label}
+                    onChange={(e) => {
+                      const diamondPackages = [...form.diamondPackages];
+                      diamondPackages[idx] = { ...pkg, label: e.target.value };
+                      setForm({ ...form, diamondPackages });
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Diamonds</Label>
+                  <Input
+                    type="number"
+                    value={pkg.diamonds}
+                    onChange={(e) => {
+                      const diamondPackages = [...form.diamondPackages];
+                      diamondPackages[idx] = { ...pkg, diamonds: +e.target.value };
+                      setForm({ ...form, diamondPackages });
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Price USD ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={pkg.priceUsd ?? pkg.price ?? 0}
+                    onChange={(e) => {
+                      const diamondPackages = [...form.diamondPackages];
+                      diamondPackages[idx] = { ...pkg, priceUsd: +e.target.value };
+                      setForm({ ...form, diamondPackages });
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Price INR (₹)</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={pkg.priceInr ?? 0}
+                    onChange={(e) => {
+                      const diamondPackages = [...form.diamondPackages];
+                      diamondPackages[idx] = { ...pkg, priceInr: +e.target.value };
+                      setForm({ ...form, diamondPackages });
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Landing page stats</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label>Members label</Label>
+              <Input
+                value={form.landing?.membersLabel ?? '120k+'}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    landing: { ...form.landing, membersLabel: e.target.value },
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Verified hosts label</Label>
+              <Input
+                value={form.landing?.verifiedHostsLabel ?? '8k+'}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    landing: { ...form.landing, verifiedHostsLabel: e.target.value },
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Live rooms label</Label>
+              <Input
+                value={form.landing?.liveRoomsLabel ?? '24/7'}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    landing: { ...form.landing, liveRoomsLabel: e.target.value },
+                  })
+                }
               />
             </div>
           </CardContent>

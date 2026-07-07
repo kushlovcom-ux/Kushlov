@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { DiamondTxnReason, NotificationType, PaymentStatus } from '@kushlov/types';
-import { buildPaginated, parsePagination } from '@kushlov/utils';
-import { Payment } from '../../models';
+import { Role, DiamondTxnReason, NotificationType, PaymentStatus } from '@kushlov/types';
+import { buildPaginated, parsePagination, getPackagePriceForCountry } from '@kushlov/utils';
+import { Payment, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
@@ -12,18 +12,36 @@ import { notify } from '../../services/notification.service';
 import { logger } from '../../config/logger';
 
 /** GET /payments/packages — purchasable diamond packages (public). */
-export const listPackages = asyncHandler(async (_req: Request, res: Response) => {
+export const listPackages = asyncHandler(async (req: Request, res: Response) => {
   const settings = await getSettings();
-  return ok(res, settings.diamondPackages.filter((p) => p.isActive));
+  let country: string | undefined;
+  if (req.user?.id) {
+    const buyer = await User.findById(req.user.id).select('country');
+    country = buyer?.country;
+  }
+  const packages = settings.diamondPackages
+    .filter((p) => p.isActive)
+    .map((p) => {
+      const pkg = JSON.parse(JSON.stringify(p));
+      const { amount, currency } = getPackagePriceForCountry(pkg, country);
+      return { ...pkg, price: amount, currency };
+    });
+  return ok(res, packages);
 });
 
 /** POST /payments/purchase — start a diamond purchase for a package. */
 export const purchaseDiamonds = asyncHandler(async (req: Request, res: Response) => {
+  if (req.user!.role === Role.Host) {
+    throw ApiError.forbidden('Hosts cannot purchase diamonds. Earn gold from your audience and withdraw instead.');
+  }
+
   const { packageId } = req.body;
   const settings = await getSettings();
   const pkg = settings.diamondPackages.find((p) => p.id === packageId && p.isActive);
   if (!pkg) throw ApiError.badRequest('Invalid package');
 
+  const buyer = await User.findById(req.user!.id).select('country');
+  const { amount, currency } = getPackagePriceForCountry(pkg as any, buyer?.country);
   const diamonds = pkg.diamonds + pkg.bonus;
   const provider = getPaymentProvider();
 
@@ -31,8 +49,8 @@ export const purchaseDiamonds = asyncHandler(async (req: Request, res: Response)
     user: req.user!.id,
     provider: provider.name,
     packageId: pkg.id,
-    amount: pkg.price,
-    currency: pkg.currency,
+    amount,
+    currency,
     diamonds,
     status: PaymentStatus.Created,
   });
@@ -40,8 +58,8 @@ export const purchaseDiamonds = asyncHandler(async (req: Request, res: Response)
   const charge = await provider.createCharge({
     paymentId: payment._id.toString(),
     userId: req.user!.id,
-    amount: pkg.price,
-    currency: pkg.currency,
+    amount,
+    currency,
     description: `${pkg.label} — ${diamonds} diamonds`,
     metadata: { paymentId: payment._id.toString() },
   });

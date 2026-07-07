@@ -8,3 +8,5 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   "@tailwindcss/oxide": true
+  "@firebase/util": true
+  protobufjs: true

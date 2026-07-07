@@ -32,3 +32,8 @@ export const resetSchema = z.object({
   token: z.string().min(10),
   password,
 });
+
+export const googleSchema = z.object({
+  idToken: z.string().min(10),
+  country: z.string().min(2).max(80).optional(),
+});

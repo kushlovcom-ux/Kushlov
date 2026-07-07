@@ -13,6 +13,7 @@ export interface IContactInquiry extends Document {
   message: string;
   status: ContactStatus;
   adminNote?: string;
+  adminReply?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,6 +31,7 @@ const contactSchema = new Schema<IContactInquiry>(
       index: true,
     },
     adminNote: String,
+    adminReply: String,
   },
   { timestamps: true },
 );

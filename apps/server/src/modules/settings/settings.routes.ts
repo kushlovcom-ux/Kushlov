@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { getSettings } from '../../services/settings.service';
+import { getLiveKitPublicUrl, hasLiveKit } from '../../config/env';
+import { getPublicPlatformStats } from '../../services/stats.service';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok } from '../../utils/response';
 
@@ -17,7 +19,17 @@ router.get(
       withdraw: { minGold: s.withdraw.minGold, currency: s.withdraw.currency },
       features: s.features,
       announcements: s.announcements.filter((a) => a.active),
+      livekitEnabled: hasLiveKit,
+      livekitUrl: getLiveKitPublicUrl(),
     });
+  }),
+);
+
+/** GET /settings/stats — public live activity + landing stat labels. */
+router.get(
+  '/stats',
+  asyncHandler(async (_req, res) => {
+    return ok(res, await getPublicPlatformStats());
   }),
 );
 

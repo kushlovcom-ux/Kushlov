@@ -53,6 +53,10 @@ const EnvSchema = z.object({
 
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().optional(),
+
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -98,6 +102,9 @@ export const env = parsed.success
       RATE_LIMIT_MAX: 300,
       ADMIN_EMAIL: process.env.ADMIN_EMAIL,
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+      FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
+      FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
+      FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
     };
 export const isProd = env.NODE_ENV === 'production';
 export const isDev = env.NODE_ENV === 'development';
@@ -107,3 +114,8 @@ export const hasCloudinary = Boolean(
 );
 
 export const hasLiveKit = Boolean(env.LIVEKIT_URL && env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET);
+
+/** Public WebSocket URL for LiveKit client connections (no secrets). */
+export function getLiveKitPublicUrl(): string | null {
+  return hasLiveKit ? env.LIVEKIT_URL! : null;
+}

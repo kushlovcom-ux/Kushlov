@@ -13,11 +13,14 @@ import {
 import { buildPaginated, parsePagination } from '@kushlov/utils';
 import {
   AdminInstruction,
+  ContactInquiry,
+  ContactStatus,
   DiamondTransaction,
   Gift,
   GoldTransaction,
   LiveStream,
   Payment,
+  Profile,
   Report,
   Subscription,
   User,
@@ -73,6 +76,23 @@ export const analytics = asyncHandler(async (_req: Request, res: Response) => {
     revenue: revenueAgg[0]?.total ?? 0,
     paymentsCount: revenueAgg[0]?.count ?? 0,
     newUsers7d,
+  });
+});
+
+/** GET /admin/badges — lightweight pending-action counts for admin nav badges. */
+export const adminBadges = asyncHandler(async (_req: Request, res: Response) => {
+  const [verifications, reports, withdrawals, inquiries] = await Promise.all([
+    VerificationRequest.countDocuments({ status: VerificationStatus.Pending }),
+    Report.countDocuments({ status: ReportStatus.Open }),
+    WithdrawRequest.countDocuments({ status: WithdrawStatus.Requested }),
+    ContactInquiry.countDocuments({ status: ContactStatus.Open }),
+  ]);
+  return ok(res, {
+    verifications,
+    reports,
+    withdrawals,
+    inquiries,
+    total: verifications + reports + withdrawals + inquiries,
   });
 });
 
@@ -400,8 +420,87 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
     'withdraw',
     'features',
     'announcements',
+    'landing',
   ];
   for (const key of updatable) if (key in req.body) (settings as any)[key] = req.body[key];
   await settings.save();
   return ok(res, settings, 'Settings updated');
+});
+
+// --------------------------------------------------------------------------
+// Contact inquiries
+// --------------------------------------------------------------------------
+export const listInquiries = asyncHandler(async (req: Request, res: Response) => {
+  const { page, limit, skip } = parsePagination(req.query);
+  const { status } = req.query as Record<string, string>;
+  const filter: Record<string, unknown> = {};
+  if (status) filter.status = status;
+
+  const [items, total] = await Promise.all([
+    ContactInquiry.find(filter)
+      .populate('user', 'displayName username email avatarUrl')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    ContactInquiry.countDocuments(filter),
+  ]);
+  return ok(res, buildPaginated(items, page, limit, total));
+});
+
+export const replyInquiry = asyncHandler(async (req: Request, res: Response) => {
+  const { adminReply, status, adminNote } = req.body;
+  const inquiry = await ContactInquiry.findById(req.params.id);
+  if (!inquiry) throw ApiError.notFound('Inquiry not found');
+
+  if (adminReply !== undefined) inquiry.adminReply = adminReply;
+  if (adminNote !== undefined) inquiry.adminNote = adminNote;
+  if (status) inquiry.status = status;
+  await inquiry.save();
+  return ok(res, inquiry, 'Inquiry updated');
+});
+
+export const deleteInquiry = asyncHandler(async (req: Request, res: Response) => {
+  const inquiry = await ContactInquiry.findByIdAndDelete(req.params.id);
+  if (!inquiry) throw ApiError.notFound('Inquiry not found');
+  return ok(res, null, 'Inquiry removed');
+});
+
+// --------------------------------------------------------------------------
+// Online users (presence)
+// --------------------------------------------------------------------------
+export const listOnlineUsers = asyncHandler(async (req: Request, res: Response) => {
+  const { q } = req.query as Record<string, string>;
+  const filter: Record<string, unknown> = {
+    isOnline: true,
+    role: { $in: [Role.User, Role.Host] },
+    status: AccountStatus.Active,
+  };
+  if (q) {
+    filter.$or = [
+      { displayName: new RegExp(q, 'i') },
+      { username: new RegExp(q, 'i') },
+      { email: new RegExp(q, 'i') },
+    ];
+  }
+
+  const users = await User.find(filter).sort({ displayName: 1 }).limit(200);
+  const profiles = await Profile.find({ user: { $in: users.map((u) => u._id) } }).select(
+    'user locationLabel city country',
+  );
+  const profileByUser = new Map(profiles.map((p) => [p.user.toString(), p]));
+
+  const items = users.map((u) => {
+    const profile = profileByUser.get(u._id.toString());
+    const locationLabel =
+      profile?.locationLabel ||
+      [profile?.city, profile?.country].filter(Boolean).join(', ') ||
+      u.country ||
+      'Location not set';
+    return {
+      ...(u as any).toPublic(),
+      locationLabel,
+    };
+  });
+
+  return ok(res, { items, total: items.length });
 });

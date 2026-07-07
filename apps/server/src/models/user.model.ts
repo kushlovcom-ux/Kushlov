@@ -6,7 +6,10 @@ export interface IUser extends Document {
   email: string;
   username: string;
   displayName: string;
-  password: string;
+  password?: string;
+  authProvider: 'local' | 'google';
+  firebaseUid?: string;
+  emailVerified: boolean;
   role: Role;
   status: AccountStatus;
 
@@ -59,7 +62,16 @@ const userSchema = new Schema<IUser>(
       index: true,
     },
     displayName: { type: String, required: true, trim: true, maxlength: 60 },
-    password: { type: String, required: true, select: false },
+    password: {
+      type: String,
+      select: false,
+      required: function requiredPassword(this: IUser) {
+        return !this.firebaseUid;
+      },
+    },
+    authProvider: { type: String, enum: ['local', 'google'], default: 'local' },
+    firebaseUid: { type: String, unique: true, sparse: true, index: true },
+    emailVerified: { type: Boolean, default: false },
     role: { type: String, enum: Object.values(Role), default: Role.User, index: true },
     status: {
       type: String,
@@ -110,6 +122,8 @@ userSchema.methods.toPublic = function toPublic() {
     country: u.country,
     isHostApproved: u.isHostApproved,
     isOnline: u.isOnline,
+    authProvider: u.authProvider,
+    emailVerified: u.emailVerified,
     createdAt: u.createdAt?.toISOString(),
   };
 };

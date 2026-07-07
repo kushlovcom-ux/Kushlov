@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { Role } from '@kushlov/types';
+import { AccountStatus, Role } from '@kushlov/types';
+import { DEFAULT_COUNTRY } from '@kushlov/utils';
 import { User, Profile } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
@@ -19,6 +20,8 @@ import { setRefreshCookie, clearRefreshCookie } from '../../utils/cookies';
 import { ensureWallet } from '../../services/wallet.service';
 import { sendMail, passwordResetEmail } from '../../utils/mailer';
 import { env } from '../../config/env';
+import { getFirebaseAuth, isFirebaseConfigured } from '../../config/firebase';
+import { generateUniqueUsername } from '../../services/username.service';
 
 function issueTokens(user: { id: string; role: Role; tokenVersion: number }) {
   const payload = { sub: user.id, role: user.role, tokenVersion: user.tokenVersion };
@@ -41,6 +44,7 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     username,
     displayName,
     password: await hashPassword(password),
+    authProvider: 'local',
     role: isHostSignup ? Role.Host : Role.User,
     isHostApproved: false,
     country,
@@ -66,7 +70,10 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
   const user = await User.findOne({ email }).select('+password');
-  if (!user || !(await comparePassword(password, user.password))) {
+  if (!user || !user.password || !(await comparePassword(password, user.password))) {
+    if (user && !user.password) {
+      throw ApiError.unauthorized('This account uses Google sign-in. Please continue with Google.');
+    }
     throw ApiError.unauthorized('Invalid credentials');
   }
 
@@ -76,6 +83,82 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const tokens = issueTokens({ id: user._id.toString(), role: user.role, tokenVersion: user.tokenVersion });
   setRefreshCookie(res, tokens.refreshToken);
   return ok(res, { user: (user as any).toPublic(), ...tokens }, 'Logged in');
+});
+
+/** POST /auth/google — verify Firebase ID token and issue app JWT session. */
+export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
+  if (!isFirebaseConfigured()) {
+    throw ApiError.internal('Google sign-in is not configured on the server');
+  }
+
+  const { idToken, country } = req.body as { idToken: string; country?: string };
+  let decoded;
+  try {
+    decoded = await getFirebaseAuth().verifyIdToken(idToken, true);
+  } catch {
+    throw ApiError.unauthorized('Invalid or expired Google token');
+  }
+
+  const uid = decoded.uid;
+  const email = decoded.email?.toLowerCase();
+  const name = decoded.name?.trim();
+  const picture = decoded.picture;
+  const emailVerified = decoded.email_verified ?? false;
+
+  if (!email) throw ApiError.badRequest('Google account has no email address');
+
+  let user = await User.findOne({ $or: [{ firebaseUid: uid }, { email }] });
+
+  if (user) {
+    if (user.status === AccountStatus.Banned) throw ApiError.forbidden('Account banned');
+    if (
+      user.status === AccountStatus.Suspended &&
+      (!user.suspendedUntil || user.suspendedUntil > new Date())
+    ) {
+      throw ApiError.forbidden('Account suspended');
+    }
+
+    if (!user.firebaseUid) user.firebaseUid = uid;
+    if (user.authProvider === 'local' && !user.password) user.authProvider = 'google';
+    if (picture && !user.avatarUrl) user.avatarUrl = picture;
+    if (name && user.displayName === user.username) user.displayName = name;
+    user.emailVerified = emailVerified || user.emailVerified;
+    user.lastLoginAt = new Date();
+    await user.save();
+  } else {
+    const username = await generateUniqueUsername(email.split('@')[0] || name || 'user');
+    user = await User.create({
+      email,
+      username,
+      displayName: name || username,
+      avatarUrl: picture,
+      firebaseUid: uid,
+      authProvider: 'google',
+      emailVerified,
+      role: Role.User,
+      country: country || DEFAULT_COUNTRY,
+    });
+    await Profile.findOneAndUpdate(
+      { user: user._id },
+      { $set: { country: country || DEFAULT_COUNTRY, user: user._id } },
+      { upsert: true },
+    );
+    await ensureWallet(user._id);
+  }
+
+  const tokens = issueTokens({
+    id: user._id.toString(),
+    role: user.role,
+    tokenVersion: user.tokenVersion,
+  });
+  setRefreshCookie(res, tokens.refreshToken);
+
+  const payload = {
+    user: (user as any).toPublic(),
+    ...tokens,
+    token: tokens.accessToken,
+  };
+  return ok(res, payload, 'Logged in with Google');
 });
 
 export const refresh = asyncHandler(async (req: Request, res: Response) => {

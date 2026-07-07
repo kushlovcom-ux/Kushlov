@@ -56,7 +56,11 @@ export default function LivePage() {
     <div>
       <PageHeader
         title="Live"
-        subtitle="Watch hosts streaming right now"
+        subtitle={
+          isApprovedHost
+            ? 'Start a stream or watch other hosts'
+            : 'Watch hosts streaming right now — join any live room'
+        }
         action={
           isApprovedHost && (
             <Dialog>

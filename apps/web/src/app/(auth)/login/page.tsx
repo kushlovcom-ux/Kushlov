@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -10,6 +12,8 @@ import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { useLogin } from '@/hooks/use-auth';
+import { useAuthStore } from '@/store/auth';
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 
 const schema = z.object({
   email: z.string().email('Enter a valid email'),
@@ -19,11 +23,27 @@ type Form = z.infer<typeof schema>;
 
 export default function LoginPage() {
   const login = useLogin();
+  const router = useRouter();
+  const { accessToken, sessionChecked, user } = useAuthStore();
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<Form>({ resolver: zodResolver(schema) });
+
+  useEffect(() => {
+    if (sessionChecked && accessToken) {
+      router.replace(user?.role === 'admin' ? '/admin' : '/discover');
+    }
+  }, [sessionChecked, accessToken, user, router]);
+
+  if (!sessionChecked || accessToken) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-brand-pink" />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -58,6 +78,17 @@ export default function LoginPage() {
           Log in
         </Button>
       </form>
+
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-white/10" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-card px-2 text-white/40">or</span>
+        </div>
+      </div>
+
+      <GoogleSignInButton />
 
       <p className="mt-6 text-center text-sm text-white/50">
         New to Kushlov?{' '}

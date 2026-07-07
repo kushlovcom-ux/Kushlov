@@ -6,6 +6,7 @@ import { ThemeProvider } from 'next-themes';
 import { Toaster } from 'sonner';
 import { SocketProvider } from './socket-provider';
 import { AuthBootstrap } from './auth-bootstrap';
+import { CookieConsent } from './cookie-consent';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
@@ -22,6 +23,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={client}>
         <AuthBootstrap />
         <SocketProvider>{children}</SocketProvider>
+        <CookieConsent />
         <Toaster
           theme="dark"
           position="top-center"

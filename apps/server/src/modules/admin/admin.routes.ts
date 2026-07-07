@@ -17,9 +17,11 @@ router.use(authenticate, authorize(Role.Admin));
 
 // Dashboard
 router.get('/analytics', ctrl.analytics);
+router.get('/badges', ctrl.adminBadges);
 
 // Users
 router.get('/users', ctrl.listUsers);
+router.get('/online', ctrl.listOnlineUsers);
 router.patch(
   '/users/:id/status',
   validate({
@@ -97,5 +99,20 @@ router.post('/live/:id/force-end', ctrl.forceEndLive);
 // Settings
 router.get('/settings', ctrl.getAdminSettings);
 router.patch('/settings', ctrl.updateSettings);
+
+// Contact inquiries
+router.get('/inquiries', ctrl.listInquiries);
+router.patch(
+  '/inquiries/:id',
+  validate({
+    body: z.object({
+      adminReply: z.string().optional(),
+      adminNote: z.string().optional(),
+      status: z.enum(['open', 'in_progress', 'resolved']).optional(),
+    }),
+  }),
+  ctrl.replyInquiry,
+);
+router.delete('/inquiries/:id', ctrl.deleteInquiry);
 
 export default router;

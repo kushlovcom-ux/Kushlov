@@ -1,10 +1,12 @@
 import { Types } from 'mongoose';
-import { MessageType, NotificationType, SocketEvents } from '@kushlov/types';
-import { Block, Conversation, Message } from '../../models';
+import { MessageType, NotificationType, Role, SocketEvents, DiamondTxnReason, GoldTxnReason } from '@kushlov/types';
+import { Block, Conversation, Message, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { emitToUser } from '../../socket/io';
 import { notify } from '../../services/notification.service';
 import { assertUsersCanConnect } from '../../services/location.service';
+import { getSettings } from '../../services/settings.service';
+import { spendDiamonds } from '../../services/wallet.service';
 
 /** Find or create a 1:1 conversation between two users. */
 export async function getOrCreateDirectConversation(a: string, b: string) {
@@ -50,6 +52,32 @@ export async function createMessage(input: CreateMessageInput) {
   if (!conversation) throw ApiError.notFound('Conversation not found');
   if (!conversation.participants.some((p) => p.toString() === input.senderId)) {
     throw ApiError.forbidden('Not a participant of this conversation');
+  }
+
+  const recipientId = conversation.participants
+    .map((p) => p.toString())
+    .find((id) => id !== input.senderId);
+
+  if (recipientId) {
+    const [sender, recipient] = await Promise.all([
+      User.findById(input.senderId).select('role'),
+      User.findById(recipientId).select('role'),
+    ]);
+    if (sender?.role === Role.User && recipient?.role === Role.Host) {
+      const settings = await getSettings();
+      const cost = settings.rates.chatPerMessage ?? settings.rates.liveChatPerMessage;
+      if (cost > 0) {
+        await spendDiamonds({
+          userId: input.senderId,
+          hostId: recipientId,
+          amount: cost,
+          diamondReason: DiamondTxnReason.DirectMessage,
+          goldReason: GoldTxnReason.DirectMessage,
+          reference: conversation._id,
+          referenceModel: 'Conversation',
+        });
+      }
+    }
   }
 
   const message = await Message.create({

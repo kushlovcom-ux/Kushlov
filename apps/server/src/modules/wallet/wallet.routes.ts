@@ -12,9 +12,11 @@ router.get('/', ctrl.getWallet);
 router.get('/diamonds/transactions', ctrl.getDiamondHistory);
 router.get('/gold/transactions', ctrl.getGoldHistory);
 
+const withdrawMethods = ['bank_transfer', 'upi', 'net_banking'] as const;
+
 const withdrawSchema = z.object({
   goldAmount: z.number().int().positive(),
-  method: z.string().default('bank'),
+  method: z.enum(withdrawMethods),
   destination: z.record(z.any()),
 });
 router.post('/withdraw', authorize(Role.Host), validate({ body: withdrawSchema }), ctrl.requestWithdraw);

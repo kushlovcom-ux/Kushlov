@@ -18,6 +18,8 @@ import { getSettings } from '../../services/settings.service';
 import { notify } from '../../services/notification.service';
 import { emitToRoom } from '../../socket/io';
 import { assertUsersCanConnect, getDiscoverableUserIds } from '../../services/location.service';
+import { refId } from '../../utils/refId';
+import { getLiveKitPublicUrl } from '../../config/env';
 
 const roomOf = (id: string) => `live:${id}`;
 
@@ -67,7 +69,7 @@ export const startLive = asyncHandler(async (req: Request, res: Response) => {
     ),
   );
 
-  return created(res, { live, token, roomName }, 'You are live');
+  return created(res, { live, token, roomName, livekitUrl: getLiveKitPublicUrl() }, 'You are live');
 });
 
 /** GET /live/:id/host-token — the owning host (re)joins their own room to publish. */
@@ -82,7 +84,7 @@ export const hostToken = asyncHandler(async (req: Request, res: Response) => {
     canPublish: true,
     canPublishData: true,
   });
-  return ok(res, { token, roomName: live.roomName });
+  return ok(res, { token, roomName: live.roomName, livekitUrl: getLiveKitPublicUrl() });
 });
 
 /** POST /live/:id/end — host ends the stream. */
@@ -122,8 +124,9 @@ export const getLive = asyncHandler(async (req: Request, res: Response) => {
     'displayName username avatarUrl isHostApproved',
   );
   if (!live) throw ApiError.notFound('Stream not found');
-  if (live.host._id?.toString() !== req.user!.id) {
-    await assertUsersCanConnect(req.user!.id, live.host._id.toString());
+  const hostId = refId(live.host as Parameters<typeof refId>[0]);
+  if (hostId !== req.user!.id) {
+    await assertUsersCanConnect(req.user!.id, hostId);
   }
   return ok(res, live);
 });
@@ -161,7 +164,7 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
   });
 
   emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveViewerCount, { viewerCount });
-  return ok(res, { token, roomName: live.roomName, viewerCount });
+  return ok(res, { token, roomName: live.roomName, viewerCount, livekitUrl: getLiveKitPublicUrl() });
 });
 
 /** POST /live/:id/leave — viewer leaves. */

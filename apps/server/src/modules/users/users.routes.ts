@@ -12,6 +12,9 @@ router.get('/', ctrl.searchUsers);
 router.get('/hosts', ctrl.listHosts);
 
 router.patch('/me', validate({ body: updateMeSchema }), ctrl.updateMe);
+router.get('/me/badges', ctrl.getMyBadges);
+router.get('/me/interactions', ctrl.getMyInteractions);
+router.get('/me/search-contacts', ctrl.searchContacts);
 router.get('/me/profile', ctrl.getMyProfile);
 router.get('/me/location', ctrl.getMyLocation);
 router.post('/me/location', validate({ body: updateLocationSchema }), ctrl.updateMyLocation);

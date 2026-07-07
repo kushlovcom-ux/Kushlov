@@ -13,10 +13,11 @@ import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
 import { createLiveKitToken } from '../../services/livekit.service';
-import { spendDiamonds } from '../../services/wallet.service';
+import { spendDiamonds, ensureWallet } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
 import { emitToUser } from '../../socket/io';
 import { assertUsersCanConnect } from '../../services/location.service';
+import { getLiveKitPublicUrl } from '../../config/env';
 
 const modelFor = (type: CallType) => (type === CallType.Audio ? AudioCall : VideoCall);
 
@@ -37,6 +38,18 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   if (!settings.features.callsEnabled) throw ApiError.forbidden('Calls are currently disabled');
   const ratePerMinute =
     type === CallType.Audio ? settings.rates.audioCallPerMinute : settings.rates.videoCallPerMinute;
+
+  if (req.user!.role === Role.Host) {
+    throw ApiError.forbidden('Hosts cannot initiate paid calls. Users call you instead.');
+  }
+  if (callee.role === Role.Host) {
+    const wallet = await ensureWallet(req.user!.id);
+    if (wallet.diamonds < ratePerMinute) {
+      throw ApiError.badRequest(
+        `You need at least ${ratePerMinute} diamonds to call a host (${type} call rate per minute).`,
+      );
+    }
+  }
 
   const roomName = `${directRoomName(req.user!.id, calleeId)}_${type}_${Date.now()}`;
   const Model = modelFor(type);
@@ -63,7 +76,7 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     from: caller,
   });
 
-  return created(res, { call, token, roomName }, 'Calling…');
+  return created(res, { call, token, roomName, livekitUrl: getLiveKitPublicUrl() }, 'Calling…');
 });
 
 /** POST /calls/:type/:id/accept — callee accepts and receives a token. */
@@ -79,7 +92,7 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
 
   const token = await createLiveKitToken({ identity: req.user!.id, roomName: call.roomName });
   emitToUser(call.caller.toString(), SocketEvents.CallAccept, { callId: call._id.toString() });
-  return ok(res, { call, token, roomName: call.roomName }, 'Call accepted');
+  return ok(res, { call, token, roomName: call.roomName, livekitUrl: getLiveKitPublicUrl() }, 'Call accepted');
 });
 
 /** POST /calls/:type/:id/reject — callee rejects. */

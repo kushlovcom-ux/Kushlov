@@ -9,22 +9,26 @@ import {
   Radio,
   Wallet,
   Bell,
-  User,
   ShieldCheck,
   LogOut,
   LayoutDashboard,
   Mail,
+  History,
 } from 'lucide-react';
 import { Logo } from '@kushlov/ui';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { useLogout } from '@/hooks/use-auth';
 import { UserAvatar } from '@/components/common/user-avatar';
+import { useNavBadges, navBadgeForHref } from '@/hooks/use-nav-badges';
+import { useAdminBadges } from '@/hooks/use-admin-badges';
+import { NavBadge } from '@/components/app/nav-badge';
 
 const nav = [
   { href: '/discover', label: 'Discover', icon: Compass },
   { href: '/matches', label: 'Matches', icon: Heart },
   { href: '/messages', label: 'Messages', icon: MessageCircle },
+  { href: '/history', label: 'History', icon: History },
   { href: '/live', label: 'Live', icon: Radio },
   { href: '/wallet', label: 'Wallet', icon: Wallet },
   { href: '/notifications', label: 'Notifications', icon: Bell },
@@ -35,22 +39,33 @@ export function AppNav() {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
   const logout = useLogout();
+  const badges = useNavBadges();
+  const adminBadges = useAdminBadges();
 
-  const item = (href: string, label: string, Icon: typeof Compass) => {
+  const item = (href: string, label: string, Icon: typeof Compass, badge = 0) => {
     const active = pathname === href || pathname.startsWith(`${href}/`);
     return (
       <Link
         key={href}
         href={href}
         title={label}
-        aria-label={label}
+        aria-label={badge > 0 ? `${label}, ${badge} unread` : label}
         className={cn(
-          'flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors',
+          'relative flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors',
           active ? 'bg-brand-gradient text-white' : 'text-white/60 hover:bg-white/5 hover:text-white',
         )}
       >
-        <Icon className="h-5 w-5 shrink-0" />
+        <span className="relative shrink-0">
+          <Icon className="h-5 w-5" />
+          {badge > 0 && (
+            <NavBadge
+              count={badge}
+              className="absolute -right-2 -top-2 min-w-[1rem] px-0.5 text-[9px] leading-4"
+            />
+          )}
+        </span>
         <span className="hidden lg:inline">{label}</span>
+        {badge > 0 && <NavBadge count={badge} className="ml-auto hidden lg:inline-flex" />}
       </Link>
     );
   };
@@ -63,25 +78,13 @@ export function AppNav() {
       </div>
 
       <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto no-scrollbar">
-        {nav.map((n) => item(n.href, n.label, n.icon))}
+        {nav.map((n) => item(n.href, n.label, n.icon, navBadgeForHref(n.href, badges)))}
         {user?.role === 'user' && item('/become-host', 'Become a Host', ShieldCheck)}
-        {user?.role === 'admin' && item('/admin', 'Admin', LayoutDashboard)}
+        {user?.role === 'admin' &&
+          item('/admin', 'Admin', LayoutDashboard, adminBadges.total)}
       </nav>
 
       <div className="mt-auto shrink-0 space-y-1 border-t border-white/10 pt-3">
-        {/* Contact Us pinned for desktop icon-only sidebar */}
-        <Link
-          href="/contact"
-          title="Contact Us"
-          className={cn(
-            'flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors lg:hidden',
-            pathname === '/contact'
-              ? 'bg-brand-gradient text-white'
-              : 'text-white/60 hover:bg-white/5 hover:text-white',
-          )}
-        >
-          <Mail className="h-5 w-5" />
-        </Link>
         <Link
           href="/profile"
           className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-white/5"

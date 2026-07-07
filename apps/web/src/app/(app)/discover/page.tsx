@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Heart, MessageCircle, Search, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,8 +19,14 @@ import { LocationSetup } from '@/components/location/location-setup';
 type DiscoverUser = PublicUser & { distanceKm?: number };
 
 export default function DiscoverPage() {
+  const searchParams = useSearchParams();
   const [q, setQ] = useState('');
   const qc = useQueryClient();
+
+  useEffect(() => {
+    const fromUrl = searchParams.get('q');
+    if (fromUrl != null) setQ(fromUrl);
+  }, [searchParams]);
 
   const location = useQuery({
     queryKey: ['my-location'],

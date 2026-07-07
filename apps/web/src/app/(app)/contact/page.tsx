@@ -29,6 +29,7 @@ interface Inquiry {
   category: string;
   message: string;
   status: string;
+  adminReply?: string;
   createdAt: string;
 }
 
@@ -164,6 +165,14 @@ export default function ContactPage() {
                     </Badge>
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs text-white/45">{inq.message}</p>
+                  {inq.adminReply && (
+                    <div className="mt-3 rounded-lg border border-brand-pink/20 bg-brand-pink/5 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-pink">
+                        Support reply
+                      </p>
+                      <p className="mt-1 text-sm text-white/75">{inq.adminReply}</p>
+                    </div>
+                  )}
                   <p className="mt-2 text-[10px] text-white/30">{relativeTime(inq.createdAt)}</p>
                 </div>
               ))}

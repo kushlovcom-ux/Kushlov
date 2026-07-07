@@ -38,6 +38,8 @@ export default function AdminWithdrawalsPage() {
             <thead className="bg-white/5 text-left text-white/50">
               <tr>
                 <th className="p-4">Host</th>
+                <th className="p-4">Method</th>
+                <th className="p-4">Details</th>
                 <th className="p-4">Gold</th>
                 <th className="p-4">Payout</th>
                 <th className="p-4">Status</th>
@@ -47,7 +49,7 @@ export default function AdminWithdrawalsPage() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={5} className="p-4">
+                  <td colSpan={7} className="p-4">
                     <Skeleton className="h-10 w-full" />
                   </td>
                 </tr>
@@ -55,6 +57,13 @@ export default function AdminWithdrawalsPage() {
               {data?.items.map((w) => (
                 <tr key={w._id} className="border-t border-white/5">
                   <td className="p-4">{w.host?.displayName ?? w.host?.email}</td>
+                  <td className="p-4 capitalize">{String(w.method).replace(/_/g, ' ')}</td>
+                  <td className="max-w-[200px] truncate p-4 text-xs text-white/50">
+                    {w.destination?.upiId ??
+                      [w.destination?.bankName, w.destination?.accountNumber?.slice(-4)]
+                        .filter(Boolean)
+                        .join(' · ')}
+                  </td>
                   <td className="p-4">{w.goldAmount} 🪙</td>
                   <td className="p-4">{formatMoney(w.fiatAmount, country)}</td>
                   <td className="p-4">

@@ -87,6 +87,25 @@ export const getCurrencyForCountry = (country?: string | null): 'INR' | 'USD' =>
 export const formatMoney = (value: number, country?: string | null): string =>
   formatCurrency(value, getCurrencyForCountry(country));
 
+export interface PricedPackage {
+  price?: number;
+  priceUsd?: number;
+  priceInr?: number;
+  currency?: string;
+}
+
+/** Resolve package price + currency for a user's country. */
+export const getPackagePriceForCountry = (
+  pkg: PricedPackage,
+  country?: string | null,
+): { amount: number; currency: 'INR' | 'USD' } => {
+  const currency = getCurrencyForCountry(country);
+  if (currency === 'INR') {
+    return { amount: pkg.priceInr ?? pkg.price ?? 0, currency: 'INR' };
+  }
+  return { amount: pkg.priceUsd ?? pkg.price ?? 0, currency: 'USD' };
+};
+
 export { COUNTRIES, DEFAULT_COUNTRY } from './countries';
 export type { CountryName } from './countries';
 
