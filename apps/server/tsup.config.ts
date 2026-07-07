@@ -33,8 +33,7 @@ export default defineConfig([
     skipNodeModulesBundle: true,
     noExternal: [/^@kushlov\//],
     entry: { index: 'api-entry.ts' },
-    outDir: 'api',
-    outExtension: () => ({ js: '.js' }),
-    clean: false,
+    outDir: 'dist-vercel',
+    clean: true,
   },
 ]);
