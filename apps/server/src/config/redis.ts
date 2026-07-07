@@ -11,27 +11,53 @@ const nodeRequire: NodeRequire =
 /**
  * Redis is optional. When REDIS_URL is set we use it for the rate-limit store and
  * the Socket.io adapter; otherwise the app gracefully falls back to in-memory.
+ *
+ * A localhost URL is useless (and unreachable) from a serverless function, so we
+ * ignore it on Vercel to avoid connection hangs that manifest as
+ * FUNCTION_INVOCATION_FAILED.
  */
-let client: Redis | null = null;
-
-export function getRedis(): Redis | null {
-  if (!env.REDIS_URL) return null;
-  if (client) return client;
-
-  // Lazy-load so Vercel serverless cold starts never require ioredis unless configured.
-  const IORedis = nodeRequire('ioredis') as typeof import('ioredis').default;
-  client = new IORedis(env.REDIS_URL, {
-    maxRetriesPerRequest: 2,
-    lazyConnect: Boolean(process.env.VERCEL),
-    retryStrategy: (times: number) => Math.min(times * 200, 2000),
-  });
-
-  client.on('connect', () => logger.info('🔌 Redis connected'));
-  client.on('error', (err: Error) =>
-    logger.warn({ err: err.message }, 'Redis error (continuing without)'),
-  );
-
-  return client;
+function isUsableRedisUrl(url: string | undefined): url is string {
+  if (!url) return false;
+  if (process.env.VERCEL && /(^|\/\/)(127\.0\.0\.1|localhost)(:|\/|$)/.test(url)) {
+    return false;
+  }
+  return true;
 }
 
-export const redisEnabled = Boolean(env.REDIS_URL);
+let client: Redis | null = null;
+let redisDisabled = false;
+
+export function getRedis(): Redis | null {
+  if (redisDisabled) return null;
+  if (!isUsableRedisUrl(env.REDIS_URL)) return null;
+  if (client) return client;
+
+  try {
+    // Lazy-load so cold starts never require ioredis unless it is actually used.
+    const IORedis = nodeRequire('ioredis') as typeof import('ioredis').default;
+    client = new IORedis(env.REDIS_URL, {
+      maxRetriesPerRequest: 2,
+      lazyConnect: Boolean(process.env.VERCEL),
+      enableOfflineQueue: false,
+      retryStrategy: (times: number) => (times > 3 ? null : Math.min(times * 200, 1000)),
+    });
+
+    client.on('connect', () => logger.info('🔌 Redis connected'));
+    client.on('error', (err: Error) =>
+      logger.warn({ err: err.message }, 'Redis error (continuing without)'),
+    );
+
+    return client;
+  } catch (err) {
+    // ioredis not bundled/available — permanently fall back to in-memory.
+    redisDisabled = true;
+    client = null;
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'Redis unavailable, continuing without it',
+    );
+    return null;
+  }
+}
+
+export const redisEnabled = isUsableRedisUrl(env.REDIS_URL);
