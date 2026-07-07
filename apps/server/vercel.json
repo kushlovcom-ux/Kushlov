@@ -3,6 +3,7 @@
   "framework": null,
   "installCommand": "cd ../.. && pnpm install",
   "buildCommand": "cd ../.. && pnpm --filter @kushlov/types build && pnpm --filter @kushlov/utils build",
+  "outputDirectory": "public",
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
   "functions": {
     "api/index.ts": {

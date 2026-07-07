@@ -94,7 +94,8 @@ export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
   const { idToken, country } = req.body as { idToken: string; country?: string };
   let decoded;
   try {
-    decoded = await getFirebaseAuth().verifyIdToken(idToken, true);
+    const auth = await getFirebaseAuth();
+    decoded = await auth.verifyIdToken(idToken, true);
   } catch {
     throw ApiError.unauthorized('Invalid or expired Google token');
   }

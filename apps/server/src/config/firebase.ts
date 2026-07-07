@@ -1,12 +1,18 @@
-import { cert, getApp, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import type { Auth } from 'firebase-admin/auth';
 import { env } from './env';
 
-/** Lazily initialize Firebase Admin SDK from service-account env vars. */
-export function getFirebaseAuth() {
+/**
+ * Lazily initialize Firebase Admin from service-account env vars.
+ * Uses dynamic import so the heavy firebase-admin package is never loaded
+ * (or bundled at cold start) unless Google sign-in is actually used.
+ */
+export async function getFirebaseAuth(): Promise<Auth> {
   if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_CLIENT_EMAIL || !env.FIREBASE_PRIVATE_KEY) {
     throw new Error('Firebase Admin is not configured');
   }
+
+  const { cert, getApp, getApps, initializeApp } = await import('firebase-admin/app');
+  const { getAuth } = await import('firebase-admin/auth');
 
   if (!getApps().length) {
     initializeApp({
