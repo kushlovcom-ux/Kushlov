@@ -1,6 +1,9 @@
-import Redis from 'ioredis';
+import { createRequire } from 'node:module';
+import type Redis from 'ioredis';
 import { env } from './env';
 import { logger } from './logger';
+
+const require = createRequire(import.meta.url);
 
 /**
  * Redis is optional. When REDIS_URL is set we use it for the rate-limit store and
@@ -12,14 +15,18 @@ export function getRedis(): Redis | null {
   if (!env.REDIS_URL) return null;
   if (client) return client;
 
-  client = new Redis(env.REDIS_URL, {
+  // Lazy-load so Vercel serverless cold starts never require ioredis unless configured.
+  const IORedis = require('ioredis') as typeof import('ioredis').default;
+  client = new IORedis(env.REDIS_URL, {
     maxRetriesPerRequest: 2,
     lazyConnect: Boolean(process.env.VERCEL),
-    retryStrategy: (times) => Math.min(times * 200, 2000),
+    retryStrategy: (times: number) => Math.min(times * 200, 2000),
   });
 
   client.on('connect', () => logger.info('🔌 Redis connected'));
-  client.on('error', (err) => logger.warn({ err: err.message }, 'Redis error (continuing without)'));
+  client.on('error', (err: Error) =>
+    logger.warn({ err: err.message }, 'Redis error (continuing without)'),
+  );
 
   return client;
 }

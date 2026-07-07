@@ -1,32 +1,19 @@
 import { defineConfig } from 'tsup';
 
-const shared = {
-  format: ['esm'] as const,
-  target: 'node20' as const,
-  platform: 'node' as const,
+/**
+ * Bundle the long-running Node server only (Railway, Render, local).
+ * Vercel uses api/index.ts — compiled by @vercel/node, not this bundle.
+ */
+export default defineConfig({
+  format: ['esm'],
+  target: 'node20',
+  platform: 'node',
   sourcemap: true,
   splitting: false,
   minify: false,
   noExternal: [/^@kushlov\//],
   external: ['ioredis', 'rate-limit-redis'],
-};
-
-/**
- * Bundle the API server:
- * - dist/index.js  → long-running Node server (Railway, Render, local)
- * - api/index.js   → self-contained Vercel serverless function (no dist/ import)
- */
-export default defineConfig([
-  {
-    ...shared,
-    entry: ['src/index.ts'],
-    outDir: 'dist',
-    clean: true,
-  },
-  {
-    ...shared,
-    entry: { index: 'vercel-entry.ts' },
-    outDir: 'api',
-    clean: true,
-  },
-]);
+  entry: ['src/index.ts'],
+  outDir: 'dist',
+  clean: true,
+});

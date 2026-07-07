@@ -80,7 +80,7 @@ export function createApp(): Application {
   );
 
   if (process.env.VERCEL) {
-    app.use(vercelDbMiddleware);
+    app.use('/api', vercelDbMiddleware);
   }
 
   // Stripe-style webhooks need the raw body; capture it before json parsing.
@@ -92,7 +92,7 @@ export function createApp(): Application {
   app.use(compression());
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
 
-  // Rate limit + mount the API
+  // Rate limit + mount the API (DB middleware only wraps /api on Vercel)
   app.use('/api', globalLimiter, apiRouter);
 
   app.use(notFound);

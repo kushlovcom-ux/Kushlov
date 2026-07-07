@@ -19,6 +19,9 @@ import { config as loadEnv } from "dotenv";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { z } from "zod";
+function getLiveKitPublicUrl() {
+  return hasLiveKit ? env.LIVEKIT_URL : null;
+}
 var EnvSchema, parsed, env, isProd, isDev, hasCloudinary, hasLiveKit;
 var init_env = __esm({
   "src/config/env.ts"() {
@@ -55,7 +58,10 @@ var init_env = __esm({
       RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1e3),
       RATE_LIMIT_MAX: z.coerce.number().default(300),
       ADMIN_EMAIL: z.string().email().optional(),
-      ADMIN_PASSWORD: z.string().optional()
+      ADMIN_PASSWORD: z.string().optional(),
+      FIREBASE_PROJECT_ID: z.string().optional(),
+      FIREBASE_CLIENT_EMAIL: z.string().optional(),
+      FIREBASE_PRIVATE_KEY: z.string().optional()
     });
     parsed = EnvSchema.safeParse(process.env);
     if (!parsed.success) {
@@ -93,7 +99,10 @@ var init_env = __esm({
       RATE_LIMIT_WINDOW_MS: 9e5,
       RATE_LIMIT_MAX: 300,
       ADMIN_EMAIL: process.env.ADMIN_EMAIL,
-      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+      FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
+      FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
+      FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY
     };
     isProd = env.NODE_ENV === "production";
     isDev = env.NODE_ENV === "development";
@@ -163,22 +172,25 @@ var init_db = __esm({
 // src/app.ts
 import express from "express";
 import helmet from "helmet";
-import cors from "cors";
 import cookieParser from "cookie-parser";
 import compression from "compression";
 import { pinoHttp } from "pino-http";
 
 // src/config/cors.ts
 init_env();
+init_logger();
 var LOCAL_DEV_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+var DEFAULT_ORIGINS = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://kushlov-web.vercel.app",
+  "https://kushlov-server.vercel.app"
+];
 function isLocalDevOrigin(origin) {
   return LOCAL_DEV_ORIGIN.test(origin.replace(/\/$/, ""));
 }
 function getAllowedOrigins() {
-  const origins = /* @__PURE__ */ new Set([
-    "http://localhost:3000",
-    "http://127.0.0.1:3000"
-  ]);
+  const origins = new Set(DEFAULT_ORIGINS);
   for (const entry of env.CORS_ORIGINS.split(",")) {
     const trimmed = entry.trim().replace(/\/$/, "");
     if (trimmed && trimmed !== "*") origins.add(trimmed);
@@ -192,10 +204,45 @@ function isOriginAllowed(origin) {
   const normalized = origin.replace(/\/$/, "");
   if (isLocalDevOrigin(normalized)) return true;
   if (getAllowedOrigins().includes(normalized)) return true;
-  if (/^https:\/\/[\w.-]+\.vercel\.app$/i.test(normalized)) {
+  if (/^https:\/\/[\w-]+\.vercel\.app$/i.test(normalized)) {
     return true;
   }
   return env.CORS_ORIGINS.split(",").some((o) => o.trim() === "*");
+}
+function applyCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  if (origin && isOriginAllowed(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Vary", "Origin");
+    return true;
+  }
+  if (!origin) return true;
+  return false;
+}
+function corsMiddleware(req, res, next) {
+  const allowed = applyCorsHeaders(req, res);
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Requested-With, Accept"
+  );
+  res.setHeader("Access-Control-Max-Age", "86400");
+  if (req.method === "OPTIONS") {
+    if (!allowed && req.headers.origin) {
+      logger.warn({ origin: req.headers.origin }, "CORS preflight blocked");
+      res.status(403).end();
+      return;
+    }
+    res.status(204).end();
+    return;
+  }
+  if (!allowed && req.headers.origin) {
+    logger.warn({ origin: req.headers.origin }, "CORS blocked origin");
+    res.status(403).json({ success: false, message: "CORS origin not allowed" });
+    return;
+  }
+  next();
 }
 
 // src/app.ts
@@ -254,6 +301,10 @@ function buildLimiter(options) {
 function lazyLimiter(options = {}) {
   let limiter;
   return (req, res, next) => {
+    if (req.method === "OPTIONS") {
+      next();
+      return;
+    }
     if (!limiter) limiter = buildLimiter(options);
     return limiter(req, res, next);
   };
@@ -314,7 +365,8 @@ init_env();
 function notFound(req, _res, next) {
   next(ApiError.notFound(`Route not found: ${req.method} ${req.originalUrl}`));
 }
-function errorHandler(err, _req, res, _next) {
+function errorHandler(err, req, res, _next) {
+  applyCorsHeaders(req, res);
   let statusCode = StatusCodes2.INTERNAL_SERVER_ERROR;
   let message = "Internal server error";
   let code;
@@ -416,6 +468,7 @@ var DiamondTxnReason = /* @__PURE__ */ ((DiamondTxnReason2) => {
   DiamondTxnReason2["VideoCall"] = "video_call";
   DiamondTxnReason2["AudioCall"] = "audio_call";
   DiamondTxnReason2["LiveChat"] = "live_chat";
+  DiamondTxnReason2["DirectMessage"] = "direct_message";
   DiamondTxnReason2["Gift"] = "gift";
   DiamondTxnReason2["Refund"] = "refund";
   DiamondTxnReason2["AdminAdjust"] = "admin_adjust";
@@ -425,6 +478,7 @@ var GoldTxnReason = /* @__PURE__ */ ((GoldTxnReason2) => {
   GoldTxnReason2["VideoCall"] = "video_call";
   GoldTxnReason2["AudioCall"] = "audio_call";
   GoldTxnReason2["LiveChat"] = "live_chat";
+  GoldTxnReason2["DirectMessage"] = "direct_message";
   GoldTxnReason2["Gift"] = "gift";
   GoldTxnReason2["Withdraw"] = "withdraw";
   GoldTxnReason2["AdminAdjust"] = "admin_adjust";
@@ -573,7 +627,16 @@ var userSchema = new Schema(
       index: true
     },
     displayName: { type: String, required: true, trim: true, maxlength: 60 },
-    password: { type: String, required: true, select: false },
+    password: {
+      type: String,
+      select: false,
+      required: function requiredPassword() {
+        return !this.firebaseUid;
+      }
+    },
+    authProvider: { type: String, enum: ["local", "google"], default: "local" },
+    firebaseUid: { type: String, unique: true, sparse: true, index: true },
+    emailVerified: { type: Boolean, default: false },
     role: { type: String, enum: Object.values(Role), default: "user" /* User */, index: true },
     status: {
       type: String,
@@ -616,6 +679,8 @@ userSchema.methods.toPublic = function toPublic() {
     country: u.country,
     isHostApproved: u.isHostApproved,
     isOnline: u.isOnline,
+    authProvider: u.authProvider,
+    emailVerified: u.emailVerified,
     createdAt: u.createdAt?.toISOString()
   };
 };
@@ -1123,7 +1188,8 @@ var settingsSchema = new Schema13(
     rates: {
       audioCallPerMinute: { type: Number, default: 10 },
       videoCallPerMinute: { type: Number, default: 20 },
-      liveChatPerMessage: { type: Number, default: 1 }
+      liveChatPerMessage: { type: Number, default: 1 },
+      chatPerMessage: { type: Number, default: 1 }
     },
     diamondPackages: {
       type: [
@@ -1135,6 +1201,8 @@ var settingsSchema = new Schema13(
             bonus: { type: Number, default: 0 },
             price: Number,
             currency: { type: String, default: "USD" },
+            priceUsd: Number,
+            priceInr: Number,
             isActive: { type: Boolean, default: true }
           },
           { _id: false }
@@ -1155,6 +1223,11 @@ var settingsSchema = new Schema13(
     announcements: {
       type: [{ title: String, body: String, active: { type: Boolean, default: true } }],
       default: []
+    },
+    landing: {
+      membersLabel: { type: String, default: "120k+" },
+      verifiedHostsLabel: { type: String, default: "8k+" },
+      liveRoomsLabel: { type: String, default: "24/7" }
     }
   },
   { timestamps: true }
@@ -1181,7 +1254,8 @@ var contactSchema = new Schema14(
       default: "open" /* Open */,
       index: true
     },
-    adminNote: String
+    adminNote: String,
+    adminReply: String
   },
   { timestamps: true }
 );
@@ -1263,6 +1337,51 @@ var validate = (schemas) => (req, _res, next) => {
   }
 };
 
+// ../../packages/utils/src/countries.ts
+var DEFAULT_COUNTRY = "India";
+
+// ../../packages/utils/src/index.ts
+var clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+var buildPaginated = (items, page, limit, total) => {
+  const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
+  return {
+    items,
+    page,
+    limit,
+    total,
+    totalPages,
+    hasNext: page < totalPages,
+    hasPrev: page > 1
+  };
+};
+var parsePagination = (query, { defaultLimit = 20, maxLimit = 100 } = {}) => {
+  const page = Math.max(1, Number.parseInt(String(query.page ?? "1"), 10) || 1);
+  const limit = clamp(
+    Number.parseInt(String(query.limit ?? defaultLimit), 10) || defaultLimit,
+    1,
+    maxLimit
+  );
+  return { page, limit, skip: (page - 1) * limit };
+};
+var diamondsToGold = (diamonds, ratio) => Math.floor(diamonds * ratio);
+var getCurrencyForCountry = (country) => country?.trim() === "India" ? "INR" : "USD";
+var getPackagePriceForCountry = (pkg, country) => {
+  const currency = getCurrencyForCountry(country);
+  if (currency === "INR") {
+    return { amount: pkg.priceInr ?? pkg.price ?? 0, currency: "INR" };
+  }
+  return { amount: pkg.priceUsd ?? pkg.price ?? 0, currency: "USD" };
+};
+var haversineKm = (lat1, lng1, lat2, lng2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+var DEFAULT_DISCOVERY_RADIUS_KM = 20;
+var directRoomName = (userIdA, userIdB) => ["call", ...[userIdA, userIdB].sort()].join("_");
+
 // src/utils/response.ts
 import { StatusCodes as StatusCodes3 } from "http-status-codes";
 function ok(res, data, message, status = StatusCodes3.OK) {
@@ -1308,40 +1427,6 @@ function clearRefreshCookie(res) {
   });
 }
 
-// ../../packages/utils/src/index.ts
-var clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-var buildPaginated = (items, page, limit, total) => {
-  const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
-  return {
-    items,
-    page,
-    limit,
-    total,
-    totalPages,
-    hasNext: page < totalPages,
-    hasPrev: page > 1
-  };
-};
-var parsePagination = (query, { defaultLimit = 20, maxLimit = 100 } = {}) => {
-  const page = Math.max(1, Number.parseInt(String(query.page ?? "1"), 10) || 1);
-  const limit = clamp(
-    Number.parseInt(String(query.limit ?? defaultLimit), 10) || defaultLimit,
-    1,
-    maxLimit
-  );
-  return { page, limit, skip: (page - 1) * limit };
-};
-var diamondsToGold = (diamonds, ratio) => Math.floor(diamonds * ratio);
-var haversineKm = (lat1, lng1, lat2, lng2) => {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-var DEFAULT_DISCOVERY_RADIUS_KM = 20;
-var directRoomName = (userIdA, userIdB) => ["call", ...[userIdA, userIdB].sort()].join("_");
-
 // src/services/settings.service.ts
 async function getSettings() {
   let settings = await Settings.findOne({ key: "global" });
@@ -1349,11 +1434,16 @@ async function getSettings() {
     settings = await Settings.create({
       key: "global",
       diamondPackages: [
-        { id: "starter", label: "Starter", diamonds: 100, bonus: 0, price: 0.99, currency: "USD", isActive: true },
-        { id: "popular", label: "Popular", diamonds: 550, bonus: 50, price: 4.99, currency: "USD", isActive: true },
-        { id: "pro", label: "Pro", diamonds: 1200, bonus: 200, price: 9.99, currency: "USD", isActive: true },
-        { id: "whale", label: "Elite", diamonds: 6500, bonus: 1500, price: 49.99, currency: "USD", isActive: true }
-      ]
+        { id: "starter", label: "Starter", diamonds: 100, bonus: 0, price: 0.99, priceUsd: 0.99, priceInr: 79, currency: "USD", isActive: true },
+        { id: "popular", label: "Popular", diamonds: 550, bonus: 50, price: 4.99, priceUsd: 4.99, priceInr: 399, currency: "USD", isActive: true },
+        { id: "pro", label: "Pro", diamonds: 1200, bonus: 200, price: 9.99, priceUsd: 9.99, priceInr: 799, currency: "USD", isActive: true },
+        { id: "whale", label: "Elite", diamonds: 6500, bonus: 1500, price: 49.99, priceUsd: 49.99, priceInr: 3999, currency: "USD", isActive: true }
+      ],
+      landing: {
+        membersLabel: "120k+",
+        verifiedHostsLabel: "8k+",
+        liveRoomsLabel: "24/7"
+      }
     });
   }
   return settings;
@@ -1499,6 +1589,43 @@ function passwordResetEmail(name, resetUrl) {
 
 // src/modules/auth/auth.controller.ts
 init_env();
+
+// src/config/firebase.ts
+init_env();
+import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+function getFirebaseAuth() {
+  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_CLIENT_EMAIL || !env.FIREBASE_PRIVATE_KEY) {
+    throw new Error("Firebase Admin is not configured");
+  }
+  if (!getApps().length) {
+    initializeApp({
+      credential: cert({
+        projectId: env.FIREBASE_PROJECT_ID,
+        clientEmail: env.FIREBASE_CLIENT_EMAIL,
+        privateKey: env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
+      })
+    });
+  }
+  return getAuth(getApp());
+}
+function isFirebaseConfigured() {
+  return Boolean(env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY);
+}
+
+// src/services/username.service.ts
+async function generateUniqueUsername(source) {
+  const base = source.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20) || "user";
+  let candidate = base;
+  let suffix = 0;
+  while (await User.exists({ username: candidate })) {
+    suffix += 1;
+    candidate = `${base}${suffix}`.slice(0, 30);
+  }
+  return candidate;
+}
+
+// src/modules/auth/auth.controller.ts
 function issueTokens(user) {
   const payload = { sub: user.id, role: user.role, tokenVersion: user.tokenVersion };
   return {
@@ -1516,6 +1643,7 @@ var register = asyncHandler(async (req, res) => {
     username,
     displayName,
     password: await hashPassword(password2),
+    authProvider: "local",
     role: isHostSignup ? "host" /* Host */ : "user" /* User */,
     isHostApproved: false,
     country
@@ -1537,7 +1665,10 @@ var register = asyncHandler(async (req, res) => {
 var login = asyncHandler(async (req, res) => {
   const { email, password: password2 } = req.body;
   const user = await User.findOne({ email }).select("+password");
-  if (!user || !await comparePassword(password2, user.password)) {
+  if (!user || !user.password || !await comparePassword(password2, user.password)) {
+    if (user && !user.password) {
+      throw ApiError.unauthorized("This account uses Google sign-in. Please continue with Google.");
+    }
     throw ApiError.unauthorized("Invalid credentials");
   }
   user.lastLoginAt = /* @__PURE__ */ new Date();
@@ -1545,6 +1676,69 @@ var login = asyncHandler(async (req, res) => {
   const tokens = issueTokens({ id: user._id.toString(), role: user.role, tokenVersion: user.tokenVersion });
   setRefreshCookie(res, tokens.refreshToken);
   return ok(res, { user: user.toPublic(), ...tokens }, "Logged in");
+});
+var googleLogin = asyncHandler(async (req, res) => {
+  if (!isFirebaseConfigured()) {
+    throw ApiError.internal("Google sign-in is not configured on the server");
+  }
+  const { idToken, country } = req.body;
+  let decoded;
+  try {
+    decoded = await getFirebaseAuth().verifyIdToken(idToken, true);
+  } catch {
+    throw ApiError.unauthorized("Invalid or expired Google token");
+  }
+  const uid = decoded.uid;
+  const email = decoded.email?.toLowerCase();
+  const name = decoded.name?.trim();
+  const picture = decoded.picture;
+  const emailVerified = decoded.email_verified ?? false;
+  if (!email) throw ApiError.badRequest("Google account has no email address");
+  let user = await User.findOne({ $or: [{ firebaseUid: uid }, { email }] });
+  if (user) {
+    if (user.status === "banned" /* Banned */) throw ApiError.forbidden("Account banned");
+    if (user.status === "suspended" /* Suspended */ && (!user.suspendedUntil || user.suspendedUntil > /* @__PURE__ */ new Date())) {
+      throw ApiError.forbidden("Account suspended");
+    }
+    if (!user.firebaseUid) user.firebaseUid = uid;
+    if (user.authProvider === "local" && !user.password) user.authProvider = "google";
+    if (picture && !user.avatarUrl) user.avatarUrl = picture;
+    if (name && user.displayName === user.username) user.displayName = name;
+    user.emailVerified = emailVerified || user.emailVerified;
+    user.lastLoginAt = /* @__PURE__ */ new Date();
+    await user.save();
+  } else {
+    const username = await generateUniqueUsername(email.split("@")[0] || name || "user");
+    user = await User.create({
+      email,
+      username,
+      displayName: name || username,
+      avatarUrl: picture,
+      firebaseUid: uid,
+      authProvider: "google",
+      emailVerified,
+      role: "user" /* User */,
+      country: country || DEFAULT_COUNTRY
+    });
+    await Profile.findOneAndUpdate(
+      { user: user._id },
+      { $set: { country: country || DEFAULT_COUNTRY, user: user._id } },
+      { upsert: true }
+    );
+    await ensureWallet(user._id);
+  }
+  const tokens = issueTokens({
+    id: user._id.toString(),
+    role: user.role,
+    tokenVersion: user.tokenVersion
+  });
+  setRefreshCookie(res, tokens.refreshToken);
+  const payload = {
+    user: user.toPublic(),
+    ...tokens,
+    token: tokens.accessToken
+  };
+  return ok(res, payload, "Logged in with Google");
 });
 var refresh = asyncHandler(async (req, res) => {
   const token = req.cookies?.refreshToken ?? req.body?.refreshToken;
@@ -1622,11 +1816,16 @@ var resetSchema = z2.object({
   token: z2.string().min(10),
   password
 });
+var googleSchema = z2.object({
+  idToken: z2.string().min(10),
+  country: z2.string().min(2).max(80).optional()
+});
 
 // src/modules/auth/auth.routes.ts
 var router = Router();
 router.post("/register", authLimiter, validate({ body: registerSchema }), register);
 router.post("/login", authLimiter, validate({ body: loginSchema }), login);
+router.post("/google", authLimiter, validate({ body: googleSchema }), googleLogin);
 router.post("/refresh", refresh);
 router.post("/logout", logout);
 router.get("/me", authenticate, me);
@@ -1793,7 +1992,120 @@ async function assertUsersCanConnect(userId, targetUserId) {
   }
 }
 
+// src/services/interaction.service.ts
+import { Types as Types14 } from "mongoose";
+function matchesQuery(user, q) {
+  const needle = q.toLowerCase();
+  return user.displayName?.toLowerCase().includes(needle) || user.username?.toLowerCase().includes(needle) || false;
+}
+function toOtherUser(u) {
+  return {
+    id: u._id?.toString() ?? u.id,
+    displayName: u.displayName,
+    username: u.username,
+    avatarUrl: u.avatarUrl,
+    role: u.role,
+    isHostApproved: u.isHostApproved
+  };
+}
+async function getUserInteractionHistory(userId, role, options = {}) {
+  const searchRole = role === "host" /* Host */ ? "user" /* User */ : "host" /* Host */;
+  const limit = options.limit ?? 80;
+  const q = options.q?.trim().toLowerCase();
+  const uid = new Types14.ObjectId(userId);
+  const items = [];
+  const conversations = await Conversation.find({ participants: uid }).sort({ lastMessageAt: -1, updatedAt: -1 }).limit(limit).populate("participants", "displayName username avatarUrl role isHostApproved").populate("lastMessage");
+  for (const conv of conversations) {
+    const other = conv.participants.find((p) => p._id.toString() !== userId);
+    if (!other || other.role !== searchRole) continue;
+    if (q && !matchesQuery(other, q)) continue;
+    items.push({
+      id: conv._id.toString(),
+      kind: "message_chat",
+      at: (conv.lastMessageAt ?? conv.updatedAt).toISOString(),
+      summary: conv.lastMessage?.text?.slice(0, 120) || "Direct message chat",
+      otherUser: toOtherUser(other)
+    });
+  }
+  const callFilter = { $or: [{ caller: uid }, { callee: uid }] };
+  const [audioCalls, videoCalls] = await Promise.all([
+    AudioCall.find(callFilter).sort({ createdAt: -1 }).limit(limit).populate("caller", "displayName username avatarUrl role isHostApproved").populate("callee", "displayName username avatarUrl role isHostApproved"),
+    VideoCall.find(callFilter).sort({ createdAt: -1 }).limit(limit).populate("caller", "displayName username avatarUrl role isHostApproved").populate("callee", "displayName username avatarUrl role isHostApproved")
+  ]);
+  for (const call of audioCalls) {
+    const other = call.caller._id.toString() === userId ? call.callee : call.caller;
+    if (!other || other.role !== searchRole) continue;
+    if (q && !matchesQuery(other, q)) continue;
+    items.push({
+      id: call._id.toString(),
+      kind: "audio_call",
+      at: (call.startedAt ?? call.createdAt).toISOString(),
+      summary: `Audio call \xB7 ${call.status}${call.durationSec ? ` \xB7 ${call.durationSec}s` : ""}`,
+      otherUser: toOtherUser(other)
+    });
+  }
+  for (const call of videoCalls) {
+    const other = call.caller._id.toString() === userId ? call.callee : call.caller;
+    if (!other || other.role !== searchRole) continue;
+    if (q && !matchesQuery(other, q)) continue;
+    items.push({
+      id: call._id.toString(),
+      kind: "video_call",
+      at: (call.startedAt ?? call.createdAt).toISOString(),
+      summary: `Video call \xB7 ${call.status}${call.durationSec ? ` \xB7 ${call.durationSec}s` : ""}`,
+      otherUser: toOtherUser(other)
+    });
+  }
+  const liveChats = await LiveChat.find({ user: uid }).sort({ createdAt: -1 }).limit(limit).lean();
+  if (liveChats.length) {
+    const streamIds = [...new Set(liveChats.map((c) => c.liveStream.toString()))];
+    const streams = await LiveStream.find({ _id: { $in: streamIds } }).populate("host", "displayName username avatarUrl role isHostApproved").lean();
+    const streamMap = new Map(streams.map((s) => [s._id.toString(), s]));
+    for (const chat of liveChats) {
+      const stream = streamMap.get(chat.liveStream.toString());
+      const host = stream?.host;
+      if (!host || host.role !== searchRole) continue;
+      if (q && !matchesQuery(host, q)) continue;
+      items.push({
+        id: chat._id.toString(),
+        kind: "live_chat",
+        at: chat.createdAt.toISOString(),
+        summary: `Live chat: ${chat.message.slice(0, 100)}`,
+        otherUser: toOtherUser(host)
+      });
+    }
+  }
+  items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  return { items: items.slice(0, limit), searchRole };
+}
+
 // src/modules/users/users.controller.ts
+var searchContacts = asyncHandler(async (req, res) => {
+  const me2 = await User.findById(req.user.id).select("role");
+  if (!me2) throw ApiError.notFound("User not found");
+  const q = req.query.q?.trim();
+  if (!q || q.length < 2) return ok(res, { items: [] });
+  const oppositeRole = me2.role === "host" /* Host */ ? "user" /* User */ : "host" /* Host */;
+  const filter = {
+    role: oppositeRole,
+    status: "active",
+    _id: { $ne: me2._id },
+    $or: [{ displayName: new RegExp(q, "i") }, { username: new RegExp(q, "i") }]
+  };
+  if (oppositeRole === "host" /* Host */) filter.isHostApproved = true;
+  const users = await User.find(filter).sort({ isOnline: -1, displayName: 1 }).limit(20);
+  return ok(res, { items: users.map((u) => u.toPublic()) });
+});
+var getMyInteractions = asyncHandler(async (req, res) => {
+  const me2 = await User.findById(req.user.id).select("role");
+  if (!me2) throw ApiError.notFound("User not found");
+  const { q, limit } = req.query;
+  const result = await getUserInteractionHistory(me2._id.toString(), me2.role, {
+    q,
+    limit: limit ? Number(limit) : void 0
+  });
+  return ok(res, result);
+});
 var getUser = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) throw ApiError.notFound("User not found");
@@ -1979,6 +2291,15 @@ var searchUsers = asyncHandler(async (req, res) => {
   });
   return ok(res, buildPaginated(items, page, limit, total));
 });
+var getMyBadges = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const [notifications, conversations] = await Promise.all([
+    Notification.countDocuments({ user: userId, isRead: false }),
+    Conversation.find({ participants: userId }).select("unread")
+  ]);
+  const messages = conversations.reduce((sum, c) => sum + (c.unread.get(userId) ?? 0), 0);
+  return ok(res, { notifications, messages });
+});
 var listHosts = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
   const blocked = await Block.find({ blocker: req.user.id }).distinct("blocked");
@@ -2036,6 +2357,9 @@ router2.use(authenticate);
 router2.get("/", searchUsers);
 router2.get("/hosts", listHosts);
 router2.patch("/me", validate({ body: updateMeSchema }), updateMe);
+router2.get("/me/badges", getMyBadges);
+router2.get("/me/interactions", getMyInteractions);
+router2.get("/me/search-contacts", searchContacts);
 router2.get("/me/profile", getMyProfile);
 router2.get("/me/location", getMyLocation);
 router2.post("/me/location", validate({ body: updateLocationSchema }), updateMyLocation);
@@ -2051,7 +2375,7 @@ var users_routes_default = router2;
 import { Router as Router3 } from "express";
 
 // src/modules/social/social.controller.ts
-import { Types as Types14 } from "mongoose";
+import { Types as Types15 } from "mongoose";
 
 // src/socket/io.ts
 var io = null;
@@ -2096,7 +2420,7 @@ var likeUser = asyncHandler(async (req, res) => {
   const reciprocal = await Like.exists({ from: target, to: me2 });
   let matched = false;
   if (reciprocal) {
-    const users = [new Types14.ObjectId(me2), new Types14.ObjectId(target)].sort();
+    const users = [new Types15.ObjectId(me2), new Types15.ObjectId(target)].sort();
     await Match.updateOne(
       { users: { $all: users } },
       { $setOnInsert: { users, matchedAt: /* @__PURE__ */ new Date(), active: true } },
@@ -2132,7 +2456,7 @@ var unlikeUser = asyncHandler(async (req, res) => {
   const me2 = req.user.id;
   const target = req.params.userId;
   await Like.deleteOne({ from: me2, to: target });
-  const users = [new Types14.ObjectId(me2), new Types14.ObjectId(target)].sort();
+  const users = [new Types15.ObjectId(me2), new Types15.ObjectId(target)].sort();
   await Match.updateOne({ users: { $all: users } }, { active: false });
   return ok(res, null, "Unliked");
 });
@@ -2465,9 +2789,10 @@ router6.use(authenticate);
 router6.get("/", getWallet);
 router6.get("/diamonds/transactions", getDiamondHistory);
 router6.get("/gold/transactions", getGoldHistory);
+var withdrawMethods = ["bank_transfer", "upi", "net_banking"];
 var withdrawSchema2 = z6.object({
   goldAmount: z6.number().int().positive(),
-  method: z6.string().default("bank"),
+  method: z6.enum(withdrawMethods),
   destination: z6.record(z6.any())
 });
 router6.post("/withdraw", authorize("host" /* Host */), validate({ body: withdrawSchema2 }), requestWithdraw);
@@ -2531,31 +2856,46 @@ function getPaymentProvider() {
 
 // src/modules/payments/payments.controller.ts
 init_logger();
-var listPackages = asyncHandler(async (_req, res) => {
+var listPackages = asyncHandler(async (req, res) => {
   const settings = await getSettings();
-  return ok(res, settings.diamondPackages.filter((p) => p.isActive));
+  let country;
+  if (req.user?.id) {
+    const buyer = await User.findById(req.user.id).select("country");
+    country = buyer?.country;
+  }
+  const packages = settings.diamondPackages.filter((p) => p.isActive).map((p) => {
+    const pkg = JSON.parse(JSON.stringify(p));
+    const { amount, currency } = getPackagePriceForCountry(pkg, country);
+    return { ...pkg, price: amount, currency };
+  });
+  return ok(res, packages);
 });
 var purchaseDiamonds = asyncHandler(async (req, res) => {
+  if (req.user.role === "host" /* Host */) {
+    throw ApiError.forbidden("Hosts cannot purchase diamonds. Earn gold from your audience and withdraw instead.");
+  }
   const { packageId } = req.body;
   const settings = await getSettings();
   const pkg = settings.diamondPackages.find((p) => p.id === packageId && p.isActive);
   if (!pkg) throw ApiError.badRequest("Invalid package");
+  const buyer = await User.findById(req.user.id).select("country");
+  const { amount, currency } = getPackagePriceForCountry(pkg, buyer?.country);
   const diamonds = pkg.diamonds + pkg.bonus;
   const provider2 = getPaymentProvider();
   const payment = await Payment.create({
     user: req.user.id,
     provider: provider2.name,
     packageId: pkg.id,
-    amount: pkg.price,
-    currency: pkg.currency,
+    amount,
+    currency,
     diamonds,
     status: "created" /* Created */
   });
   const charge = await provider2.createCharge({
     paymentId: payment._id.toString(),
     userId: req.user.id,
-    amount: pkg.price,
-    currency: pkg.currency,
+    amount,
+    currency,
     description: `${pkg.label} \u2014 ${diamonds} diamonds`,
     metadata: { paymentId: payment._id.toString() }
   });
@@ -2714,7 +3054,7 @@ import { Router as Router9 } from "express";
 import { z as z9 } from "zod";
 
 // src/modules/chat/chat.service.ts
-import { Types as Types15 } from "mongoose";
+import { Types as Types16 } from "mongoose";
 async function getOrCreateDirectConversation(a, b) {
   if (a === b) throw ApiError.badRequest("Cannot start a conversation with yourself");
   const blocked = await Block.exists({
@@ -2725,7 +3065,7 @@ async function getOrCreateDirectConversation(a, b) {
   });
   if (blocked) throw ApiError.forbidden("Conversation not allowed (blocked)");
   await assertUsersCanConnect(a, b);
-  const participants = [new Types15.ObjectId(a), new Types15.ObjectId(b)];
+  const participants = [new Types16.ObjectId(a), new Types16.ObjectId(b)];
   let conversation = await Conversation.findOne({
     isGroup: false,
     participants: { $all: participants, $size: 2 }
@@ -2740,6 +3080,28 @@ async function createMessage(input) {
   if (!conversation) throw ApiError.notFound("Conversation not found");
   if (!conversation.participants.some((p) => p.toString() === input.senderId)) {
     throw ApiError.forbidden("Not a participant of this conversation");
+  }
+  const recipientId = conversation.participants.map((p) => p.toString()).find((id) => id !== input.senderId);
+  if (recipientId) {
+    const [sender, recipient] = await Promise.all([
+      User.findById(input.senderId).select("role"),
+      User.findById(recipientId).select("role")
+    ]);
+    if (sender?.role === "user" /* User */ && recipient?.role === "host" /* Host */) {
+      const settings = await getSettings();
+      const cost = settings.rates.chatPerMessage ?? settings.rates.liveChatPerMessage;
+      if (cost > 0) {
+        await spendDiamonds({
+          userId: input.senderId,
+          hostId: recipientId,
+          amount: cost,
+          diamondReason: "direct_message" /* DirectMessage */,
+          goldReason: "direct_message" /* DirectMessage */,
+          reference: conversation._id,
+          referenceModel: "Conversation"
+        });
+      }
+    }
   }
   const message = await Message.create({
     conversation: conversation._id,
@@ -2988,6 +3350,7 @@ async function closeRoom(roomName) {
 }
 
 // src/modules/calls/calls.controller.ts
+init_env();
 var modelFor = (type) => type === "audio" /* Audio */ ? AudioCall : VideoCall;
 var initiateCall = asyncHandler(async (req, res) => {
   const { type, calleeId } = req.body;
@@ -3001,6 +3364,17 @@ var initiateCall = asyncHandler(async (req, res) => {
   const settings = await getSettings();
   if (!settings.features.callsEnabled) throw ApiError.forbidden("Calls are currently disabled");
   const ratePerMinute = type === "audio" /* Audio */ ? settings.rates.audioCallPerMinute : settings.rates.videoCallPerMinute;
+  if (req.user.role === "host" /* Host */) {
+    throw ApiError.forbidden("Hosts cannot initiate paid calls. Users call you instead.");
+  }
+  if (callee.role === "host" /* Host */) {
+    const wallet = await ensureWallet(req.user.id);
+    if (wallet.diamonds < ratePerMinute) {
+      throw ApiError.badRequest(
+        `You need at least ${ratePerMinute} diamonds to call a host (${type} call rate per minute).`
+      );
+    }
+  }
   const roomName = `${directRoomName(req.user.id, calleeId)}_${type}_${Date.now()}`;
   const Model = modelFor(type);
   const call = await Model.create({
@@ -3023,7 +3397,7 @@ var initiateCall = asyncHandler(async (req, res) => {
     roomName,
     from: caller
   });
-  return created(res, { call, token, roomName }, "Calling\u2026");
+  return created(res, { call, token, roomName, livekitUrl: getLiveKitPublicUrl() }, "Calling\u2026");
 });
 var acceptCall = asyncHandler(async (req, res) => {
   const type = req.params.type;
@@ -3035,7 +3409,7 @@ var acceptCall = asyncHandler(async (req, res) => {
   await call.save();
   const token = await createLiveKitToken({ identity: req.user.id, roomName: call.roomName });
   emitToUser(call.caller.toString(), SocketEvents.CallAccept, { callId: call._id.toString() });
-  return ok(res, { call, token, roomName: call.roomName }, "Call accepted");
+  return ok(res, { call, token, roomName: call.roomName, livekitUrl: getLiveKitPublicUrl() }, "Call accepted");
 });
 var rejectCall = asyncHandler(async (req, res) => {
   const type = req.params.type;
@@ -3121,7 +3495,15 @@ var calls_routes_default = router11;
 import { Router as Router12 } from "express";
 import { z as z11 } from "zod";
 
+// src/utils/refId.ts
+function refId(ref) {
+  if (typeof ref === "string") return ref;
+  if (ref && typeof ref === "object" && "_id" in ref) return String(ref._id);
+  return String(ref);
+}
+
 // src/modules/live/live.controller.ts
+init_env();
 var roomOf = (id) => `live:${id}`;
 var startLive = asyncHandler(async (req, res) => {
   const settings = await getSettings();
@@ -3162,7 +3544,7 @@ var startLive = asyncHandler(async (req, res) => {
       })
     )
   );
-  return created(res, { live, token, roomName }, "You are live");
+  return created(res, { live, token, roomName, livekitUrl: getLiveKitPublicUrl() }, "You are live");
 });
 var hostToken = asyncHandler(async (req, res) => {
   const live = await LiveStream.findById(req.params.id);
@@ -3174,7 +3556,7 @@ var hostToken = asyncHandler(async (req, res) => {
     canPublish: true,
     canPublishData: true
   });
-  return ok(res, { token, roomName: live.roomName });
+  return ok(res, { token, roomName: live.roomName, livekitUrl: getLiveKitPublicUrl() });
 });
 var endLive = asyncHandler(async (req, res) => {
   const live = await LiveStream.findById(req.params.id);
@@ -3203,8 +3585,9 @@ var getLive = asyncHandler(async (req, res) => {
     "displayName username avatarUrl isHostApproved"
   );
   if (!live) throw ApiError.notFound("Stream not found");
-  if (live.host._id?.toString() !== req.user.id) {
-    await assertUsersCanConnect(req.user.id, live.host._id.toString());
+  const hostId = refId(live.host);
+  if (hostId !== req.user.id) {
+    await assertUsersCanConnect(req.user.id, hostId);
   }
   return ok(res, live);
 });
@@ -3237,7 +3620,7 @@ var joinLive = asyncHandler(async (req, res) => {
     canPublishData: true
   });
   emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveViewerCount, { viewerCount });
-  return ok(res, { token, roomName: live.roomName, viewerCount });
+  return ok(res, { token, roomName: live.roomName, viewerCount, livekitUrl: getLiveKitPublicUrl() });
 });
 var leaveLive = asyncHandler(async (req, res) => {
   const live = await LiveStream.findById(req.params.id);
@@ -3343,9 +3726,9 @@ var addModerator = asyncHandler(async (req, res) => {
 
 // src/modules/live/live.routes.ts
 var router12 = Router12();
+router12.use(authenticate);
 router12.get("/", listLive);
 router12.get("/:id", getLive);
-router12.use(authenticate);
 router12.post("/start", requireApprovedHost, uploadImage.single("thumbnail"), startLive);
 router12.get("/:id/host-token", hostToken);
 router12.post("/:id/end", endLive);
@@ -3399,6 +3782,21 @@ var analytics = asyncHandler(async (_req, res) => {
     revenue: revenueAgg[0]?.total ?? 0,
     paymentsCount: revenueAgg[0]?.count ?? 0,
     newUsers7d
+  });
+});
+var adminBadges = asyncHandler(async (_req, res) => {
+  const [verifications, reports, withdrawals, inquiries] = await Promise.all([
+    VerificationRequest.countDocuments({ status: "pending" /* Pending */ }),
+    Report.countDocuments({ status: "open" /* Open */ }),
+    WithdrawRequest.countDocuments({ status: "requested" /* Requested */ }),
+    ContactInquiry.countDocuments({ status: "open" /* Open */ })
+  ]);
+  return ok(res, {
+    verifications,
+    reports,
+    withdrawals,
+    inquiries,
+    total: verifications + reports + withdrawals + inquiries
   });
 });
 var listUsers = asyncHandler(async (req, res) => {
@@ -3643,18 +4041,76 @@ var updateSettings = asyncHandler(async (req, res) => {
     "diamondPackages",
     "withdraw",
     "features",
-    "announcements"
+    "announcements",
+    "landing"
   ];
   for (const key of updatable) if (key in req.body) settings[key] = req.body[key];
   await settings.save();
   return ok(res, settings, "Settings updated");
+});
+var listInquiries = asyncHandler(async (req, res) => {
+  const { page, limit, skip } = parsePagination(req.query);
+  const { status } = req.query;
+  const filter = {};
+  if (status) filter.status = status;
+  const [items, total] = await Promise.all([
+    ContactInquiry.find(filter).populate("user", "displayName username email avatarUrl").sort({ createdAt: -1 }).skip(skip).limit(limit),
+    ContactInquiry.countDocuments(filter)
+  ]);
+  return ok(res, buildPaginated(items, page, limit, total));
+});
+var replyInquiry = asyncHandler(async (req, res) => {
+  const { adminReply, status, adminNote } = req.body;
+  const inquiry = await ContactInquiry.findById(req.params.id);
+  if (!inquiry) throw ApiError.notFound("Inquiry not found");
+  if (adminReply !== void 0) inquiry.adminReply = adminReply;
+  if (adminNote !== void 0) inquiry.adminNote = adminNote;
+  if (status) inquiry.status = status;
+  await inquiry.save();
+  return ok(res, inquiry, "Inquiry updated");
+});
+var deleteInquiry = asyncHandler(async (req, res) => {
+  const inquiry = await ContactInquiry.findByIdAndDelete(req.params.id);
+  if (!inquiry) throw ApiError.notFound("Inquiry not found");
+  return ok(res, null, "Inquiry removed");
+});
+var listOnlineUsers = asyncHandler(async (req, res) => {
+  const { q } = req.query;
+  const filter = {
+    isOnline: true,
+    role: { $in: ["user" /* User */, "host" /* Host */] },
+    status: "active" /* Active */
+  };
+  if (q) {
+    filter.$or = [
+      { displayName: new RegExp(q, "i") },
+      { username: new RegExp(q, "i") },
+      { email: new RegExp(q, "i") }
+    ];
+  }
+  const users = await User.find(filter).sort({ displayName: 1 }).limit(200);
+  const profiles = await Profile.find({ user: { $in: users.map((u) => u._id) } }).select(
+    "user locationLabel city country"
+  );
+  const profileByUser = new Map(profiles.map((p) => [p.user.toString(), p]));
+  const items = users.map((u) => {
+    const profile = profileByUser.get(u._id.toString());
+    const locationLabel = profile?.locationLabel || [profile?.city, profile?.country].filter(Boolean).join(", ") || u.country || "Location not set";
+    return {
+      ...u.toPublic(),
+      locationLabel
+    };
+  });
+  return ok(res, { items, total: items.length });
 });
 
 // src/modules/admin/admin.routes.ts
 var router13 = Router13();
 router13.use(authenticate, authorize("admin" /* Admin */));
 router13.get("/analytics", analytics);
+router13.get("/badges", adminBadges);
 router13.get("/users", listUsers);
+router13.get("/online", listOnlineUsers);
 router13.patch(
   "/users/:id/status",
   validate({
@@ -3716,10 +4172,52 @@ router13.get("/live", listAllLive);
 router13.post("/live/:id/force-end", forceEndLive);
 router13.get("/settings", getAdminSettings);
 router13.patch("/settings", updateSettings);
+router13.get("/inquiries", listInquiries);
+router13.patch(
+  "/inquiries/:id",
+  validate({
+    body: z12.object({
+      adminReply: z12.string().optional(),
+      adminNote: z12.string().optional(),
+      status: z12.enum(["open", "in_progress", "resolved"]).optional()
+    })
+  }),
+  replyInquiry
+);
+router13.delete("/inquiries/:id", deleteInquiry);
 var admin_routes_default = router13;
 
 // src/modules/settings/settings.routes.ts
 import { Router as Router14 } from "express";
+init_env();
+
+// src/services/stats.service.ts
+var ACTIVE_CHAT_MS = 15 * 60 * 1e3;
+async function getPublicPlatformStats() {
+  const since = new Date(Date.now() - ACTIVE_CHAT_MS);
+  const [liveOnline, audioCalls, videoCalls, activeChats, settings] = await Promise.all([
+    LiveStream.countDocuments({ status: "live" /* Live */ }),
+    AudioCall.countDocuments({ status: "ongoing" /* Ongoing */ }),
+    VideoCall.countDocuments({ status: "ongoing" /* Ongoing */ }),
+    Conversation.countDocuments({ lastMessageAt: { $gte: since } }),
+    getSettings()
+  ]);
+  const liveHostIds = await LiveStream.find({ status: "live" /* Live */ }).distinct("host");
+  const liveOnlineHosts = liveHostIds.length ? await User.countDocuments({ _id: { $in: liveHostIds }, isOnline: true, role: "host" /* Host */ }) : 0;
+  return {
+    liveStreams: liveOnlineHosts,
+    activeAudioCalls: audioCalls,
+    activeVideoCalls: videoCalls,
+    activeChats,
+    landing: settings.landing ?? {
+      membersLabel: "120k+",
+      verifiedHostsLabel: "8k+",
+      liveRoomsLabel: "24/7"
+    }
+  };
+}
+
+// src/modules/settings/settings.routes.ts
 var router14 = Router14();
 router14.get(
   "/",
@@ -3731,8 +4229,16 @@ router14.get(
       diamondPackages: s.diamondPackages.filter((p) => p.isActive),
       withdraw: { minGold: s.withdraw.minGold, currency: s.withdraw.currency },
       features: s.features,
-      announcements: s.announcements.filter((a) => a.active)
+      announcements: s.announcements.filter((a) => a.active),
+      livekitEnabled: hasLiveKit,
+      livekitUrl: getLiveKitPublicUrl()
     });
+  })
+);
+router14.get(
+  "/stats",
+  asyncHandler(async (_req, res) => {
+    return ok(res, await getPublicPlatformStats());
   })
 );
 var settings_routes_default = router14;
@@ -3872,6 +4378,7 @@ function vercelDbMiddleware(req, _res, next) {
 function createApp() {
   const app = express();
   app.set("trust proxy", 1);
+  app.use(corsMiddleware);
   app.get(
     "/health",
     (_req, res) => res.json({ success: true, data: { status: "ok", uptime: process.uptime() } })
@@ -3894,19 +4401,6 @@ function createApp() {
     });
   });
   app.get("/favicon.ico", (_req, res) => res.status(204).end());
-  app.use(
-    cors({
-      origin: (origin, cb) => {
-        if (!origin) return cb(null, true);
-        if (isOriginAllowed(origin)) return cb(null, origin);
-        logger.warn({ origin }, "CORS blocked origin");
-        return cb(null, false);
-      },
-      credentials: true,
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
-    })
-  );
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: "cross-origin" }
