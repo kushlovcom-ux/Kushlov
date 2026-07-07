@@ -5,8 +5,7 @@
   "buildCommand": "cd ../.. && pnpm --filter @kushlov/server build",
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/", "destination": "/api" },
-    { "source": "/:path*", "destination": "/api" }
+    { "source": "/(.*)", "destination": "/api" }
   ],
   "functions": {
     "api/index.js": {

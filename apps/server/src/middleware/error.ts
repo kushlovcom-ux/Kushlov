@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import { ApiError } from '../utils/ApiError';
 import { logger } from '../config/logger';
 import { isProd } from '../config/env';
+import { applyCorsHeaders } from '../config/cors';
 
 /** 404 handler for unmatched routes. */
 export function notFound(req: Request, _res: Response, next: NextFunction) {
@@ -12,7 +13,9 @@ export function notFound(req: Request, _res: Response, next: NextFunction) {
 }
 
 /** Global error handler — converts any thrown error into a consistent JSON body. */
-export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
+  applyCorsHeaders(req, res);
+
   let statusCode = StatusCodes.INTERNAL_SERVER_ERROR;
   let message = 'Internal server error';
   let code: string | undefined;

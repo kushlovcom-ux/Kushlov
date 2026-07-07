@@ -39,6 +39,10 @@ function buildLimiter(options: Partial<Options>): RateLimitRequestHandler {
 function lazyLimiter(options: Partial<Options> = {}): RequestHandler {
   let limiter: RateLimitRequestHandler | undefined;
   return (req, res, next) => {
+    if (req.method === 'OPTIONS') {
+      next();
+      return;
+    }
     if (!limiter) limiter = buildLimiter(options);
     return limiter(req, res, next);
   };

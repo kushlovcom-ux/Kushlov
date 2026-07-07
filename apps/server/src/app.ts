@@ -1,10 +1,9 @@
 import express, { Application, NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
-import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import { pinoHttp } from 'pino-http';
-import { corsOptions } from './config/cors';
+import { corsMiddleware } from './config/cors';
 import { env } from './config/env';
 import { connectDatabase } from './config/db';
 import { logger } from './config/logger';
@@ -17,7 +16,7 @@ let vercelDbReady: Promise<void> | null = null;
 
 /** Connect MongoDB + seed on first request when running as a Vercel serverless function. */
 function vercelDbMiddleware(req: Request, _res: Response, next: NextFunction): void {
-  // Preflight must succeed before DB — CORS middleware runs earlier.
+  // OPTIONS handled by corsMiddleware — never block preflight on DB.
   if (req.method === 'OPTIONS') {
     next();
     return;
@@ -46,6 +45,9 @@ export function createApp(): Application {
 
   app.set('trust proxy', 1);
 
+  // CORS must be first — especially for Vercel preflight (OPTIONS) before DB/auth.
+  app.use(corsMiddleware);
+
   // Public probes — work even if MongoDB is unreachable (helps Vercel debugging).
   app.get('/health', (_req: Request, res: Response) =>
     res.json({ success: true, data: { status: 'ok', uptime: process.uptime() } }),
@@ -70,10 +72,6 @@ export function createApp(): Application {
   });
 
   app.get('/favicon.ico', (_req: Request, res: Response) => res.status(204).end());
-
-  // CORS first — explicit OPTIONS handler so preflight never falls through to route handlers.
-  app.options(/.*/, cors(corsOptions));
-  app.use(cors(corsOptions));
 
   app.use(
     helmet({
