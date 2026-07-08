@@ -1,5 +1,4 @@
 import rateLimit, { Options, RateLimitRequestHandler } from 'express-rate-limit';
-import type { RequestHandler } from 'express';
 import { env } from '../config/env';
 import { getRedis } from '../config/redis';
 import { logger } from '../config/logger';
@@ -7,6 +6,9 @@ import { logger } from '../config/logger';
 /**
  * Build a rate limiter backed by Redis when available (so limits are shared
  * across instances), otherwise the default in-memory store.
+ *
+ * Limiters must be created at app initialization (not inside a request handler),
+ * otherwise express-rate-limit v7 throws ERR_ERL_CREATED_IN_REQUEST_HANDLER.
  */
 function buildLimiter(options: Partial<Options>): RateLimitRequestHandler {
   const redis = getRedis();
@@ -31,28 +33,17 @@ function buildLimiter(options: Partial<Options>): RateLimitRequestHandler {
     standardHeaders: true,
     legacyHeaders: false,
     store,
+    skip: (req) => req.method === 'OPTIONS',
     message: { success: false, message: 'Too many requests, please try again later.' },
     ...options,
   });
 }
 
-function lazyLimiter(options: Partial<Options> = {}): RequestHandler {
-  let limiter: RateLimitRequestHandler | undefined;
-  return (req, res, next) => {
-    if (req.method === 'OPTIONS') {
-      next();
-      return;
-    }
-    if (!limiter) limiter = buildLimiter(options);
-    return limiter(req, res, next);
-  };
-}
-
 /** Global limiter applied to the whole API. */
-export const globalLimiter = lazyLimiter();
+export const globalLimiter = buildLimiter({});
 
 /** Stricter limiter for auth endpoints to slow down brute-force attempts. */
-export const authLimiter = lazyLimiter({
+export const authLimiter = buildLimiter({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { success: false, message: 'Too many auth attempts, please try again later.' },

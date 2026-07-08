@@ -31,7 +31,10 @@ export default defineConfig([
     splitting: false,
     minify: false,
     skipNodeModulesBundle: true,
-    noExternal: [/^@kushlov\//],
+    // Bundle workspace packages + any ESM-only deps: Vercel's runtime cannot
+    // require() a pure-ESM module from this CommonJS bundle (ERR_REQUIRE_ESM),
+    // so esbuild inlines/transpiles them to CJS instead.
+    noExternal: [/^@kushlov\//, 'nanoid'],
     entry: { index: 'api-entry.ts' },
     outDir: 'dist-vercel',
     clean: true,

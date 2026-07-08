@@ -106,8 +106,8 @@ export const getPackagePriceForCountry = (
   return { amount: pkg.priceUsd ?? pkg.price ?? 0, currency: 'USD' };
 };
 
-export { COUNTRIES, DEFAULT_COUNTRY } from './countries.js';
-export type { CountryName } from './countries.js';
+export { COUNTRIES, DEFAULT_COUNTRY } from './countries';
+export type { CountryName } from './countries';
 
 /** Format a compact number, e.g. 12.3K, 1.2M. */
 export const formatCompact = (value: number): string =>
