@@ -25,7 +25,9 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!accessToken) {
+    // No session, or realtime disabled (e.g. serverless backend without a
+    // dedicated WebSocket host) — don't attempt to connect.
+    if (!accessToken || !clientEnv.socketEnabled) {
       socketRef.current?.disconnect();
       socketRef.current = null;
       setConnected(false);
@@ -36,6 +38,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       auth: { token: accessToken },
       transports: ['websocket'],
       autoConnect: true,
+      reconnectionAttempts: 5,
+      timeout: 8000,
     });
     socketRef.current = socket;
 
