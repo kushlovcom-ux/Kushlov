@@ -107,7 +107,8 @@ export default function DiscoverPage() {
                 const showCallActions =
                   (isNormalUser &&
                     ((u.role === Role.Host && u.isHostApproved) || u.role === Role.User)) ||
-                  (isHost && u.role === Role.Host && u.isHostApproved);
+                  (isHost &&
+                    ((u.role === Role.Host && u.isHostApproved) || u.role === Role.User));
                 const showHostRating = u.role === Role.Host;
 
                 return (
@@ -187,7 +188,13 @@ export default function DiscoverPage() {
                               variant="secondary"
                               className="h-8 w-full touch-manipulation"
                               aria-label="Video call"
-                              onClick={() => startCall(CallType.Video, u.id, u.displayName)}
+                              onClick={() =>
+                                startCall(CallType.Video, u.id, u.displayName, {
+                                  peerIsHost: u.role === Role.Host && !!u.isHostApproved,
+                                  peerRole: u.role,
+                                  peerHostApproved: u.isHostApproved,
+                                })
+                              }
                             >
                               <Video className="h-3.5 w-3.5" />
                             </Button>
@@ -196,7 +203,13 @@ export default function DiscoverPage() {
                               variant="secondary"
                               className="h-8 w-full touch-manipulation"
                               aria-label="Audio call"
-                              onClick={() => startCall(CallType.Audio, u.id, u.displayName)}
+                              onClick={() =>
+                                startCall(CallType.Audio, u.id, u.displayName, {
+                                  peerIsHost: u.role === Role.Host && !!u.isHostApproved,
+                                  peerRole: u.role,
+                                  peerHostApproved: u.isHostApproved,
+                                })
+                              }
                             >
                               <PhoneCall className="h-3.5 w-3.5" />
                             </Button>

@@ -208,7 +208,8 @@ export default function WalletPage() {
 
         {isHost && (
           <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100/80">
-            You earn gold when users message, call, or gift you. Buy diamonds below to connect with other hosts.
+            You earn gold when users message, call, or gift you. Buy diamonds below to call and
+            message other hosts and normal users.
           </div>
         )}
 

@@ -36,6 +36,9 @@ export interface IUser extends Document {
   isPopularHost: boolean;
   popularSortOrder: number;
 
+  /** Normal users: welcome gift diamonds already claimed. */
+  welcomeGiftClaimed: boolean;
+
   // security
   tokenVersion: number;
   passwordResetToken?: string;
@@ -110,6 +113,8 @@ const userSchema = new Schema<IUser>(
 
     isPopularHost: { type: Boolean, default: false, index: true },
     popularSortOrder: { type: Number, default: 0 },
+
+    welcomeGiftClaimed: { type: Boolean, default: false },
 
     tokenVersion: { type: Number, default: 0 },
     passwordResetToken: { type: String, select: false },

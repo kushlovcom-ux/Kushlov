@@ -51,6 +51,8 @@ export default function AdminSettingsPage() {
   const [userAudioValue, setUserAudioValue] = useState(3);
   const [hostHostVideoValue, setHostHostVideoValue] = useState(1);
   const [hostHostAudioValue, setHostHostAudioValue] = useState(2);
+  const [hostUserVideoValue, setHostUserVideoValue] = useState(1);
+  const [hostUserAudioValue, setHostUserAudioValue] = useState(2);
 
   useEffect(() => {
     if (settings.data && !form) {
@@ -74,6 +76,11 @@ export default function AdminSettingsPage() {
         hostHostVideoTimeUnit: 'minute' as TimeUnit,
         hostHostAudioTimeUnit: 'minute' as TimeUnit,
         hostHostMessagesPerDiamond: 5,
+        hostUserVideoSecondsPerDiamond: 60,
+        hostUserAudioSecondsPerDiamond: 120,
+        hostUserVideoTimeUnit: 'minute' as TimeUnit,
+        hostUserAudioTimeUnit: 'minute' as TimeUnit,
+        hostUserMessagesPerDiamond: 5,
         ...settings.data.rates,
       };
       setForm({
@@ -106,6 +113,12 @@ export default function AdminSettingsPage() {
       setHostHostAudioValue(
         secondsToUnit(rates.hostHostAudioSecondsPerDiamond, rates.hostHostAudioTimeUnit),
       );
+      setHostUserVideoValue(
+        secondsToUnit(rates.hostUserVideoSecondsPerDiamond, rates.hostUserVideoTimeUnit),
+      );
+      setHostUserAudioValue(
+        secondsToUnit(rates.hostUserAudioSecondsPerDiamond, rates.hostUserAudioTimeUnit),
+      );
     }
   }, [settings.data, form]);
 
@@ -117,6 +130,8 @@ export default function AdminSettingsPage() {
       const uuAudioUnit = (form.rates.userUserAudioTimeUnit ?? 'minute') as TimeUnit;
       const hhVideoUnit = (form.rates.hostHostVideoTimeUnit ?? 'minute') as TimeUnit;
       const hhAudioUnit = (form.rates.hostHostAudioTimeUnit ?? 'minute') as TimeUnit;
+      const huVideoUnit = (form.rates.hostUserVideoTimeUnit ?? 'minute') as TimeUnit;
+      const huAudioUnit = (form.rates.hostUserAudioTimeUnit ?? 'minute') as TimeUnit;
       return api.patch('/admin/settings', {
         goldConversionRatio: form.goldConversionRatio,
         rates: {
@@ -133,6 +148,10 @@ export default function AdminSettingsPage() {
           hostHostAudioTimeUnit: hhAudioUnit,
           hostHostVideoSecondsPerDiamond: unitToSeconds(hostHostVideoValue, hhVideoUnit),
           hostHostAudioSecondsPerDiamond: unitToSeconds(hostHostAudioValue, hhAudioUnit),
+          hostUserVideoTimeUnit: huVideoUnit,
+          hostUserAudioTimeUnit: huAudioUnit,
+          hostUserVideoSecondsPerDiamond: unitToSeconds(hostUserVideoValue, huVideoUnit),
+          hostUserAudioSecondsPerDiamond: unitToSeconds(hostUserAudioValue, huAudioUnit),
         },
         features: form.features,
         withdraw: form.withdraw,
@@ -429,6 +448,89 @@ export default function AdminSettingsPage() {
                 min={1}
                 value={form.rates.hostHostMessagesPerDiamond}
                 onChange={(e) => setRate('hostHostMessagesPerDiamond', +e.target.value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Host → User conversions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-white/45">
+              What 1 diamond buys when a host messages or calls a normal user. No diamonds means no
+              call or message. Call ends automatically when affordable time runs out.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Video call — 1 Diamond equals</Label>
+              <div className="grid grid-cols-[1fr_140px] gap-2">
+                <Input
+                  type="number"
+                  min={0.01}
+                  step="any"
+                  value={hostUserVideoValue}
+                  onChange={(e) => setHostUserVideoValue(+e.target.value)}
+                />
+                <select
+                  className={selectClass}
+                  value={form.rates.hostUserVideoTimeUnit}
+                  onChange={(e) => {
+                    const next = e.target.value as TimeUnit;
+                    const seconds = unitToSeconds(
+                      hostUserVideoValue,
+                      form.rates.hostUserVideoTimeUnit as TimeUnit,
+                    );
+                    setRate('hostUserVideoTimeUnit', next);
+                    setHostUserVideoValue(secondsToUnit(seconds, next));
+                  }}
+                >
+                  {TIME_UNITS.map((u) => (
+                    <option key={u.value} value={u.value} className={optionClass}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Audio call — 1 Diamond equals</Label>
+              <div className="grid grid-cols-[1fr_140px] gap-2">
+                <Input
+                  type="number"
+                  min={0.01}
+                  step="any"
+                  value={hostUserAudioValue}
+                  onChange={(e) => setHostUserAudioValue(+e.target.value)}
+                />
+                <select
+                  className={selectClass}
+                  value={form.rates.hostUserAudioTimeUnit}
+                  onChange={(e) => {
+                    const next = e.target.value as TimeUnit;
+                    const seconds = unitToSeconds(
+                      hostUserAudioValue,
+                      form.rates.hostUserAudioTimeUnit as TimeUnit,
+                    );
+                    setRate('hostUserAudioTimeUnit', next);
+                    setHostUserAudioValue(secondsToUnit(seconds, next));
+                  }}
+                >
+                  {TIME_UNITS.map((u) => (
+                    <option key={u.value} value={u.value} className={optionClass}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>1 Diamond = N messages (host → user)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.rates.hostUserMessagesPerDiamond}
+                onChange={(e) => setRate('hostUserMessagesPerDiamond', +e.target.value)}
               />
             </div>
           </CardContent>

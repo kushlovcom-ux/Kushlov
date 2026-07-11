@@ -365,7 +365,18 @@ export const createGift = asyncHandler(async (req: Request, res: Response) => {
     imagePublicId = media.publicId;
   }
   if (!imageUrl) throw ApiError.badRequest('Gift image is required');
-  const gift = await Gift.create({ ...req.body, imageUrl, imagePublicId });
+  const isWelcomeGift = req.body.isWelcomeGift === true || req.body.isWelcomeGift === 'true';
+  if (isWelcomeGift) {
+    await Gift.updateMany({ isWelcomeGift: true }, { $set: { isWelcomeGift: false } });
+  }
+  const gift = await Gift.create({
+    ...req.body,
+    imageUrl,
+    imagePublicId,
+    isWelcomeGift,
+    diamondCost: Number(req.body.diamondCost),
+    goldValue: Number(req.body.goldValue ?? 0),
+  });
   return created(res, gift, 'Gift created');
 });
 
@@ -375,6 +386,16 @@ export const updateGift = asyncHandler(async (req: Request, res: Response) => {
     const media = await uploadBuffer(req.file, 'gifts');
     update.imageUrl = media.url;
     update.imagePublicId = media.publicId;
+  }
+  if (update.diamondCost != null) update.diamondCost = Number(update.diamondCost);
+  if (update.goldValue != null) update.goldValue = Number(update.goldValue);
+  if (update.isWelcomeGift === 'true') update.isWelcomeGift = true;
+  if (update.isWelcomeGift === 'false') update.isWelcomeGift = false;
+  if (update.isWelcomeGift === true) {
+    await Gift.updateMany(
+      { _id: { $ne: req.params.id }, isWelcomeGift: true },
+      { $set: { isWelcomeGift: false } },
+    );
   }
   const gift = await Gift.findByIdAndUpdate(req.params.id, update, { new: true });
   if (!gift) throw ApiError.notFound('Gift not found');

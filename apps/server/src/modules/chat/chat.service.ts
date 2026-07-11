@@ -6,7 +6,7 @@ import { emitToUser } from '../../socket/io';
 import { notify } from '../../services/notification.service';
 import { assertUsersCanConnect } from '../../services/location.service';
 import { spendDiamonds } from '../../services/wallet.service';
-import { resolveMessageBilling } from '../../services/pricing.service';
+import { peerKindForRoles, resolveMessageBilling, type CallPeerKind } from '../../services/pricing.service';
 
 /** Find or create a 1:1 conversation between two users. */
 export async function getOrCreateDirectConversation(a: string, b: string) {
@@ -46,6 +46,7 @@ interface CreateMessageInput {
 /**
  * Persist a message, update conversation metadata + unread counters, and push
  * realtime events to the other participants. Used by both REST and Socket.io.
+ * All user/host DMs require diamonds; no diamonds ⇒ message is rejected.
  */
 export async function createMessage(input: CreateMessageInput) {
   const conversation = await Conversation.findById(input.conversationId);
@@ -64,57 +65,57 @@ export async function createMessage(input: CreateMessageInput) {
       User.findById(recipientId).select('role messagePrice isHostApproved'),
     ]);
     if (!sender || !recipient) {
-      // fall through to create message without billing
-    } else {
-      let peerKind: 'host' | 'user' | 'hostHost' | null = null;
-      if (sender.role === Role.User && recipient.role === Role.Host) peerKind = 'host';
-      else if (sender.role === Role.User && recipient.role === Role.User) peerKind = 'user';
-      else if (sender.role === Role.Host && recipient.role === Role.Host) peerKind = 'hostHost';
+      throw ApiError.badRequest('Unable to bill this message');
+    }
 
-      // Host → user replies stay free.
-      if (peerKind) {
-        const billing = await resolveMessageBilling(recipient, peerKind);
-        const creditHost = recipient.role === Role.Host ? recipientId : undefined;
-        if (billing.diamondsPerMessage > 0) {
-          await spendDiamonds({
-            userId: input.senderId,
-            hostId: creditHost,
-            amount: billing.diamondsPerMessage,
-            diamondReason: DiamondTxnReason.DirectMessage,
-            goldReason: creditHost ? GoldTxnReason.DirectMessage : undefined,
-            reference: conversation._id,
-            referenceModel: 'Conversation',
-          });
-        } else if (billing.messagesPerDiamond > 0) {
-          let credit = await MessageCredit.findOne({
+    const peerKind: CallPeerKind | null = peerKindForRoles(sender.role, recipient.role);
+    if (!peerKind) {
+      throw ApiError.forbidden('Messaging is not allowed between these accounts');
+    }
+
+    const billing = await resolveMessageBilling(recipient, peerKind);
+    const creditHost = recipient.role === Role.Host ? recipientId : undefined;
+
+    if (billing.diamondsPerMessage > 0) {
+      await spendDiamonds({
+        userId: input.senderId,
+        hostId: creditHost,
+        amount: billing.diamondsPerMessage,
+        diamondReason: DiamondTxnReason.DirectMessage,
+        goldReason: creditHost ? GoldTxnReason.DirectMessage : undefined,
+        reference: conversation._id,
+        referenceModel: 'Conversation',
+      });
+    } else if (billing.messagesPerDiamond > 0) {
+      let credit = await MessageCredit.findOne({
+        user: input.senderId,
+        host: recipientId,
+      });
+      if (!credit || credit.remaining <= 0) {
+        await spendDiamonds({
+          userId: input.senderId,
+          hostId: creditHost,
+          amount: 1,
+          diamondReason: DiamondTxnReason.DirectMessage,
+          goldReason: creditHost ? GoldTxnReason.DirectMessage : undefined,
+          reference: conversation._id,
+          referenceModel: 'Conversation',
+          meta: { messagesPerDiamond: billing.messagesPerDiamond, peerKind },
+        });
+        if (!credit) {
+          credit = await MessageCredit.create({
             user: input.senderId,
             host: recipientId,
+            remaining: billing.messagesPerDiamond,
           });
-          if (!credit || credit.remaining <= 0) {
-            await spendDiamonds({
-              userId: input.senderId,
-              hostId: creditHost,
-              amount: 1,
-              diamondReason: DiamondTxnReason.DirectMessage,
-              goldReason: creditHost ? GoldTxnReason.DirectMessage : undefined,
-              reference: conversation._id,
-              referenceModel: 'Conversation',
-              meta: { messagesPerDiamond: billing.messagesPerDiamond, peerKind },
-            });
-            if (!credit) {
-              credit = await MessageCredit.create({
-                user: input.senderId,
-                host: recipientId,
-                remaining: billing.messagesPerDiamond,
-              });
-            } else {
-              credit.remaining = billing.messagesPerDiamond;
-            }
-          }
-          credit.remaining -= 1;
-          await credit.save();
+        } else {
+          credit.remaining = billing.messagesPerDiamond;
         }
       }
+      credit.remaining -= 1;
+      await credit.save();
+    } else {
+      throw ApiError.badRequest('Messaging requires diamonds. Buy diamonds to continue.');
     }
   }
 

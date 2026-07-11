@@ -18,6 +18,7 @@ import {
 } from '../../utils/password';
 import { setRefreshCookie, clearRefreshCookie } from '../../utils/cookies';
 import { ensureWallet } from '../../services/wallet.service';
+import { grantWelcomeGiftIfEligible } from '../../services/welcome-gift.service';
 import { sendMail, passwordResetEmail } from '../../utils/mailer';
 import { env } from '../../config/env';
 import { getFirebaseAuth, isFirebaseConfigured } from '../../config/firebase';
@@ -55,6 +56,9 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     { upsert: true },
   );
   await ensureWallet(user._id);
+  if (!isHostSignup) {
+    await grantWelcomeGiftIfEligible(user._id);
+  }
 
   const tokens = issueTokens({ id: user._id.toString(), role: user.role, tokenVersion: user.tokenVersion });
   setRefreshCookie(res, tokens.refreshToken);
@@ -145,6 +149,7 @@ export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
       { upsert: true },
     );
     await ensureWallet(user._id);
+    await grantWelcomeGiftIfEligible(user._id);
   }
 
   const tokens = issueTokens({

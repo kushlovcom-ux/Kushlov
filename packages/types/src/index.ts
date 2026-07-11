@@ -73,6 +73,7 @@ export enum DiamondTxnReason {
   LiveChat = 'live_chat',
   DirectMessage = 'direct_message',
   Gift = 'gift',
+  WelcomeGift = 'welcome_gift',
   Refund = 'refund',
   AdminAdjust = 'admin_adjust',
 }

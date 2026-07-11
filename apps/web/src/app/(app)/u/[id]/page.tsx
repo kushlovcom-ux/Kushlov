@@ -84,7 +84,7 @@ export default function PublicProfilePage() {
   const canCall =
     me?.id !== id &&
     ((me?.role === Role.User && (isHostProfile || isUserProfile)) ||
-      (me?.role === Role.Host && isHostProfile));
+      (me?.role === Role.Host && (isHostProfile || isUserProfile)));
   const canReview = me?.role === Role.User && isHostProfile && me.id !== id;
 
   return (
@@ -139,13 +139,25 @@ export default function PublicProfilePage() {
                 <>
                   <Button
                     variant="secondary"
-                    onClick={() => startCall(CallType.Audio, id, u?.displayName ?? 'Host')}
+                    onClick={() =>
+                      startCall(CallType.Audio, id, u?.displayName ?? 'Host', {
+                        peerIsHost: !!isHostProfile,
+                        peerRole: u?.role,
+                        peerHostApproved: u?.isHostApproved,
+                      })
+                    }
                   >
                     <PhoneCall className="h-4 w-4" /> Audio
                   </Button>
                   <Button
                     variant="secondary"
-                    onClick={() => startCall(CallType.Video, id, u?.displayName ?? 'Host')}
+                    onClick={() =>
+                      startCall(CallType.Video, id, u?.displayName ?? 'Host', {
+                        peerIsHost: !!isHostProfile,
+                        peerRole: u?.role,
+                        peerHostApproved: u?.isHostApproved,
+                      })
+                    }
                   >
                     <Video className="h-4 w-4" /> Video
                   </Button>
@@ -182,11 +194,13 @@ export default function PublicProfilePage() {
         </div>
 
         {canReview && (
-          <div className="rounded-3xl border border-white/10 bg-card p-5">
+          <div className="rounded-3xl border border-brand-pink/30 bg-card p-5">
             <h3 className="text-lg font-semibold">
               {myReview.data ? 'Update your review' : 'Leave a review'}
             </h3>
-            <p className="mt-1 text-sm text-white/45">One review per host. You can edit anytime.</p>
+            <p className="mt-1 text-sm text-white/45">
+              Optional. You can also rate after an audio or video call.
+            </p>
             <div className="mt-4 space-y-3">
               <StarRatingInput value={rating} onChange={setRating} />
               <textarea

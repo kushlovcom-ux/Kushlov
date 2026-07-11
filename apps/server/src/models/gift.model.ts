@@ -9,6 +9,8 @@ export interface IGift extends Document {
   goldValue: number;
   animationUrl?: string;
   isActive: boolean;
+  /** When true, granted once to normal users on first profile creation. */
+  isWelcomeGift: boolean;
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
@@ -23,6 +25,7 @@ const giftSchema = new Schema<IGift>(
     goldValue: { type: Number, required: true, min: 0 },
     animationUrl: String,
     isActive: { type: Boolean, default: true, index: true },
+    isWelcomeGift: { type: Boolean, default: false, index: true },
     sortOrder: { type: Number, default: 0 },
   },
   { timestamps: true },

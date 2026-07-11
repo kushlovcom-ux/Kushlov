@@ -11,7 +11,7 @@ export type HostPricingFields = {
 };
 
 /** Call billing peer kind. */
-export type CallPeerKind = 'host' | 'user' | 'hostHost';
+export type CallPeerKind = 'host' | 'user' | 'hostHost' | 'hostUser';
 
 /** Convert admin gold price → diamonds the caller must spend. */
 export function goldPriceToDiamonds(goldPrice: number, goldConversionRatio: number): number {
@@ -23,7 +23,7 @@ export function goldPriceToDiamonds(goldPrice: number, goldConversionRatio: numb
 /**
  * Resolve diamonds-per-minute for a call.
  * Host custom prices are stored as gold/min and converted to diamonds.
- * User↔user and host↔host use conversion-only (rate 0).
+ * Otherwise billing uses seconds-per-diamond conversion (rate 0).
  */
 export function resolveCallRatePerMinute(
   settings: ISettings,
@@ -31,19 +31,20 @@ export function resolveCallRatePerMinute(
   type: CallType,
   peerKind: CallPeerKind,
 ): number {
-  if (peerKind === 'user' || peerKind === 'hostHost') return 0;
+  if (peerKind === 'user' || peerKind === 'hostHost' || peerKind === 'hostUser') return 0;
 
   const ratio = settings.goldConversionRatio ?? 0.5;
   if (type === CallType.Video) {
     if (peer.videoPrice != null && peer.videoPrice > 0) {
       return goldPriceToDiamonds(peer.videoPrice, ratio);
     }
-    return settings.rates.videoCallPerMinute ?? 20;
+    // Conversion model: 1 diamond = N seconds (admin settings).
+    return 0;
   }
   if (peer.audioPrice != null && peer.audioPrice > 0) {
     return goldPriceToDiamonds(peer.audioPrice, ratio);
   }
-  return settings.rates.audioCallPerMinute ?? 10;
+  return 0;
 }
 
 /** Seconds of call time granted per diamond for the peer kind. */
@@ -60,6 +61,16 @@ export function resolveSecondsPerDiamond(
     }
     return settings.rates.hostHostAudioSecondsPerDiamond > 0
       ? settings.rates.hostHostAudioSecondsPerDiamond
+      : 120;
+  }
+  if (peerKind === 'hostUser') {
+    if (type === CallType.Video) {
+      return settings.rates.hostUserVideoSecondsPerDiamond > 0
+        ? settings.rates.hostUserVideoSecondsPerDiamond
+        : 60;
+    }
+    return settings.rates.hostUserAudioSecondsPerDiamond > 0
+      ? settings.rates.hostUserAudioSecondsPerDiamond
       : 120;
   }
   if (peerKind === 'user') {
@@ -120,7 +131,7 @@ export function computeCallDiamondCost(params: {
 /**
  * Message billing plan.
  * Host: messagePrice is gold/msg → diamonds; else messagesPerDiamond.
- * User↔user / host↔host: messages-per-diamond credits.
+ * Other peer kinds: messages-per-diamond credits.
  */
 export async function resolveMessageBilling(
   recipient: HostPricingFields,
@@ -143,6 +154,14 @@ export async function resolveMessageBilling(
     const n =
       settings.rates.hostHostMessagesPerDiamond > 0
         ? settings.rates.hostHostMessagesPerDiamond
+        : 5;
+    return { diamondsPerMessage: 0, messagesPerDiamond: Math.max(1, Math.floor(n)) };
+  }
+
+  if (peerKind === 'hostUser') {
+    const n =
+      settings.rates.hostUserMessagesPerDiamond > 0
+        ? settings.rates.hostUserMessagesPerDiamond
         : 5;
     return { diamondsPerMessage: 0, messagesPerDiamond: Math.max(1, Math.floor(n)) };
   }
@@ -177,6 +196,7 @@ export function peerKindForRoles(callerRole: Role, calleeRole: Role): CallPeerKi
   if (callerRole === Role.User && calleeRole === Role.Host) return 'host';
   if (callerRole === Role.User && calleeRole === Role.User) return 'user';
   if (callerRole === Role.Host && calleeRole === Role.Host) return 'hostHost';
+  if (callerRole === Role.Host && calleeRole === Role.User) return 'hostUser';
   return null;
 }
 

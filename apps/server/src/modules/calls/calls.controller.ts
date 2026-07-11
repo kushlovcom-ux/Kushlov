@@ -31,8 +31,9 @@ const modelFor = (type: CallType) => (type === CallType.Audio ? AudioCall : Vide
 
 /**
  * POST /calls/initiate
- * - Normal users may call hosts or other users
- * - Hosts may call other approved hosts only (not normal users)
+ * - Normal users may call hosts or other users (diamonds required)
+ * - Hosts may call other approved hosts or normal users (diamonds required)
+ * - Call auto-ends when caller's affordable duration (from diamonds) runs out
  */
 export const initiateCall = asyncHandler(async (req: Request, res: Response) => {
   const { type, calleeId } = req.body as { type: CallType; calleeId: string };
@@ -52,11 +53,7 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
 
   const peerKind = peerKindForRoles(callerRole, callee.role);
   if (!peerKind) {
-    throw ApiError.forbidden(
-      callerRole === Role.Host
-        ? 'Hosts can only call other hosts'
-        : 'You cannot call this account',
-    );
+    throw ApiError.forbidden('You cannot call this account');
   }
   if ((peerKind === 'host' || peerKind === 'hostHost') && !isApprovedHost(callee)) {
     throw ApiError.forbidden('You can only call approved hosts');
@@ -77,9 +74,9 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
 
   const minNeeded =
     ratePerMinute > 0 ? ratePerMinute : secondsPerDiamond > 0 ? 1 : 0;
-  if (wallet.diamonds < minNeeded || maxDurationSec < 30) {
+  if (wallet.diamonds <= 0 || wallet.diamonds < minNeeded || maxDurationSec < 1) {
     throw ApiError.badRequest(
-      `Not enough diamonds to start this ${type} call. Need at least ${minNeeded} diamond(s).`,
+      `Not enough diamonds to start this ${type} call. Need at least ${Math.max(1, minNeeded)} diamond(s).`,
     );
   }
 
@@ -102,7 +99,9 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     canPublish: true,
   });
 
-  const caller = await User.findById(req.user!.id).select('displayName avatarUrl');
+  const caller = await User.findById(req.user!.id).select(
+    'displayName avatarUrl role isHostApproved',
+  );
   emitToUser(calleeId, SocketEvents.CallInvite, {
     callId: call._id.toString(),
     type,
@@ -111,6 +110,8 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
       id: caller?._id.toString(),
       displayName: caller?.displayName,
       avatarUrl: caller?.avatarUrl,
+      role: caller?.role,
+      isHostApproved: caller?.isHostApproved,
     },
     ratePerMinute,
     maxDurationSec,
@@ -148,7 +149,7 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
     ratePerMinute: call.ratePerMinute,
     secondsPerDiamond: call.secondsPerDiamond || 60,
   });
-  if (maxDurationSec < 30) {
+  if (maxDurationSec < 1) {
     call.status = CallStatus.Failed;
     call.endedAt = new Date();
     await call.save();

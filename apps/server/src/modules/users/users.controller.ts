@@ -15,6 +15,7 @@ import {
 } from '../../services/location.service';
 import { haversineKm } from '@kushlov/utils';
 import { getUserInteractionHistory } from '../../services/interaction.service';
+import { grantWelcomeGiftIfEligible } from '../../services/welcome-gift.service';
 
 /** GET /users/me/search-contacts — search connectable people by name (no location filter). */
 export const searchContacts = asyncHandler(async (req: Request, res: Response) => {
@@ -186,6 +187,8 @@ export const updateMyProfile = asyncHandler(async (req: Request, res: Response) 
     { $set: update },
     { upsert: true, new: true, runValidators: true },
   );
+  // Fallback for older accounts that registered before welcome gifts existed.
+  await grantWelcomeGiftIfEligible(req.user!.id);
   return ok(res, profile, 'Profile updated');
 });
 

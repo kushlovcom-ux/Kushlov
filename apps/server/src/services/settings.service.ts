@@ -82,6 +82,26 @@ export async function getSettings(): Promise<ISettings> {
     settings.rates.hostHostMessagesPerDiamond = 5;
     dirty = true;
   }
+  if (settings.rates.hostUserVideoSecondsPerDiamond == null) {
+    settings.rates.hostUserVideoSecondsPerDiamond = 60;
+    dirty = true;
+  }
+  if (settings.rates.hostUserAudioSecondsPerDiamond == null) {
+    settings.rates.hostUserAudioSecondsPerDiamond = 120;
+    dirty = true;
+  }
+  if (!settings.rates.hostUserVideoTimeUnit) {
+    settings.rates.hostUserVideoTimeUnit = 'minute';
+    dirty = true;
+  }
+  if (!settings.rates.hostUserAudioTimeUnit) {
+    settings.rates.hostUserAudioTimeUnit = 'minute';
+    dirty = true;
+  }
+  if (settings.rates.hostUserMessagesPerDiamond == null) {
+    settings.rates.hostUserMessagesPerDiamond = 5;
+    dirty = true;
+  }
   if (settings.features.reviewsEnabled == null) {
     settings.features.reviewsEnabled = true;
     dirty = true;
