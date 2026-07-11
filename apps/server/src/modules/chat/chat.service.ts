@@ -1,12 +1,12 @@
 import { Types } from 'mongoose';
 import { MessageType, NotificationType, Role, SocketEvents, DiamondTxnReason, GoldTxnReason } from '@kushlov/types';
-import { Block, Conversation, Message, User } from '../../models';
+import { Block, Conversation, Message, MessageCredit, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { emitToUser } from '../../socket/io';
 import { notify } from '../../services/notification.service';
 import { assertUsersCanConnect } from '../../services/location.service';
-import { getSettings } from '../../services/settings.service';
 import { spendDiamonds } from '../../services/wallet.service';
+import { resolveMessageBilling } from '../../services/pricing.service';
 
 /** Find or create a 1:1 conversation between two users. */
 export async function getOrCreateDirectConversation(a: string, b: string) {
@@ -61,21 +61,59 @@ export async function createMessage(input: CreateMessageInput) {
   if (recipientId) {
     const [sender, recipient] = await Promise.all([
       User.findById(input.senderId).select('role'),
-      User.findById(recipientId).select('role'),
+      User.findById(recipientId).select('role messagePrice isHostApproved'),
     ]);
-    if (sender?.role === Role.User && recipient?.role === Role.Host) {
-      const settings = await getSettings();
-      const cost = settings.rates.chatPerMessage ?? settings.rates.liveChatPerMessage;
-      if (cost > 0) {
-        await spendDiamonds({
-          userId: input.senderId,
-          hostId: recipientId,
-          amount: cost,
-          diamondReason: DiamondTxnReason.DirectMessage,
-          goldReason: GoldTxnReason.DirectMessage,
-          reference: conversation._id,
-          referenceModel: 'Conversation',
-        });
+    if (!sender || !recipient) {
+      // fall through to create message without billing
+    } else {
+      let peerKind: 'host' | 'user' | 'hostHost' | null = null;
+      if (sender.role === Role.User && recipient.role === Role.Host) peerKind = 'host';
+      else if (sender.role === Role.User && recipient.role === Role.User) peerKind = 'user';
+      else if (sender.role === Role.Host && recipient.role === Role.Host) peerKind = 'hostHost';
+
+      // Host → user replies stay free.
+      if (peerKind) {
+        const billing = await resolveMessageBilling(recipient, peerKind);
+        const creditHost = recipient.role === Role.Host ? recipientId : undefined;
+        if (billing.diamondsPerMessage > 0) {
+          await spendDiamonds({
+            userId: input.senderId,
+            hostId: creditHost,
+            amount: billing.diamondsPerMessage,
+            diamondReason: DiamondTxnReason.DirectMessage,
+            goldReason: creditHost ? GoldTxnReason.DirectMessage : undefined,
+            reference: conversation._id,
+            referenceModel: 'Conversation',
+          });
+        } else if (billing.messagesPerDiamond > 0) {
+          let credit = await MessageCredit.findOne({
+            user: input.senderId,
+            host: recipientId,
+          });
+          if (!credit || credit.remaining <= 0) {
+            await spendDiamonds({
+              userId: input.senderId,
+              hostId: creditHost,
+              amount: 1,
+              diamondReason: DiamondTxnReason.DirectMessage,
+              goldReason: creditHost ? GoldTxnReason.DirectMessage : undefined,
+              reference: conversation._id,
+              referenceModel: 'Conversation',
+              meta: { messagesPerDiamond: billing.messagesPerDiamond, peerKind },
+            });
+            if (!credit) {
+              credit = await MessageCredit.create({
+                user: input.senderId,
+                host: recipientId,
+                remaining: billing.messagesPerDiamond,
+              });
+            } else {
+              credit.remaining = billing.messagesPerDiamond;
+            }
+          }
+          credit.remaining -= 1;
+          await credit.save();
+        }
       }
     }
   }

@@ -39,7 +39,6 @@ export default function HistoryPage() {
   const user = useAuthStore((s) => s.user);
   const isHost = user?.role === 'host';
   const [q, setQ] = useState('');
-  const [searchPeople, setSearchPeople] = useState('');
 
   const history = useQuery({
     queryKey: ['my-interactions', q],
@@ -50,12 +49,10 @@ export default function HistoryPage() {
   });
 
   const peopleSearch = useQuery({
-    queryKey: ['history-people-search', searchPeople, isHost],
+    queryKey: ['history-people-search', q, isHost],
     queryFn: () =>
-      unwrap<{ items: PublicUser[] }>(
-        api.get('/users/me/search-contacts', { params: { q: searchPeople } }),
-      ),
-    enabled: searchPeople.trim().length >= 2,
+      unwrap<{ items: PublicUser[] }>(api.get('/users/me/search-contacts', { params: { q } })),
+    enabled: q.trim().length >= 2,
   });
 
   const filterKind = (kind: InteractionItem['kind']) =>
@@ -69,38 +66,29 @@ export default function HistoryPage() {
         title="Activity history"
         subtitle={
           isHost
-            ? 'Your chats and calls with users — search users by name below'
-            : 'Your chats and calls with hosts — search hosts by name below'
+            ? 'Your chats and calls with users'
+            : 'Your chats and calls with hosts and people'
         }
       />
 
       <div className="space-y-6 p-6">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Filter history by name…"
-              className="pl-9"
-            />
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-            <Input
-              value={searchPeople}
-              onChange={(e) => setSearchPeople(e.target.value)}
-              placeholder={isHost ? 'Search users by name…' : 'Search hosts by name…'}
-              className="pl-9"
-            />
-          </div>
+        <div className="relative max-w-xl">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={
+              isHost
+                ? 'Search users or filter history…'
+                : 'Search people, hosts, or filter history…'
+            }
+            className="pl-9"
+          />
         </div>
 
-        {searchPeople.trim().length >= 2 && (
+        {q.trim().length >= 2 && (
           <div className="rounded-2xl border border-white/10 bg-card/50 p-4">
-            <p className="mb-3 text-sm font-medium text-white/70">
-              {isHost ? 'Users matching your search' : 'Hosts matching your search'}
-            </p>
+            <p className="mb-3 text-sm font-medium text-white/70">People matching your search</p>
             {peopleSearch.isLoading && <Skeleton className="h-12 rounded-xl" />}
             <div className="space-y-2">
               {peopleSearch.data?.items.map((p) => (
@@ -112,12 +100,15 @@ export default function HistoryPage() {
                   <UserAvatar name={p.displayName} src={p.avatarUrl} online={p.isOnline} />
                   <div>
                     <p className="font-medium">{p.displayName}</p>
-                    <p className="text-xs text-white/45">@{p.username}</p>
+                    <p className="text-xs text-white/45">
+                      @{p.username}
+                      {p.role === 'host' ? ' · Host' : ''}
+                    </p>
                   </div>
                 </Link>
               ))}
               {!peopleSearch.isLoading && peopleSearch.data?.items.length === 0 && (
-                <p className="text-sm text-white/40">No matches found.</p>
+                <p className="text-sm text-white/40">No people found.</p>
               )}
             </div>
           </div>
@@ -156,7 +147,10 @@ export default function HistoryPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <Link href={`/u/${item.otherUser.id}`} className="font-semibold hover:underline">
+                            <Link
+                              href={`/u/${item.otherUser.id}`}
+                              className="font-semibold hover:underline"
+                            >
                               {item.otherUser.displayName}
                             </Link>
                             <span className="text-xs text-white/35">@{item.otherUser.username}</span>
@@ -176,7 +170,11 @@ export default function HistoryPage() {
 
                   {!history.isLoading && items.length === 0 && (
                     <p className="py-12 text-center text-white/40">
-                      No {tab === 'all' ? 'activity' : kindMeta[tab as keyof typeof kindMeta].label.toLowerCase()} yet.
+                      No{' '}
+                      {tab === 'all'
+                        ? 'activity'
+                        : kindMeta[tab as keyof typeof kindMeta].label.toLowerCase()}{' '}
+                      yet.
                     </p>
                   )}
                 </TabsContent>

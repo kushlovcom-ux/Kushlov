@@ -8,7 +8,6 @@ import { toast } from 'sonner';
 import { api, apiError, unwrap } from '@/lib/api';
 import { reverseGeocode } from '@/lib/nominatim';
 import { Button } from '@/components/ui/button';
-import { DEFAULT_DISCOVERY_RADIUS_KM } from '@kushlov/utils';
 
 const OsmMapPicker = dynamic(
   () => import('./osm-map-picker').then((m) => m.OsmMapPicker),
@@ -96,8 +95,6 @@ export function LocationSetup({ compact, onSaved }: Props) {
     return <div className="skeleton h-32 rounded-2xl" />;
   }
 
-  const radius = data?.discoveryRadiusKm ?? DEFAULT_DISCOVERY_RADIUS_KM;
-
   return (
     <div className={compact ? 'space-y-4' : 'rounded-2xl border border-white/10 bg-card/70 p-6 space-y-4'}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -116,7 +113,7 @@ export function LocationSetup({ compact, onSaved }: Props) {
             >
               OpenStreetMap
             </a>
-            . Users within <strong>{radius} km</strong> cannot see or connect with each other — only people farther away appear.
+            . Share your location to discover people and hosts who are a great match for you.
           </p>
           {data?.locationLabel && (
             <p className="mt-2 text-xs text-white/40 line-clamp-2">{data.locationLabel}</p>

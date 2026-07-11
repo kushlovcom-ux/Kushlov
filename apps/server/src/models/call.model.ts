@@ -13,6 +13,10 @@ export interface ICall extends Document {
   diamondsSpent: number;
   goldEarned: number;
   ratePerMinute: number;
+  /** Snapshot of admin seconds-per-diamond at call start. */
+  secondsPerDiamond: number;
+  /** Max affordable duration computed at accept/initiate. */
+  maxDurationSec: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +41,8 @@ function callSchema(type: CallType) {
       diamondsSpent: { type: Number, default: 0 },
       goldEarned: { type: Number, default: 0 },
       ratePerMinute: { type: Number, default: 0 },
+      secondsPerDiamond: { type: Number, default: 60 },
+      maxDurationSec: { type: Number, default: 0 },
     },
     { timestamps: true },
   );

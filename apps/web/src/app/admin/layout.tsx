@@ -15,6 +15,8 @@ import {
   LogOut,
   MessageSquare,
   CircleDot,
+  Star,
+  DollarSign,
 } from 'lucide-react';
 import { Logo } from '@kushlov/ui';
 import { cn } from '@/lib/utils';
@@ -26,6 +28,8 @@ import { NavBadge } from '@/components/app/nav-badge';
 const nav = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/users', label: 'Users', icon: Users },
+  { href: '/admin/hosts', label: 'Host Pricing', icon: DollarSign },
+  { href: '/admin/reviews', label: 'Reviews', icon: Star },
   { href: '/admin/online', label: 'Online now', icon: CircleDot },
   { href: '/admin/verifications', label: 'Host Verifications', icon: ShieldCheck },
   { href: '/admin/reports', label: 'Reports', icon: Flag },

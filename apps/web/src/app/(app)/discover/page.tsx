@@ -4,17 +4,22 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Heart, MessageCircle, Search, MapPin } from 'lucide-react';
+import { Heart, MessageCircle, PhoneCall, Search, MapPin, Video } from 'lucide-react';
 import { toast } from 'sonner';
-import type { PublicUser, Paginated } from '@kushlov/types';
+import { CallType, Role, type PublicUser, type Paginated } from '@kushlov/types';
 import { formatDistanceKm } from '@kushlov/utils';
 import { api, apiError, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { UserAvatar } from '@/components/common/user-avatar';
+import { StarRatingDisplay } from '@/components/common/star-rating';
+import { startCall } from '@/components/calls/call-overlay';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LocationSetup } from '@/components/location/location-setup';
+import { OnlineStatus } from '@/components/common/online-status';
+import { useAuthStore } from '@/store/auth';
+import { cn } from '@/lib/utils';
 
 type DiscoverUser = PublicUser & { distanceKm?: number };
 
@@ -22,6 +27,9 @@ export default function DiscoverPage() {
   const searchParams = useSearchParams();
   const [q, setQ] = useState('');
   const qc = useQueryClient();
+  const me = useAuthStore((s) => s.user);
+  const isNormalUser = me?.role === Role.User;
+  const isHost = me?.role === Role.Host;
 
   useEffect(() => {
     const fromUrl = searchParams.get('q');
@@ -50,14 +58,15 @@ export default function DiscoverPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const radius = location.data?.discoveryRadiusKm ?? 20;
   const needsLocation = !location.isLoading && !location.data?.hasLocation;
 
   return (
     <div>
       <PageHeader
         title="Discover"
-        subtitle={`People & hosts more than ${radius} km from you`}
+        subtitle={
+          isHost ? 'Meet people and hosts ready to connect' : 'Discover hosts and people ready to connect'
+        }
         action={
           <div className="relative w-full max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
@@ -72,21 +81,12 @@ export default function DiscoverPage() {
         }
       />
 
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         {needsLocation && (
           <div className="rounded-2xl border border-brand-pink/30 bg-brand-pink/5 p-4">
             <p className="font-medium">Set your location to start discovering</p>
             <p className="mt-1 text-sm text-white/50">
-              Kushlov uses{' '}
-              <a
-                href="https://www.openstreetmap.org/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-brand-pink hover:underline"
-              >
-                OpenStreetMap
-              </a>{' '}
-              so users within {radius} km are hidden — you only see and connect with people farther away.
+              Add your location so we can show you great people nearby and help you make better matches.
             </p>
           </div>
         )}
@@ -97,62 +97,121 @@ export default function DiscoverPage() {
 
         {!needsLocation && (
           <>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
               {isLoading &&
                 Array.from({ length: 10 }).map((_, i) => (
-                  <Skeleton key={i} className="aspect-[3/4] rounded-2xl" />
+                  <Skeleton key={i} className="h-[220px] rounded-2xl sm:h-[240px]" />
                 ))}
 
-              {data?.items.map((u) => (
-                <div
-                  key={u.id}
-                  className="group relative overflow-hidden rounded-2xl border border-white/10 bg-card"
-                >
-                  <Link href={`/u/${u.id}`}>
-                    <div className="flex aspect-[3/4] items-center justify-center bg-gradient-to-br from-brand-purple/30 to-brand-pink/20">
+              {data?.items.map((u) => {
+                const showCallActions =
+                  (isNormalUser &&
+                    ((u.role === Role.Host && u.isHostApproved) || u.role === Role.User)) ||
+                  (isHost && u.role === Role.Host && u.isHostApproved);
+                const showHostRating = u.role === Role.Host;
+
+                return (
+                  <article
+                    key={u.id}
+                    className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-card transition duration-200 hover:-translate-y-0.5 hover:border-white/20 hover:shadow-lg hover:shadow-brand-pink/10"
+                  >
+                    <Link
+                      href={`/u/${u.id}`}
+                      className="relative block aspect-[4/3] shrink-0 overflow-hidden bg-gradient-to-br from-brand-purple/30 to-brand-pink/20"
+                    >
                       {u.avatarUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={u.avatarUrl} alt={u.displayName} className="h-full w-full object-cover" />
+                        <img
+                          src={u.avatarUrl}
+                          alt={u.displayName}
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                        />
                       ) : (
-                        <UserAvatar name={u.displayName} className="h-20 w-20 text-2xl" />
+                        <div className="flex h-full w-full items-center justify-center">
+                          <UserAvatar name={u.displayName} className="h-12 w-12 text-lg sm:h-14 sm:w-14" />
+                        </div>
                       )}
-                    </div>
-                  </Link>
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3">
-                    <div className="flex items-center gap-1.5">
-                      <p className="truncate font-semibold">{u.displayName}</p>
-                      {u.isOnline && <span className="h-2 w-2 rounded-full bg-emerald-400" />}
-                    </div>
-                    <p className="truncate text-xs text-white/50">@{u.username}</p>
-                    {u.distanceKm != null && (
-                      <p className="mt-0.5 flex items-center gap-1 text-[10px] text-brand-pink">
-                        <MapPin className="h-3 w-3" />
-                        {formatDistanceKm(u.distanceKm)}
-                      </p>
-                    )}
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => like.mutate(u.id)}
-                        aria-label="Like"
-                      >
-                        <Heart className="h-4 w-4" />
-                      </Button>
-                      <Link href={`/messages?to=${u.id}`}>
-                        <Button size="icon" variant="secondary" className="h-8 w-8" aria-label="Message">
-                          <MessageCircle className="h-4 w-4" />
-                        </Button>
+                    </Link>
+
+                    <div className="flex flex-1 flex-col gap-1 p-2 sm:p-2.5">
+                      <Link href={`/u/${u.id}`} className="min-w-0 space-y-0.5">
+                        <p className="truncate text-sm font-semibold leading-tight">
+                          {u.displayName}
+                        </p>
+                        <p className="truncate text-[11px] text-white/45">@{u.username}</p>
+                        <OnlineStatus online={u.isOnline} />
                       </Link>
+
+                      {showHostRating && (
+                        <StarRatingDisplay
+                          rating={u.averageRating ?? 0}
+                          count={u.totalReviews ?? 0}
+                        />
+                      )}
+
+                      {u.distanceKm != null && (
+                        <p className="flex items-center gap-1 text-[10px] text-brand-pink">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          {formatDistanceKm(u.distanceKm)}
+                        </p>
+                      )}
+
+                      <div
+                        className={cn(
+                          'mt-auto grid gap-1 pt-0.5',
+                          showCallActions ? 'grid-cols-4' : 'grid-cols-2',
+                        )}
+                      >
+                        <Button
+                          size="icon"
+                          className="h-8 w-full touch-manipulation"
+                          onClick={() => like.mutate(u.id)}
+                          aria-label="Like"
+                        >
+                          <Heart className="h-3.5 w-3.5" />
+                        </Button>
+                        <Link href={`/messages?to=${u.id}`} className="block">
+                          <Button
+                            size="icon"
+                            variant="secondary"
+                            className="h-8 w-full touch-manipulation"
+                            aria-label="Message"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        {showCallActions && (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="secondary"
+                              className="h-8 w-full touch-manipulation"
+                              aria-label="Video call"
+                              onClick={() => startCall(CallType.Video, u.id, u.displayName)}
+                            >
+                              <Video className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="secondary"
+                              className="h-8 w-full touch-manipulation"
+                              aria-label="Audio call"
+                              onClick={() => startCall(CallType.Audio, u.id, u.displayName)}
+                            >
+                              <PhoneCall className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  </article>
+                );
+              })}
             </div>
 
             {!isLoading && !error && data?.items.length === 0 && (
               <p className="py-12 text-center text-white/40">
-                No users found more than {radius} km away. Try updating your location on the map above.
+                No matches right now. Try updating your location or check back soon.
               </p>
             )}
 

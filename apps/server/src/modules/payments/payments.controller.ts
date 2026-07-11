@@ -31,9 +31,7 @@ export const listPackages = asyncHandler(async (req: Request, res: Response) => 
 
 /** POST /payments/purchase — start a diamond purchase for a package. */
 export const purchaseDiamonds = asyncHandler(async (req: Request, res: Response) => {
-  if (req.user!.role === Role.Host) {
-    throw ApiError.forbidden('Hosts cannot purchase diamonds. Earn gold from your audience and withdraw instead.');
-  }
+  // Hosts may buy diamonds to connect with other hosts.
 
   const { packageId } = req.body;
   const settings = await getSettings();

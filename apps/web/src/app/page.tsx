@@ -6,6 +6,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { LandingHeader } from '@/components/layout/landing-header';
 import { LandingHeroStats, LandingFeatureGrid } from '@/components/landing/landing-platform-stats';
 import { LandingShowcaseCarousel } from '@/components/landing/landing-showcase-carousel';
+import { LandingPopularHosts } from '@/components/landing/landing-popular-hosts';
 
 export default function LandingPage() {
   return (
@@ -59,6 +60,8 @@ export default function LandingPage() {
         </h2>
         <LandingFeatureGrid />
       </section>
+
+      <LandingPopularHosts />
 
       {/* CTA */}
       <section className="container py-20">

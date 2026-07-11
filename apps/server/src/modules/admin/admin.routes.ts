@@ -99,6 +99,41 @@ router.post('/live/:id/force-end', ctrl.forceEndLive);
 // Settings
 router.get('/settings', ctrl.getAdminSettings);
 router.patch('/settings', ctrl.updateSettings);
+router.get('/config', ctrl.getAdminSettings);
+router.put('/config', ctrl.updateSettings);
+
+// Host pricing
+router.get('/hosts', ctrl.listHostsAdmin);
+router.patch(
+  '/hosts/:id/pricing',
+  validate({
+    body: z.object({
+      videoPrice: z.number().min(0).optional(),
+      audioPrice: z.number().min(0).optional(),
+      messagePrice: z.number().min(0).optional(),
+    }),
+  }),
+  ctrl.updateHostPricing,
+);
+router.patch(
+  '/hosts/:id/popular',
+  validate({
+    body: z.object({
+      isPopularHost: z.boolean().optional(),
+      popularSortOrder: z.number().min(0).optional(),
+    }),
+  }),
+  ctrl.updateHostPopular,
+);
+
+// Reviews moderation
+router.get('/reviews', ctrl.listReviewsAdmin);
+router.patch(
+  '/reviews/:id',
+  validate({ body: z.object({ isHidden: z.boolean() }) }),
+  ctrl.patchReviewAdmin,
+);
+router.delete('/reviews/:id', ctrl.deleteReviewAdmin);
 
 // Contact inquiries
 router.get('/inquiries', ctrl.listInquiries);

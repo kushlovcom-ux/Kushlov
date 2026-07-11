@@ -45,6 +45,20 @@ interface WithdrawSettings {
   minGold: number;
   currency: string;
 }
+interface DiamondConversions {
+  hostVideo?: { label: string };
+  hostAudio?: { label: string };
+  hostMessages?: { label: string };
+  userVideo?: { label: string };
+  userAudio?: { label: string };
+  userMessages?: { label: string };
+  hostHostVideo?: { label: string };
+  hostHostAudio?: { label: string };
+  hostHostMessages?: { label: string };
+  video?: { label: string };
+  audio?: { label: string };
+  messages?: { label: string };
+}
 interface WithdrawReq {
   _id: string;
   goldAmount: number;
@@ -86,12 +100,10 @@ export default function WalletPage() {
   const packages = useQuery({
     queryKey: ['packages'],
     queryFn: () => unwrap<DiamondPackage[]>(api.get('/payments/packages')),
-    enabled: !isHost,
   });
   const diamondTxns = useQuery({
     queryKey: ['diamondTxns'],
     queryFn: () => unwrap<{ items: Txn[] }>(api.get('/wallet/diamonds/transactions')),
-    enabled: !isHost,
   });
   const goldTxns = useQuery({
     queryKey: ['goldTxns'],
@@ -105,8 +117,10 @@ export default function WalletPage() {
   });
   const publicSettings = useQuery({
     queryKey: ['public-settings'],
-    queryFn: () => unwrap<{ withdraw: WithdrawSettings }>(api.get('/settings')),
-    enabled: isHost,
+    queryFn: () =>
+      unwrap<{ withdraw: WithdrawSettings; diamondConversions?: DiamondConversions }>(
+        api.get('/settings'),
+      ),
   });
 
   const buy = useMutation({
@@ -154,69 +168,147 @@ export default function WalletPage() {
         title="Wallet"
         subtitle={
           isHost
-            ? 'Your gold earnings and withdrawal requests'
-            : 'Buy diamonds to chat and call hosts'
+            ? 'Gold earnings, withdrawals, and diamonds for host-to-host connects'
+            : 'Buy diamonds to chat and call people & hosts'
         }
       />
       <div className="space-y-8 p-6">
         <div className="grid gap-4 sm:grid-cols-2">
-          {!isHost && (
-            <div className="glass rounded-2xl p-6">
-              <div className="flex items-center gap-3 text-brand-blue">
-                <Gem className="h-6 w-6" />
-                <span className="text-sm text-white/60">Diamonds</span>
-              </div>
-              {wallet.isLoading ? (
-                <Skeleton className="mt-3 h-9 w-24" />
-              ) : (
-                <p className="mt-2 text-4xl font-extrabold">{formatCompact(wallet.data?.diamonds ?? 0)}</p>
-              )}
-              <p className="mt-2 text-xs text-white/40">Spend on host chat, calls & gifts</p>
-            </div>
-          )}
-          <div className={`glass rounded-2xl p-6 ${isHost ? 'sm:col-span-2 lg:col-span-1' : ''}`}>
-            <div className="flex items-center gap-3 text-amber-400">
-              <Coins className="h-6 w-6" />
-              <span className="text-sm text-white/60">{isHost ? 'Gold balance' : 'Gold (host earnings)'}</span>
+          <div className="glass rounded-2xl p-6">
+            <div className="flex items-center gap-3 text-brand-blue">
+              <Gem className="h-6 w-6" />
+              <span className="text-sm text-white/60">Diamonds</span>
             </div>
             {wallet.isLoading ? (
               <Skeleton className="mt-3 h-9 w-24" />
             ) : (
-              <p className="mt-2 text-4xl font-extrabold">{formatCompact(wallet.data?.gold ?? 0)}</p>
+              <p className="mt-2 text-4xl font-extrabold">{formatCompact(wallet.data?.diamonds ?? 0)}</p>
             )}
-            {isHost && (
-              <p className="mt-2 text-xs text-white/40">Withdraw as cash when you reach {minGold} gold</p>
-            )}
+            <p className="mt-2 text-xs text-white/40">
+              {isHost ? 'Spend to message & call other hosts' : 'Spend on chat, calls & gifts'}
+            </p>
           </div>
+          {isHost && (
+            <div className="glass rounded-2xl p-6">
+              <div className="flex items-center gap-3 text-amber-400">
+                <Coins className="h-6 w-6" />
+                <span className="text-sm text-white/60">Gold balance</span>
+              </div>
+              {wallet.isLoading ? (
+                <Skeleton className="mt-3 h-9 w-24" />
+              ) : (
+                <p className="mt-2 text-4xl font-extrabold">{formatCompact(wallet.data?.gold ?? 0)}</p>
+              )}
+              <p className="mt-2 text-xs text-white/40">
+                Withdraw as cash when you reach {minGold} gold
+              </p>
+            </div>
+          )}
         </div>
 
         {isHost && (
           <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100/80">
-            Hosts earn gold when users message, call, or gift you. You cannot buy diamonds — request a
-            withdrawal below instead.
+            You earn gold when users message, call, or gift you. Buy diamonds below to connect with other hosts.
+          </div>
+        )}
+
+        {publicSettings.data?.diamondConversions && (
+          <div className="rounded-2xl border border-brand-blue/20 bg-brand-blue/5 p-5">
+            <h3 className="flex items-center gap-2 font-semibold text-brand-blue">
+              <Gem className="h-5 w-5" />
+              Diamond conversions
+            </h3>
+            <p className="mt-1 text-sm text-white/45">What 1 diamond gets you on Kushlov</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {!isHost && (
+                <>
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/40">
+                      With hosts
+                    </p>
+                    <ul className="space-y-2 text-sm text-white/80">
+                      {[
+                        publicSettings.data.diamondConversions.hostVideo?.label ??
+                          publicSettings.data.diamondConversions.video?.label,
+                        publicSettings.data.diamondConversions.hostAudio?.label ??
+                          publicSettings.data.diamondConversions.audio?.label,
+                        publicSettings.data.diamondConversions.hostMessages?.label ??
+                          publicSettings.data.diamondConversions.messages?.label,
+                      ]
+                        .filter(Boolean)
+                        .map((label) => (
+                          <li key={String(label)} className="flex items-start gap-2">
+                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
+                            {label}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/40">
+                      With users
+                    </p>
+                    <ul className="space-y-2 text-sm text-white/80">
+                      {[
+                        publicSettings.data.diamondConversions.userVideo?.label,
+                        publicSettings.data.diamondConversions.userAudio?.label,
+                        publicSettings.data.diamondConversions.userMessages?.label,
+                      ]
+                        .filter(Boolean)
+                        .map((label) => (
+                          <li key={String(label)} className="flex items-start gap-2">
+                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-pink" />
+                            {label}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+              {isHost && (
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/40">
+                    Host → Host
+                  </p>
+                  <ul className="space-y-2 text-sm text-white/80">
+                    {[
+                      publicSettings.data.diamondConversions.hostHostVideo?.label,
+                      publicSettings.data.diamondConversions.hostHostAudio?.label,
+                      publicSettings.data.diamondConversions.hostHostMessages?.label,
+                    ]
+                      .filter(Boolean)
+                      .map((label) => (
+                        <li key={String(label)} className="flex items-start gap-2">
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                          {label}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         <Tabs defaultValue={defaultTab}>
           <TabsList>
-            {!isHost && <TabsTrigger value="buy">Buy diamonds</TabsTrigger>}
+            <TabsTrigger value="buy">Buy diamonds</TabsTrigger>
             {isHost && <TabsTrigger value="withdraw">Withdraw</TabsTrigger>}
             {isHost && <TabsTrigger value="withdrawals">My requests</TabsTrigger>}
-            <TabsTrigger value="history">{isHost ? 'Gold history' : 'History'}</TabsTrigger>
+            <TabsTrigger value="history">{isHost ? 'History' : 'History'}</TabsTrigger>
           </TabsList>
 
-          {!isHost && (
-            <TabsContent value="buy" className="mt-6">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {packages.data?.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex flex-col rounded-2xl border border-white/10 bg-card p-5 text-center"
-                  >
-                    <Gem className="mx-auto h-8 w-8 text-brand-blue" />
-                    <p className="mt-3 text-2xl font-bold">
-                      {formatCompact(p.diamonds + (p.bonus ?? 0))}
-                    </p>
+          <TabsContent value="buy" className="mt-6">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {packages.data?.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex flex-col rounded-2xl border border-white/10 bg-card p-5 text-center"
+                >
+                  <Gem className="mx-auto h-8 w-8 text-brand-blue" />
+                  <p className="mt-3 text-2xl font-bold">
+                    {formatCompact(p.diamonds + (p.bonus ?? 0))}
+                  </p>
                     {p.bonus > 0 && (
                       <p className="text-xs text-emerald-400">+{p.bonus} bonus</p>
                     )}
@@ -232,7 +324,6 @@ export default function WalletPage() {
                 ))}
               </div>
             </TabsContent>
-          )}
 
           {isHost && (
             <TabsContent value="withdraw" className="mt-6">
@@ -377,6 +468,26 @@ export default function WalletPage() {
                   </p>
                 </div>
               ))}
+              {isHost && (diamondTxns.data?.items?.length ?? 0) > 0 && (
+                <div className="pt-4">
+                  <p className="mb-2 text-sm font-medium text-white/50">Diamond activity</p>
+                  {diamondTxns.data?.items.map((t) => (
+                    <div
+                      key={`d-${t._id}`}
+                      className="mb-2 flex items-center justify-between rounded-xl border border-white/10 bg-card p-4"
+                    >
+                      <div>
+                        <p className="font-medium capitalize">{t.reason.replace(/_/g, ' ')}</p>
+                        <p className="text-xs text-white/40">{relativeTime(t.createdAt)}</p>
+                      </div>
+                      <p className={t.direction === 'credit' ? 'text-emerald-400' : 'text-red-400'}>
+                        {t.direction === 'credit' ? '+' : '-'}
+                        {t.amount} 💎
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
               {(isHost ? goldTxns.data?.items : diamondTxns.data?.items)?.length === 0 && (
                 <p className="py-12 text-center text-white/40">No transactions yet.</p>
               )}

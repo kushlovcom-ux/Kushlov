@@ -23,6 +23,19 @@ export interface IUser extends Document {
   isHostApproved: boolean;
   hostSince?: Date;
 
+  /** Host rating aggregates (denormalized from reviews). */
+  averageRating: number;
+  totalReviews: number;
+
+  /** Admin-set host pricing in gold (users pay diamonds converted from these). */
+  videoPrice: number;
+  audioPrice: number;
+  messagePrice: number;
+
+  /** Admin-curated popular hosts shown on the landing page. */
+  isPopularHost: boolean;
+  popularSortOrder: number;
+
   // security
   tokenVersion: number;
   passwordResetToken?: string;
@@ -89,6 +102,15 @@ const userSchema = new Schema<IUser>(
     isHostApproved: { type: Boolean, default: false },
     hostSince: Date,
 
+    averageRating: { type: Number, default: 0, min: 0, max: 5 },
+    totalReviews: { type: Number, default: 0, min: 0 },
+    videoPrice: { type: Number, default: 0, min: 0 },
+    audioPrice: { type: Number, default: 0, min: 0 },
+    messagePrice: { type: Number, default: 0, min: 0 },
+
+    isPopularHost: { type: Boolean, default: false, index: true },
+    popularSortOrder: { type: Number, default: 0 },
+
     tokenVersion: { type: Number, default: 0 },
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
@@ -104,6 +126,9 @@ const userSchema = new Schema<IUser>(
 );
 
 userSchema.index({ displayName: 'text', username: 'text' });
+userSchema.index({ role: 1, isHostApproved: 1, averageRating: -1, totalReviews: -1 });
+userSchema.index({ role: 1, isOnline: -1, lastSeenAt: -1 });
+userSchema.index({ isPopularHost: 1, popularSortOrder: 1, averageRating: -1 });
 
 /** Serialize a user into the public API shape (never leaks secrets). */
 userSchema.methods.toPublic = function toPublic() {
@@ -124,6 +149,14 @@ userSchema.methods.toPublic = function toPublic() {
     isOnline: u.isOnline,
     authProvider: u.authProvider,
     emailVerified: u.emailVerified,
+    averageRating: u.averageRating ?? 0,
+    totalReviews: u.totalReviews ?? 0,
+    videoPrice: u.videoPrice ?? 0,
+    audioPrice: u.audioPrice ?? 0,
+    messagePrice: u.messagePrice ?? 0,
+    isPopularHost: u.isPopularHost ?? false,
+    popularSortOrder: u.popularSortOrder ?? 0,
+    lastSeenAt: u.lastSeenAt?.toISOString(),
     createdAt: u.createdAt?.toISOString(),
   };
 };

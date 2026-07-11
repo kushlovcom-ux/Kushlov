@@ -231,7 +231,32 @@ export interface PublicUser {
   country?: string;
   isHostApproved?: boolean;
   isOnline?: boolean;
+  averageRating?: number;
+  totalReviews?: number;
+  /** Host pricing in gold (admin-set). Converted to diamonds at billing. */
+  videoPrice?: number;
+  audioPrice?: number;
+  messagePrice?: number;
+  isPopularHost?: boolean;
+  popularSortOrder?: number;
+  lastSeenAt?: string;
   createdAt: string;
+}
+
+export interface HostReview {
+  id: string;
+  hostId: string;
+  rating: number;
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+  reviewer: {
+    id: string;
+    displayName: string;
+    username: string;
+    avatarUrl?: string;
+    emailVerified?: boolean;
+  };
 }
 
 export interface AuthTokens {

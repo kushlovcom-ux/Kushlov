@@ -9,6 +9,7 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', ctrl.searchUsers);
+router.get('/hosts/top-rated', ctrl.listTopRatedHosts);
 router.get('/hosts', ctrl.listHosts);
 
 router.patch('/me', validate({ body: updateMeSchema }), ctrl.updateMe);

@@ -79,7 +79,9 @@ export async function assertUsersCanConnect(
 ): Promise<void> {
   if (userId === targetUserId) return;
 
-  const actor = await User.findById(userId).select('role');
+  const [actor] = await Promise.all([
+    User.findById(userId).select('role'),
+  ]);
   if (actor?.role === Role.Admin) return;
 
   const [lng1, lat1] = await requireUserCoordinates(userId);
@@ -90,9 +92,7 @@ export async function assertUsersCanConnect(
   const [lng2, lat2] = targetProfile.location.coordinates;
   const km = haversineKm(lat1, lng1, lat2, lng2);
   if (km <= EXCLUSION_RADIUS_KM) {
-    throw ApiError.forbidden(
-      `Users within ${EXCLUSION_RADIUS_KM} km cannot see or connect with each other. This user is only ${km.toFixed(1)} km away.`,
-    );
+    throw ApiError.forbidden('This profile isn’t available to connect with right now. Try someone else nearby.');
   }
 }
 

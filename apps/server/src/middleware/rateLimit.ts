@@ -48,3 +48,10 @@ export const authLimiter = buildLimiter({
   max: 20,
   message: { success: false, message: 'Too many auth attempts, please try again later.' },
 });
+
+/** Limit review spam (create/update). */
+export const reviewWriteLimiter = buildLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { success: false, message: 'Too many review submissions, please try again later.' },
+});

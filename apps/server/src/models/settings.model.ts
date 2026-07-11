@@ -21,14 +21,43 @@ export interface ILandingStats {
   liveRoomsLabel: string;
 }
 
+export type TimeUnit = 'second' | 'minute' | 'hour';
+
 export interface ISettings extends Document {
   key: string; // always "global"
   goldConversionRatio: number; // gold earned per diamond spent
   rates: {
-    audioCallPerMinute: number; // diamonds
-    videoCallPerMinute: number; // diamonds
-    liveChatPerMessage: number; // diamonds
-    chatPerMessage: number; // diamonds — DM to hosts
+    /** Fallback diamonds/min when host has no custom videoPrice */
+    audioCallPerMinute: number;
+    videoCallPerMinute: number;
+    liveChatPerMessage: number;
+    /** Legacy fallback diamonds per DM when messagesPerDiamond not set */
+    chatPerMessage: number;
+
+    /** User → Host: seconds of video call per 1 diamond */
+    videoSecondsPerDiamond: number;
+    /** User → Host: seconds of audio call per 1 diamond */
+    audioSecondsPerDiamond: number;
+    videoTimeUnit: TimeUnit;
+    audioTimeUnit: TimeUnit;
+    /** User → Host: messages per 1 diamond when host has no messagePrice */
+    messagesPerDiamond: number;
+
+    /** User → User: seconds of video call per 1 diamond */
+    userUserVideoSecondsPerDiamond: number;
+    /** User → User: seconds of audio call per 1 diamond */
+    userUserAudioSecondsPerDiamond: number;
+    userUserVideoTimeUnit: TimeUnit;
+    userUserAudioTimeUnit: TimeUnit;
+    /** User → User: messages per 1 diamond */
+    userUserMessagesPerDiamond: number;
+
+    /** Host → Host: seconds of video call per 1 diamond */
+    hostHostVideoSecondsPerDiamond: number;
+    hostHostAudioSecondsPerDiamond: number;
+    hostHostVideoTimeUnit: TimeUnit;
+    hostHostAudioTimeUnit: TimeUnit;
+    hostHostMessagesPerDiamond: number;
   };
   diamondPackages: IDiamondPackage[];
   withdraw: {
@@ -40,6 +69,7 @@ export interface ISettings extends Document {
     liveEnabled: boolean;
     callsEnabled: boolean;
     giftsEnabled: boolean;
+    reviewsEnabled: boolean;
   };
   announcements: { title: string; body: string; active: boolean }[];
   landing: ILandingStats;
@@ -56,6 +86,21 @@ const settingsSchema = new Schema<ISettings>(
       videoCallPerMinute: { type: Number, default: 20 },
       liveChatPerMessage: { type: Number, default: 1 },
       chatPerMessage: { type: Number, default: 1 },
+      videoSecondsPerDiamond: { type: Number, default: 60 },
+      audioSecondsPerDiamond: { type: Number, default: 120 },
+      videoTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
+      audioTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
+      messagesPerDiamond: { type: Number, default: 5 },
+      userUserVideoSecondsPerDiamond: { type: Number, default: 90 },
+      userUserAudioSecondsPerDiamond: { type: Number, default: 180 },
+      userUserVideoTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
+      userUserAudioTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
+      userUserMessagesPerDiamond: { type: Number, default: 10 },
+      hostHostVideoSecondsPerDiamond: { type: Number, default: 60 },
+      hostHostAudioSecondsPerDiamond: { type: Number, default: 120 },
+      hostHostVideoTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
+      hostHostAudioTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
+      hostHostMessagesPerDiamond: { type: Number, default: 5 },
     },
     diamondPackages: {
       type: [
@@ -85,6 +130,7 @@ const settingsSchema = new Schema<ISettings>(
       liveEnabled: { type: Boolean, default: true },
       callsEnabled: { type: Boolean, default: true },
       giftsEnabled: { type: Boolean, default: true },
+      reviewsEnabled: { type: Boolean, default: true },
     },
     announcements: {
       type: [{ title: String, body: String, active: { type: Boolean, default: true } }],

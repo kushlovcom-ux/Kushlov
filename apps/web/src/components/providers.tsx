@@ -7,6 +7,7 @@ import { Toaster } from 'sonner';
 import { SocketProvider } from './socket-provider';
 import { AuthBootstrap } from './auth-bootstrap';
 import { CookieConsent } from './cookie-consent';
+import { CallOverlay } from './calls/call-overlay';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
@@ -22,7 +23,10 @@ export function Providers({ children }: { children: ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} forcedTheme="dark">
       <QueryClientProvider client={client}>
         <AuthBootstrap />
-        <SocketProvider>{children}</SocketProvider>
+        <SocketProvider>
+          {children}
+          <CallOverlay />
+        </SocketProvider>
         <CookieConsent />
         <Toaster
           theme="dark"

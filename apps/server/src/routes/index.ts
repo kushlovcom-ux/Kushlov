@@ -14,6 +14,7 @@ import liveRoutes from '../modules/live/live.routes';
 import adminRoutes from '../modules/admin/admin.routes';
 import settingsRoutes from '../modules/settings/settings.routes';
 import contactRoutes from '../modules/contact/contact.routes';
+import reviewsRoutes from '../modules/reviews/reviews.routes';
 
 /** Root API router — every feature module is mounted under /api here. */
 export const apiRouter = Router();
@@ -36,4 +37,5 @@ apiRouter.use('/calls', callsRoutes);
 apiRouter.use('/live', liveRoutes);
 apiRouter.use('/settings', settingsRoutes);
 apiRouter.use('/contact', contactRoutes);
+apiRouter.use('/reviews', reviewsRoutes);
 apiRouter.use('/admin', adminRoutes);

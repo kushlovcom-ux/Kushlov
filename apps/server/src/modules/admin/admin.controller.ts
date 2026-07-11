@@ -22,11 +22,13 @@ import {
   Payment,
   Profile,
   Report,
+  Review,
   Subscription,
   User,
   VerificationRequest,
   WithdrawRequest,
 } from '../../models';
+import { recomputeHostRating, serializeReview } from '../../services/review.service';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
@@ -413,18 +415,139 @@ export const getAdminSettings = asyncHandler(async (_req: Request, res: Response
 
 export const updateSettings = asyncHandler(async (req: Request, res: Response) => {
   const settings = await getSettings();
-  const updatable = [
-    'goldConversionRatio',
-    'rates',
-    'diamondPackages',
-    'withdraw',
-    'features',
-    'announcements',
-    'landing',
-  ];
+  const updatable = ['goldConversionRatio', 'diamondPackages', 'withdraw', 'announcements', 'landing'];
   for (const key of updatable) if (key in req.body) (settings as any)[key] = req.body[key];
+  if (req.body.rates && typeof req.body.rates === 'object') {
+    Object.assign(settings.rates, req.body.rates);
+  }
+  if (req.body.features && typeof req.body.features === 'object') {
+    Object.assign(settings.features, req.body.features);
+  }
   await settings.save();
   return ok(res, settings, 'Settings updated');
+});
+
+/** GET /admin/hosts — approved hosts with pricing + ratings for admin management. */
+export const listHostsAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const { page, limit, skip } = parsePagination(req.query);
+  const { q } = req.query as Record<string, string>;
+  const filter: Record<string, unknown> = { role: Role.Host, isHostApproved: true };
+  if (q) {
+    filter.$or = [
+      { email: new RegExp(q, 'i') },
+      { username: new RegExp(q, 'i') },
+      { displayName: new RegExp(q, 'i') },
+    ];
+  }
+  const [items, total] = await Promise.all([
+    User.find(filter)
+      .sort({ averageRating: -1, totalReviews: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    User.countDocuments(filter),
+  ]);
+  return ok(res, buildPaginated(items.map((u) => (u as any).toPublic()), page, limit, total));
+});
+
+/** PATCH /admin/hosts/:id/pricing — set per-host video/audio/message gold prices. */
+export const updateHostPricing = asyncHandler(async (req: Request, res: Response) => {
+  const user = await User.findById(req.params.id);
+  if (!user) throw ApiError.notFound('User not found');
+  if (user.role !== Role.Host) throw ApiError.badRequest('User is not a host');
+
+  const { videoPrice, audioPrice, messagePrice } = req.body as {
+    videoPrice?: number;
+    audioPrice?: number;
+    messagePrice?: number;
+  };
+  if (videoPrice != null) user.videoPrice = Math.max(0, videoPrice);
+  if (audioPrice != null) user.audioPrice = Math.max(0, audioPrice);
+  if (messagePrice != null) user.messagePrice = Math.max(0, messagePrice);
+  await user.save();
+  return ok(res, (user as any).toPublic(), 'Host pricing updated');
+});
+
+/** PATCH /admin/hosts/:id/popular — mark/unmark a host as popular for the landing page. */
+export const updateHostPopular = asyncHandler(async (req: Request, res: Response) => {
+  const user = await User.findById(req.params.id);
+  if (!user) throw ApiError.notFound('User not found');
+  if (user.role !== Role.Host || !user.isHostApproved) {
+    throw ApiError.badRequest('Only approved hosts can be marked popular');
+  }
+
+  const { isPopularHost, popularSortOrder } = req.body as {
+    isPopularHost?: boolean;
+    popularSortOrder?: number;
+  };
+  if (typeof isPopularHost === 'boolean') user.isPopularHost = isPopularHost;
+  if (popularSortOrder != null) user.popularSortOrder = Math.max(0, popularSortOrder);
+  if (!user.isPopularHost) user.popularSortOrder = 0;
+  await user.save();
+  return ok(res, (user as any).toPublic(), 'Popular host updated');
+});
+
+/** GET /admin/reviews — moderate host reviews. */
+export const listReviewsAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const { page, limit, skip } = parsePagination(req.query);
+  const { hostId, hidden } = req.query as Record<string, string>;
+  const filter: Record<string, unknown> = {};
+  if (hostId) filter.host = hostId;
+  if (hidden === 'true') filter.isHidden = true;
+  if (hidden === 'false') filter.isHidden = false;
+
+  const [items, total] = await Promise.all([
+    Review.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('reviewer', 'displayName username avatarUrl emailVerified')
+      .populate('host', 'displayName username'),
+    Review.countDocuments(filter),
+  ]);
+
+  return ok(
+    res,
+    buildPaginated(
+      items.map((r) => {
+        const hostDoc = r.host as any;
+        return {
+          ...serializeReview(r as any),
+          isHidden: r.isHidden,
+          host:
+            hostDoc && typeof hostDoc === 'object' && hostDoc._id
+              ? {
+                  id: hostDoc._id.toString(),
+                  displayName: hostDoc.displayName,
+                  username: hostDoc.username,
+                }
+              : { id: String(r.host) },
+        };
+      }),
+      page,
+      limit,
+      total,
+    ),
+  );
+});
+
+/** DELETE /admin/reviews/:id — permanently remove abusive review. */
+export const deleteReviewAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const review = await Review.findById(req.params.id);
+  if (!review) throw ApiError.notFound('Review not found');
+  const hostId = review.host;
+  await review.deleteOne();
+  await recomputeHostRating(hostId);
+  return ok(res, null, 'Review deleted');
+});
+
+/** PATCH /admin/reviews/:id — hide/unhide a review. */
+export const patchReviewAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const review = await Review.findById(req.params.id);
+  if (!review) throw ApiError.notFound('Review not found');
+  if (typeof req.body.isHidden === 'boolean') review.isHidden = req.body.isHidden;
+  await review.save();
+  await recomputeHostRating(review.host);
+  return ok(res, serializeReview(review as any), 'Review updated');
 });
 
 // --------------------------------------------------------------------------

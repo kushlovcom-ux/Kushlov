@@ -44,12 +44,23 @@ function toOtherUser(u: any) {
   };
 }
 
-/** Build unified interaction history filtered to the opposite role (user ↔ host). */
+function allowedOtherRoles(role: Role): Role[] {
+  // Both hosts and users can interact with hosts and users.
+  if (role === Role.Host || role === Role.User) return [Role.User, Role.Host];
+  return [Role.Host, Role.User];
+}
+
+function isAllowedOther(other: { role?: string } | null | undefined, allowed: Role[]): boolean {
+  return Boolean(other?.role && allowed.includes(other.role as Role));
+}
+
+/** Build unified interaction history (hosts ↔ users; users ↔ hosts + users). */
 export async function getUserInteractionHistory(
   userId: string,
   role: Role,
   options: { q?: string; limit?: number } = {},
 ): Promise<{ items: InteractionRecord[]; searchRole: Role }> {
+  const allowed = allowedOtherRoles(role);
   const searchRole = role === Role.Host ? Role.User : Role.Host;
   const limit = options.limit ?? 80;
   const q = options.q?.trim().toLowerCase();
@@ -64,7 +75,7 @@ export async function getUserInteractionHistory(
 
   for (const conv of conversations) {
     const other = (conv.participants as any[]).find((p) => p._id.toString() !== userId);
-    if (!other || other.role !== searchRole) continue;
+    if (!isAllowedOther(other, allowed)) continue;
     if (q && !matchesQuery(other, q)) continue;
     items.push({
       id: conv._id.toString(),
@@ -94,7 +105,7 @@ export async function getUserInteractionHistory(
   for (const call of audioCalls) {
     const other =
       (call.caller as any)._id.toString() === userId ? (call.callee as any) : (call.caller as any);
-    if (!other || other.role !== searchRole) continue;
+    if (!isAllowedOther(other, allowed)) continue;
     if (q && !matchesQuery(other, q)) continue;
     items.push({
       id: call._id.toString(),
@@ -108,7 +119,7 @@ export async function getUserInteractionHistory(
   for (const call of videoCalls) {
     const other =
       (call.caller as any)._id.toString() === userId ? (call.callee as any) : (call.caller as any);
-    if (!other || other.role !== searchRole) continue;
+    if (!isAllowedOther(other, allowed)) continue;
     if (q && !matchesQuery(other, q)) continue;
     items.push({
       id: call._id.toString(),
@@ -134,7 +145,7 @@ export async function getUserInteractionHistory(
     for (const chat of liveChats) {
       const stream = streamMap.get(chat.liveStream.toString());
       const host = stream?.host as any;
-      if (!host || host.role !== searchRole) continue;
+      if (!isAllowedOther(host, allowed)) continue;
       if (q && !matchesQuery(host, q)) continue;
       items.push({
         id: chat._id.toString(),

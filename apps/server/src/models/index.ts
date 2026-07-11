@@ -41,3 +41,5 @@ export {
 } from './verification.model';
 export { Settings, type ISettings, type IDiamondPackage } from './settings.model';
 export { ContactInquiry, type IContactInquiry, ContactStatus } from './contact.model';
+export { Review, type IReview } from './review.model';
+export { MessageCredit, type IMessageCredit } from './message-credit.model';

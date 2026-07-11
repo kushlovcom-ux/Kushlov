@@ -16,7 +16,7 @@ import {
 import { haversineKm } from '@kushlov/utils';
 import { getUserInteractionHistory } from '../../services/interaction.service';
 
-/** GET /users/me/search-contacts — search opposite role by name (no location filter). */
+/** GET /users/me/search-contacts — search connectable people by name (no location filter). */
 export const searchContacts = asyncHandler(async (req: Request, res: Response) => {
   const me = await User.findById(req.user!.id).select('role');
   if (!me) throw ApiError.notFound('User not found');
@@ -24,14 +24,32 @@ export const searchContacts = asyncHandler(async (req: Request, res: Response) =
   const q = (req.query.q as string)?.trim();
   if (!q || q.length < 2) return ok(res, { items: [] });
 
-  const oppositeRole = me.role === Role.Host ? Role.User : Role.Host;
-  const filter: Record<string, unknown> = {
-    role: oppositeRole,
-    status: 'active',
-    _id: { $ne: me._id },
+  // Hosts search users; normal users search hosts + other users.
+  const nameMatch = {
     $or: [{ displayName: new RegExp(q, 'i') }, { username: new RegExp(q, 'i') }],
   };
-  if (oppositeRole === Role.Host) filter.isHostApproved = true;
+  const filter: Record<string, unknown> =
+    me.role === Role.Host
+      ? {
+          status: 'active',
+          _id: { $ne: me._id },
+          $and: [
+            nameMatch,
+            {
+              $or: [{ role: Role.User }, { role: Role.Host, isHostApproved: true }],
+            },
+          ],
+        }
+      : {
+          status: 'active',
+          _id: { $ne: me._id },
+          $and: [
+            nameMatch,
+            {
+              $or: [{ role: Role.User }, { role: Role.Host, isHostApproved: true }],
+            },
+          ],
+        };
 
   const users = await User.find(filter).sort({ isOnline: -1, displayName: 1 }).limit(20);
   return ok(res, { items: users.map((u) => (u as any).toPublic()) });
@@ -58,7 +76,7 @@ export const getUser = asyncHandler(async (req: Request, res: Response) => {
     await assertUsersCanConnect(req.user!.id, req.params.id);
   } catch (err) {
     if (err instanceof ApiError && err.statusCode === 403) throw err;
-    throw ApiError.forbidden('This profile is within your local exclusion zone.');
+    throw ApiError.forbidden('This profile isn’t available to connect with right now.');
   }
 
   const profile = await Profile.findOne({ user: user._id });
@@ -228,6 +246,9 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
   const { q, gender, country, role, online } = req.query as Record<string, string>;
 
+  const me = await User.findById(req.user!.id).select('role');
+  if (!me) throw ApiError.notFound('User not found');
+
   const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
   const exclude = [...blocked.map(String), req.user!.id];
 
@@ -243,7 +264,36 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
     _id: { $nin: exclude, $in: discoverableIds },
     status: 'active',
   };
-  if (role && Object.values(Role).includes(role as Role)) userFilter.role = role;
+
+  // Visibility: normal users see hosts + users; hosts see users + other hosts.
+  if (me.role === Role.Host) {
+    if (role === Role.User) {
+      userFilter.role = Role.User;
+    } else if (role === Role.Host) {
+      userFilter.role = Role.Host;
+      userFilter.isHostApproved = true;
+    } else {
+      userFilter.$or = [
+        { role: Role.User },
+        { role: Role.Host, isHostApproved: true },
+      ];
+    }
+  } else if (me.role === Role.User) {
+    if (role === Role.User) {
+      userFilter.role = Role.User;
+    } else if (role === Role.Host) {
+      userFilter.role = Role.Host;
+      userFilter.isHostApproved = true;
+    } else {
+      userFilter.$or = [
+        { role: Role.User },
+        { role: Role.Host, isHostApproved: true },
+      ];
+    }
+  } else if (role && Object.values(Role).includes(role as Role)) {
+    userFilter.role = role;
+  }
+
   if (gender) userFilter.gender = gender;
   if (online === 'true') userFilter.isOnline = true;
   if (q) userFilter.$text = { $search: q };
@@ -255,8 +305,13 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
     userFilter._id = { $nin: exclude, $in: profileUserIds };
   }
 
+  const sortingHostsOnly = userFilter.role === Role.Host;
+  const sort: Record<string, 1 | -1> = sortingHostsOnly
+    ? { averageRating: -1, totalReviews: -1, isOnline: -1, lastSeenAt: -1 }
+    : { averageRating: -1, totalReviews: -1, isOnline: -1, lastSeenAt: -1, createdAt: -1 };
+
   const [users, total, profiles] = await Promise.all([
-    User.find(userFilter).sort({ isOnline: -1, createdAt: -1 }).skip(skip).limit(limit),
+    User.find(userFilter).sort(sort).skip(skip).limit(limit),
     User.countDocuments(userFilter),
     Profile.find({ user: { $in: discoverableIds } }).select('user location'),
   ]);
@@ -289,19 +344,58 @@ export const getMyBadges = asyncHandler(async (req: Request, res: Response) => {
 
 /** GET /users/hosts — list approved hosts outside the local exclusion zone. */
 export const listHosts = asyncHandler(async (req: Request, res: Response) => {
+  const me = await User.findById(req.user!.id).select('role');
+  if (!me) throw ApiError.notFound('User not found');
+
   const { page, limit, skip } = parsePagination(req.query);
   const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
-  const discoverableIds = await getDiscoverableUserIds(req.user!.id, blocked);
+  const discoverableIds = await getDiscoverableUserIds(req.user!.id, [
+    ...blocked.map(String),
+    req.user!.id,
+  ]);
 
   const filter = {
-    _id: { $in: discoverableIds },
+    _id: { $in: discoverableIds, $ne: me._id },
     role: Role.Host,
     isHostApproved: true,
     status: 'active',
   };
 
   const [hosts, total] = await Promise.all([
-    User.find(filter).sort({ isOnline: -1 }).skip(skip).limit(limit),
+    User.find(filter)
+      .sort({ averageRating: -1, totalReviews: -1, isOnline: -1, lastSeenAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    User.countDocuments(filter),
+  ]);
+  return ok(res, buildPaginated(hosts.map((h) => (h as any).toPublic()), page, limit, total));
+});
+
+/** GET /users/hosts/top-rated — highest-rated approved hosts. */
+export const listTopRatedHosts = asyncHandler(async (req: Request, res: Response) => {
+  const me = await User.findById(req.user!.id).select('role');
+  if (!me) throw ApiError.notFound('User not found');
+
+  const { page, limit, skip } = parsePagination(req.query);
+  const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
+  const discoverableIds = await getDiscoverableUserIds(req.user!.id, [
+    ...blocked.map(String),
+    req.user!.id,
+  ]);
+
+  const filter = {
+    _id: { $in: discoverableIds },
+    role: Role.Host,
+    isHostApproved: true,
+    status: 'active',
+    totalReviews: { $gt: 0 },
+  };
+
+  const [hosts, total] = await Promise.all([
+    User.find(filter)
+      .sort({ averageRating: -1, totalReviews: -1, lastSeenAt: -1 })
+      .skip(skip)
+      .limit(limit),
     User.countDocuments(filter),
   ]);
   return ok(res, buildPaginated(hosts.map((h) => (h as any).toPublic()), page, limit, total));
