@@ -106,6 +106,22 @@ export async function getSettings(): Promise<ISettings> {
     settings.features.reviewsEnabled = true;
     dirty = true;
   }
+
+  // Ensure diamond packages have usable INR/USD prices for Razorpay (min 1.00).
+  if (Array.isArray(settings.diamondPackages) && settings.diamondPackages.length > 0) {
+    for (const pkg of settings.diamondPackages) {
+      if (pkg.priceInr == null || Number(pkg.priceInr) < 1) {
+        pkg.priceInr = Math.max(1, Number(pkg.price) || 79);
+        dirty = true;
+      }
+      // Razorpay rejects amounts under 1.00 — bump legacy $0.99 starters.
+      if (pkg.priceUsd == null || Number(pkg.priceUsd) < 1) {
+        pkg.priceUsd = Math.max(1, Number(pkg.priceUsd) || Number(pkg.price) || 1);
+        dirty = true;
+      }
+    }
+  }
+
   if (dirty) await settings.save();
 
   return settings;

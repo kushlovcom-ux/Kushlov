@@ -56,7 +56,11 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@kushlov/ui', '@kushlov/types', '@kushlov/utils'],
   env: publicEnv,
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@livekit/components-react'],
+  },
   images: {
+    formats: ['image/avif', 'image/webp'],
     remotePatterns: [
       { protocol: 'https', hostname: 'res.cloudinary.com' },
       { protocol: 'https', hostname: 'cdn.kushlov.app' },

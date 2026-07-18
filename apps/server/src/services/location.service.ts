@@ -32,23 +32,31 @@ export async function getDiscoverableUserIds(
   excludeIds: (string | Types.ObjectId)[] = [],
 ): Promise<Types.ObjectId[]> {
   const [lng, lat] = await requireUserCoordinates(userId);
-  const exclude = new Set([userId, ...excludeIds.map(String)]);
+  const exclude = [userId, ...excludeIds.map(String)];
 
   const radiusRadians = EXCLUSION_RADIUS_KM / 6378.1;
 
-  const profiles = await Profile.find({
-    user: { $nin: [...exclude] },
-    'location.coordinates': { $exists: true, $ne: null },
+  // Positive $geoWithin uses the 2dsphere index (cheap). Then exclude those nearby.
+  const nearbyIds = await Profile.find({
+    user: { $nin: exclude },
     location: {
-      $not: {
-        $geoWithin: {
-          $centerSphere: [[lng, lat], radiusRadians],
-        },
+      $geoWithin: {
+        $centerSphere: [[lng, lat], radiusRadians],
       },
     },
-  }).select('user');
+  }).distinct('user');
 
-  return profiles.map((p) => p.user as Types.ObjectId);
+  const nearbySet = new Set(nearbyIds.map(String));
+  const blocked = new Set([...exclude, ...nearbySet]);
+
+  const candidates = await Profile.find({
+    user: { $nin: [...blocked] },
+    'location.coordinates.0': { $exists: true },
+  })
+    .select('user')
+    .lean();
+
+  return candidates.map((p) => p.user as Types.ObjectId);
 }
 
 /** @deprecated Use getDiscoverableUserIds */

@@ -31,31 +31,50 @@ export class RazorpayPaymentProvider implements PaymentProvider {
   }
 
   async createCharge(input: CreateChargeInput): Promise<CreateChargeResult> {
-    const currency = (input.currency || 'INR').toUpperCase();
-    const amountMinor = toMinorUnits(input.amount);
-    if (amountMinor < 100) {
-      throw ApiError.badRequest('Payment amount is too low for Razorpay (minimum 1.00)');
+    // Razorpay Checkout on Indian accounts is most reliable with INR.
+    let currency = (input.currency || 'INR').toUpperCase();
+    let amount = Number(input.amount);
+    if (currency !== 'INR' && currency !== 'USD') {
+      currency = 'INR';
+    }
+    // Razorpay minimum is 100 paise / 1.00 in major units.
+    if (!Number.isFinite(amount) || amount < 1) {
+      throw ApiError.badRequest(
+        'Payment amount is too low for Razorpay (minimum 1.00). Check diamond package prices (priceInr / priceUsd).',
+      );
     }
 
-    const order = await this.client.orders.create({
-      amount: amountMinor,
-      currency,
-      receipt: input.paymentId.slice(0, 40),
-      notes: {
-        paymentId: input.paymentId,
-        userId: input.userId,
-        description: input.description,
-        ...(input.metadata ?? {}),
-      },
-    });
+    const amountMinor = toMinorUnits(amount);
 
-    return {
-      providerRef: order.id,
-      keyId: env.RAZORPAY_KEY_ID,
-      amount: input.amount,
-      currency,
-      status: PaymentStatus.Pending,
-    };
+    try {
+      const order = await this.client.orders.create({
+        amount: amountMinor,
+        currency,
+        receipt: input.paymentId.slice(0, 40),
+        notes: {
+          paymentId: input.paymentId,
+          userId: input.userId,
+          description: input.description,
+          ...(input.metadata ?? {}),
+        },
+      });
+
+      return {
+        providerRef: order.id,
+        keyId: env.RAZORPAY_KEY_ID,
+        amount,
+        currency,
+        status: PaymentStatus.Pending,
+      };
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === 'object' && 'error' in err
+          ? String((err as { error?: { description?: string } }).error?.description || err)
+          : err instanceof Error
+            ? err.message
+            : 'Razorpay order creation failed';
+      throw ApiError.badRequest(`Razorpay error: ${message}`);
+    }
   }
 
   async verify(providerRef: string, payload?: VerifyPayload): Promise<VerifyResult> {

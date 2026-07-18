@@ -27,11 +27,20 @@ export const listPackages = asyncHandler(async (req: Request, res: Response) => 
       const { amount, currency } = getPackagePriceForCountry(pkg, country);
       return { ...pkg, price: amount, currency };
     });
+  let providerName = 'mock';
+  let razorpayKeyId: string | null = null;
+  try {
+    const provider = getPaymentProvider();
+    providerName = provider.name;
+    if (providerName === 'razorpay') razorpayKeyId = env.RAZORPAY_KEY_ID ?? null;
+  } catch (err) {
+    logger.error({ err }, 'Payment provider failed to initialize');
+  }
+
   return ok(res, {
     packages,
-    provider: getPaymentProvider().name,
-    razorpayKeyId:
-      getPaymentProvider().name === 'razorpay' ? env.RAZORPAY_KEY_ID ?? null : null,
+    provider: providerName,
+    razorpayKeyId,
   });
 });
 

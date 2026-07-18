@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Phone, PhoneOff, Video, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,10 +8,14 @@ import { CallType, Role, SocketEvents } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
 import { useSocket } from '@/components/socket-provider';
 import { useAuthStore } from '@/store/auth';
-import { LiveKitStage } from '@/components/live/livekit-stage';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { PostCallReviewDialog } from '@/components/calls/post-call-review-dialog';
+
+const LiveKitStage = dynamic(
+  () => import('@/components/live/livekit-stage').then((m) => m.LiveKitStage),
+  { ssr: false, loading: () => <div className="skeleton h-full min-h-[240px] w-full rounded-2xl" /> },
+);
 
 type IncomingInvite = {
   callId: string;
@@ -401,23 +406,4 @@ export function CallOverlay() {
   );
 }
 
-/** Fire a global start-call event handled by CallOverlay. */
-export function startCall(
-  type: CallType,
-  calleeId: string,
-  peerName: string,
-  opts?: { peerIsHost?: boolean; peerRole?: string; peerHostApproved?: boolean },
-) {
-  window.dispatchEvent(
-    new CustomEvent('kushlov:start-call', {
-      detail: {
-        type,
-        calleeId,
-        peerName,
-        peerIsHost: opts?.peerIsHost,
-        peerRole: opts?.peerRole,
-        peerHostApproved: opts?.peerHostApproved,
-      },
-    }),
-  );
-}
+export { startCall } from '@/lib/start-call';

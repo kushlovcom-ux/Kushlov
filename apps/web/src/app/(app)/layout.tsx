@@ -1,11 +1,18 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { AppNav } from '@/components/app/app-nav';
 import { AppTopBar } from '@/components/app/app-top-bar';
 import { MobileBottomNav } from '@/components/app/mobile-bottom-nav';
+import { SocketProvider } from '@/components/socket-provider';
+
+const CallOverlay = dynamic(
+  () => import('@/components/calls/call-overlay').then((m) => m.CallOverlay),
+  { ssr: false },
+);
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { accessToken, hydrated, sessionChecked } = useAuthStore();
@@ -24,13 +31,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen">
-      <AppNav />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <AppTopBar />
-        <main className="flex-1 overflow-x-hidden pb-20 md:pb-0">{children}</main>
+    <SocketProvider>
+      <div className="flex min-h-screen">
+        <AppNav />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppTopBar />
+          <main className="flex-1 overflow-x-hidden pb-20 md:pb-0">{children}</main>
+        </div>
+        <MobileBottomNav />
       </div>
-      <MobileBottomNav />
-    </div>
+      <CallOverlay />
+    </SocketProvider>
   );
 }

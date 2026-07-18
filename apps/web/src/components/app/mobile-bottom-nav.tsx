@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Compass, MessageCircle, Radio, Mail, User, Bell } from 'lucide-react';
+import { Compass, MessageCircle, Radio, User, Bell, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavBadges, navBadgeForHref } from '@/hooks/use-nav-badges';
 import { NavBadge } from '@/components/app/nav-badge';
@@ -11,12 +11,12 @@ const items = [
   { href: '/discover', label: 'Discover', icon: Compass },
   { href: '/messages', label: 'Messages', icon: MessageCircle },
   { href: '/live', label: 'Live', icon: Radio },
+  { href: '/wallet', label: 'Wallet', icon: Wallet },
   { href: '/notifications', label: 'Alerts', icon: Bell },
-  { href: '/contact', label: 'Contact', icon: Mail },
   { href: '/profile', label: 'Profile', icon: User },
 ];
 
-/** Mobile bottom navigation — Contact Us and notification badges always visible. */
+/** Mobile bottom navigation — Wallet + notification badges always visible. */
 export function MobileBottomNav() {
   const pathname = usePathname();
   const badges = useNavBadges();

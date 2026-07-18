@@ -7,19 +7,19 @@ import { cn } from '@/lib/utils';
 
 const slides = [
   {
-    src: '/k1.png',
+    src: '/k1.webp',
     alt: 'Connect through live video calls on Kushlov',
     title: 'Go live with confidence',
     subtitle: 'Crystal-clear video calls and streaming built for real connections.',
   },
   {
-    src: '/k2.png',
+    src: '/k2.webp',
     alt: 'Match and chat with people on Kushlov',
     title: 'Meet people who match you',
     subtitle: 'Smart discovery, realtime chat, and meaningful one-to-one calls.',
   },
   {
-    src: '/k3.png',
+    src: '/k3.webp',
     alt: 'Earn as a verified Kushlov host',
     title: 'Turn your audience into income',
     subtitle: 'Get verified, grow followers, and earn from calls, chat, and gifts.',
@@ -66,39 +66,45 @@ export function LandingShowcaseCarousel() {
         <div className="absolute inset-0 -z-10 bg-brand-gradient opacity-[0.07]" />
 
         <div className="relative aspect-[16/9] w-full sm:aspect-[21/9] md:aspect-[2.4/1]">
-          {slides.map((slide, i) => (
-            <div
-              key={slide.src}
-              className={cn(
-                'absolute inset-0 transition-all duration-700 ease-out',
-                i === active
-                  ? 'z-10 scale-100 opacity-100'
-                  : 'z-0 scale-[1.02] opacity-0 pointer-events-none',
-              )}
-              aria-hidden={i !== active}
-            >
-              <Image
-                src={slide.src}
-                alt={slide.alt}
-                fill
-                priority={i === 0}
-                sizes="(max-width: 768px) 100vw, 1024px"
-                className="object-cover object-center"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 md:p-10">
-                <p className="text-xs font-semibold uppercase tracking-wider text-brand-pink sm:text-sm">
-                  {String(i + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
-                </p>
-                <h3 className="mt-2 text-xl font-bold text-white sm:text-2xl md:text-3xl">
-                  {slide.title}
-                </h3>
-                <p className="mt-2 max-w-xl text-sm text-white/75 sm:text-base">
-                  {slide.subtitle}
-                </p>
+          {slides.map((slide, i) => {
+            // Only mount nearby slides so we don't download ~all carousel images at once.
+            if (Math.abs(i - active) > 1 && !(active === 0 && i === slides.length - 1)) {
+              return null;
+            }
+            return (
+              <div
+                key={slide.src}
+                className={cn(
+                  'absolute inset-0 transition-all duration-700 ease-out',
+                  i === active
+                    ? 'z-10 scale-100 opacity-100'
+                    : 'z-0 scale-[1.02] opacity-0 pointer-events-none',
+                )}
+                aria-hidden={i !== active}
+              >
+                <Image
+                  src={slide.src}
+                  alt={slide.alt}
+                  fill
+                  priority={i === 0 && active === 0}
+                  sizes="(max-width: 768px) 100vw, 1024px"
+                  className="object-cover object-center"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 md:p-10">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-pink sm:text-sm">
+                    {String(i + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
+                  </p>
+                  <h3 className="mt-2 text-xl font-bold text-white sm:text-2xl md:text-3xl">
+                    {slide.title}
+                  </h3>
+                  <p className="mt-2 max-w-xl text-sm text-white/75 sm:text-base">
+                    {slide.subtitle}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <button

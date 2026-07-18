@@ -38,6 +38,7 @@ export function LocationSetup({ compact, onSaved }: Props) {
   const [lat, setLat] = useState(28.6139);
   const [lng, setLng] = useState(77.209);
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (data?.hasLocation && data.lat != null && data.lng != null) {
@@ -63,6 +64,7 @@ export function LocationSetup({ compact, onSaved }: Props) {
     },
     onSuccess: () => {
       toast.success('Location saved! You can now discover nearby users.');
+      setEditing(false);
       qc.invalidateQueries({ queryKey: ['my-location'] });
       qc.invalidateQueries({ queryKey: ['discover'] });
       onSaved?.();
@@ -95,8 +97,32 @@ export function LocationSetup({ compact, onSaved }: Props) {
     return <div className="skeleton h-32 rounded-2xl" />;
   }
 
+  // Compact mode with saved location: show summary only (no Leaflet until edit).
+  if (compact && data?.hasLocation && !editing) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-card/50 px-4 py-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <MapPin className="h-4 w-4 shrink-0 text-brand-pink" />
+            Your location
+          </p>
+          {data.locationLabel && (
+            <p className="mt-0.5 truncate text-xs text-white/45">{data.locationLabel}</p>
+          )}
+        </div>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>
+          Change
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className={compact ? 'space-y-4' : 'rounded-2xl border border-white/10 bg-card/70 p-6 space-y-4'}>
+    <div
+      className={
+        compact ? 'space-y-4' : 'space-y-4 rounded-2xl border border-white/10 bg-card/70 p-6'
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="flex items-center gap-2 font-semibold">
@@ -116,20 +142,34 @@ export function LocationSetup({ compact, onSaved }: Props) {
             . Share your location to discover people and hosts who are a great match for you.
           </p>
           {data?.locationLabel && (
-            <p className="mt-2 text-xs text-white/40 line-clamp-2">{data.locationLabel}</p>
+            <p className="mt-2 line-clamp-2 text-xs text-white/40">{data.locationLabel}</p>
           )}
         </div>
-        <Button type="button" variant="secondary" size="sm" onClick={useGps} disabled={gpsLoading}>
-          {gpsLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Navigation className="h-4 w-4" />
+        <div className="flex gap-2">
+          {compact && data?.hasLocation && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
           )}
-          Use GPS
-        </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={useGps} disabled={gpsLoading}>
+            {gpsLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Navigation className="h-4 w-4" />
+            )}
+            Use GPS
+          </Button>
+        </div>
       </div>
 
-      <OsmMapPicker lat={lat} lng={lng} onChange={(a, b) => { setLat(a); setLng(b); }} />
+      <OsmMapPicker
+        lat={lat}
+        lng={lng}
+        onChange={(a, b) => {
+          setLat(a);
+          setLng(b);
+        }}
+      />
 
       <Button className="w-full" loading={save.isPending} onClick={() => save.mutate()}>
         Save location

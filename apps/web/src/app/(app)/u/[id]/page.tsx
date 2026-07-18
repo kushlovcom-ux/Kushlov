@@ -10,7 +10,7 @@ import { api, apiError, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { StarRatingDisplay, StarRatingInput } from '@/components/common/star-rating';
-import { startCall } from '@/components/calls/call-overlay';
+import { startCall } from '@/lib/start-call';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';

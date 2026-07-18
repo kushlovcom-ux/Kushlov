@@ -158,7 +158,9 @@ export default function WalletPage() {
 
       if (purchase.provider === 'razorpay') {
         if (!purchase.keyId || !purchase.orderId) {
-          throw new Error('Razorpay order was not created correctly');
+          throw new Error(
+            'Razorpay order was not created correctly. Check RAZORPAY_KEY_ID on the server.',
+          );
         }
         const result = await openRazorpayCheckout({
           key: purchase.keyId,
@@ -179,7 +181,13 @@ export default function WalletPage() {
         return;
       }
 
-      // Mock / other providers: settle immediately after create.
+      // Mock provider (local / misconfigured deploy) — settle without Checkout.
+      if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+        console.warn(
+          '[payments] Server returned provider=%s. Set PAYMENT_PROVIDER=razorpay and Razorpay keys on the API host, then redeploy.',
+          purchase.provider,
+        );
+      }
       await api.post(`/payments/${purchase.paymentId}/verify`);
     },
     onSuccess: () => {

@@ -43,7 +43,7 @@ export default function LandingPage() {
         <div className="relative flex justify-center">
           <div className="absolute inset-0 -z-10 animate-float rounded-full bg-brand-gradient opacity-30 blur-3xl" />
           <Image
-            src="/kush.png"
+            src="/kush.webp"
             alt="Kushlov"
             width={420}
             height={420}

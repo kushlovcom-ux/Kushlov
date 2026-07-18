@@ -63,7 +63,7 @@ export function LandingHeroStats() {
   const { data, isLoading } = useQuery({
     queryKey: ['platform-stats'],
     queryFn: () => unwrap<PlatformStats>(api.get('/settings/stats')),
-    refetchInterval: 30_000,
+    staleTime: 120_000,
   });
 
   if (isLoading) {
@@ -104,7 +104,7 @@ export function LandingFeatureGrid() {
   const { data } = useQuery({
     queryKey: ['platform-stats'],
     queryFn: () => unwrap<PlatformStats>(api.get('/settings/stats')),
-    refetchInterval: 30_000,
+    staleTime: 120_000,
   });
 
   const stats: PlatformStats = data ?? {

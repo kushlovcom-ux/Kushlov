@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useDeferredValue } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,7 @@ import { api, apiError, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { StarRatingDisplay } from '@/components/common/star-rating';
-import { startCall } from '@/components/calls/call-overlay';
+import { startCall } from '@/lib/start-call';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -26,6 +26,7 @@ type DiscoverUser = PublicUser & { distanceKm?: number };
 export default function DiscoverPage() {
   const searchParams = useSearchParams();
   const [q, setQ] = useState('');
+  const deferredQ = useDeferredValue(q);
   const qc = useQueryClient();
   const me = useAuthStore((s) => s.user);
   const isNormalUser = me?.role === Role.User;
@@ -40,12 +41,17 @@ export default function DiscoverPage() {
     queryKey: ['my-location'],
     queryFn: () =>
       unwrap<{ hasLocation: boolean; discoveryRadiusKm: number }>(api.get('/users/me/location')),
+    staleTime: 60_000,
   });
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['discover', q],
-    queryFn: () => unwrap<Paginated<DiscoverUser>>(api.get('/users', { params: { q, limit: 24 } })),
+    queryKey: ['discover', deferredQ],
+    queryFn: () =>
+      unwrap<Paginated<DiscoverUser>>(
+        api.get('/users', { params: { q: deferredQ || undefined, limit: 24 } }),
+      ),
     enabled: location.data?.hasLocation === true,
+    staleTime: 20_000,
   });
 
   const like = useMutation({

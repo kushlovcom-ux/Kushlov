@@ -313,12 +313,16 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
     ? { averageRating: -1, totalReviews: -1, isOnline: -1, lastSeenAt: -1 }
     : { averageRating: -1, totalReviews: -1, isOnline: -1, lastSeenAt: -1, createdAt: -1 };
 
-  const [users, total, profiles] = await Promise.all([
+  const [users, total] = await Promise.all([
     User.find(userFilter).sort(sort).skip(skip).limit(limit),
     User.countDocuments(userFilter),
-    Profile.find({ user: { $in: discoverableIds } }).select('user location'),
   ]);
 
+  // Only load locations for the current page (not the full discoverable set).
+  const pageIds = users.map((u) => u._id);
+  const profiles = pageIds.length
+    ? await Profile.find({ user: { $in: pageIds } }).select('user location')
+    : [];
   const profileMap = new Map(profiles.map((p) => [p.user.toString(), p]));
 
   const items = users.map((u) => {
