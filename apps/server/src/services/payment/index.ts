@@ -1,6 +1,7 @@
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { MockPaymentProvider } from './mock.provider';
+import { RazorpayPaymentProvider } from './razorpay.provider';
 import { PaymentProvider } from './provider.interface';
 
 /**
@@ -14,14 +15,15 @@ export function getPaymentProvider(): PaymentProvider {
   if (provider) return provider;
 
   switch (env.PAYMENT_PROVIDER) {
-    // case 'stripe':
-    //   provider = new StripePaymentProvider();
-    //   break;
+    case 'razorpay':
+      provider = new RazorpayPaymentProvider();
+      logger.info('Using Razorpay payment provider');
+      break;
     case 'mock':
+      provider = new MockPaymentProvider();
+      break;
     default:
-      if (env.PAYMENT_PROVIDER !== 'mock') {
-        logger.warn(`Unknown PAYMENT_PROVIDER "${env.PAYMENT_PROVIDER}", falling back to mock`);
-      }
+      logger.warn(`Unknown PAYMENT_PROVIDER "${env.PAYMENT_PROVIDER}", falling back to mock`);
       provider = new MockPaymentProvider();
   }
   return provider;

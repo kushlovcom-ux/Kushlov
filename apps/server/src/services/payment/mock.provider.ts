@@ -4,6 +4,7 @@ import {
   CreateChargeInput,
   CreateChargeResult,
   PaymentProvider,
+  VerifyPayload,
   VerifyResult,
 } from './provider.interface';
 
@@ -22,7 +23,7 @@ export class MockPaymentProvider implements PaymentProvider {
     };
   }
 
-  async verify(providerRef: string): Promise<VerifyResult> {
+  async verify(providerRef: string, _payload?: VerifyPayload): Promise<VerifyResult> {
     // In the mock, verification always resolves as succeeded.
     return { status: PaymentStatus.Succeeded, providerRef };
   }

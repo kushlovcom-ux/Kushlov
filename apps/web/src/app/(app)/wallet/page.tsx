@@ -8,6 +8,7 @@ import { formatCompact, formatCurrency } from '@kushlov/utils';
 import { useFormatMoney } from '@/hooks/use-format-money';
 import { useAuthStore } from '@/store/auth';
 import { api, apiError, unwrap } from '@/lib/api';
+import { openRazorpayCheckout } from '@/lib/razorpay';
 import { relativeTime } from '@/lib/utils';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,25 @@ interface DiamondPackage {
   currency: string;
   priceUsd?: number;
   priceInr?: number;
+}
+
+interface PackagesResponse {
+  packages: DiamondPackage[];
+  provider: string;
+  razorpayKeyId?: string | null;
+}
+
+interface PurchaseResponse {
+  paymentId: string;
+  provider: string;
+  providerRef: string;
+  orderId?: string;
+  keyId?: string;
+  amount: number;
+  currency: string;
+  diamonds: number;
+  prefill?: { name?: string; email?: string };
+  status: string;
 }
 interface WalletData {
   diamonds: number;
@@ -99,7 +119,14 @@ export default function WalletPage() {
   });
   const packages = useQuery({
     queryKey: ['packages'],
-    queryFn: () => unwrap<DiamondPackage[]>(api.get('/payments/packages')),
+    queryFn: async () => {
+      const data = await unwrap<PackagesResponse | DiamondPackage[]>(api.get('/payments/packages'));
+      // Back-compat if API still returns a bare array.
+      if (Array.isArray(data)) {
+        return { packages: data, provider: 'mock', razorpayKeyId: null } satisfies PackagesResponse;
+      }
+      return data;
+    },
   });
   const diamondTxns = useQuery({
     queryKey: ['diamondTxns'],
@@ -125,15 +152,45 @@ export default function WalletPage() {
 
   const buy = useMutation({
     mutationFn: async (packageId: string) => {
-      const { data } = await api.post('/payments/purchase', { packageId });
-      await api.post(`/payments/${data.data.paymentId}/verify`);
+      const purchase = await unwrap<PurchaseResponse>(
+        api.post('/payments/purchase', { packageId }),
+      );
+
+      if (purchase.provider === 'razorpay') {
+        if (!purchase.keyId || !purchase.orderId) {
+          throw new Error('Razorpay order was not created correctly');
+        }
+        const result = await openRazorpayCheckout({
+          key: purchase.keyId,
+          orderId: purchase.orderId,
+          amount: purchase.amount,
+          currency: purchase.currency,
+          description: `${purchase.diamonds} diamonds`,
+          prefill: purchase.prefill,
+        });
+        if (!result) {
+          throw new Error('Payment cancelled');
+        }
+        await api.post(`/payments/${purchase.paymentId}/verify`, {
+          razorpay_payment_id: result.razorpay_payment_id,
+          razorpay_order_id: result.razorpay_order_id,
+          razorpay_signature: result.razorpay_signature,
+        });
+        return;
+      }
+
+      // Mock / other providers: settle immediately after create.
+      await api.post(`/payments/${purchase.paymentId}/verify`);
     },
     onSuccess: () => {
       toast.success('Diamonds added to your wallet 💎');
       qc.invalidateQueries({ queryKey: ['wallet'] });
       qc.invalidateQueries({ queryKey: ['diamondTxns'] });
     },
-    onError: (e) => toast.error(apiError(e)),
+    onError: (e) => {
+      const msg = e instanceof Error && e.message === 'Payment cancelled' ? e.message : apiError(e);
+      toast.error(msg);
+    },
   });
 
   const withdraw = useMutation({
@@ -301,7 +358,7 @@ export default function WalletPage() {
 
           <TabsContent value="buy" className="mt-6">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {packages.data?.map((p) => (
+              {packages.data?.packages?.map((p) => (
                 <div
                   key={p.id}
                   className="flex flex-col rounded-2xl border border-white/10 bg-card p-5 text-center"
@@ -310,21 +367,24 @@ export default function WalletPage() {
                   <p className="mt-3 text-2xl font-bold">
                     {formatCompact(p.diamonds + (p.bonus ?? 0))}
                   </p>
-                    {p.bonus > 0 && (
-                      <p className="text-xs text-emerald-400">+{p.bonus} bonus</p>
-                    )}
-                    <p className="mt-1 text-sm text-white/50">{p.label}</p>
-                    <Button
-                      className="mt-4"
-                      loading={buy.isPending && buy.variables === p.id}
-                      onClick={() => buy.mutate(p.id)}
-                    >
-                      {formatCurrency(p.price, p.currency)}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </TabsContent>
+                  {p.bonus > 0 && <p className="text-xs text-emerald-400">+{p.bonus} bonus</p>}
+                  <p className="mt-1 text-sm text-white/50">{p.label}</p>
+                  <Button
+                    className="mt-4"
+                    loading={buy.isPending && buy.variables === p.id}
+                    onClick={() => buy.mutate(p.id)}
+                  >
+                    {formatCurrency(p.price, p.currency)}
+                  </Button>
+                </div>
+              ))}
+            </div>
+            {packages.data?.provider === 'razorpay' && (
+              <p className="mt-4 text-center text-xs text-white/40">
+                Secure checkout powered by Razorpay
+              </p>
+            )}
+          </TabsContent>
 
           {isHost && (
             <TabsContent value="withdraw" className="mt-6">

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Role, DiamondTxnReason, NotificationType, PaymentStatus } from '@kushlov/types';
+import { DiamondTxnReason, NotificationType, PaymentStatus } from '@kushlov/types';
 import { buildPaginated, parsePagination, getPackagePriceForCountry } from '@kushlov/utils';
 import { Payment, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
@@ -10,6 +10,7 @@ import { creditDiamonds } from '../../services/wallet.service';
 import { getPaymentProvider } from '../../services/payment';
 import { notify } from '../../services/notification.service';
 import { logger } from '../../config/logger';
+import { env } from '../../config/env';
 
 /** GET /payments/packages — purchasable diamond packages (public). */
 export const listPackages = asyncHandler(async (req: Request, res: Response) => {
@@ -26,19 +27,22 @@ export const listPackages = asyncHandler(async (req: Request, res: Response) => 
       const { amount, currency } = getPackagePriceForCountry(pkg, country);
       return { ...pkg, price: amount, currency };
     });
-  return ok(res, packages);
+  return ok(res, {
+    packages,
+    provider: getPaymentProvider().name,
+    razorpayKeyId:
+      getPaymentProvider().name === 'razorpay' ? env.RAZORPAY_KEY_ID ?? null : null,
+  });
 });
 
 /** POST /payments/purchase — start a diamond purchase for a package. */
 export const purchaseDiamonds = asyncHandler(async (req: Request, res: Response) => {
-  // Hosts may buy diamonds to connect with other hosts.
-
   const { packageId } = req.body;
   const settings = await getSettings();
   const pkg = settings.diamondPackages.find((p) => p.id === packageId && p.isActive);
   if (!pkg) throw ApiError.badRequest('Invalid package');
 
-  const buyer = await User.findById(req.user!.id).select('country');
+  const buyer = await User.findById(req.user!.id).select('country email displayName');
   const { amount, currency } = getPackagePriceForCountry(pkg as any, buyer?.country);
   const diamonds = pkg.diamonds + pkg.bonus;
   const provider = getPaymentProvider();
@@ -64,15 +68,29 @@ export const purchaseDiamonds = asyncHandler(async (req: Request, res: Response)
 
   payment.providerRef = charge.providerRef;
   payment.status = charge.status;
+  payment.meta = {
+    ...(payment.meta ?? {}),
+    keyId: charge.keyId,
+  };
   await payment.save();
 
   return created(
     res,
     {
       paymentId: payment._id,
+      provider: provider.name,
       providerRef: charge.providerRef,
+      orderId: charge.providerRef,
       checkoutUrl: charge.checkoutUrl,
       clientSecret: charge.clientSecret,
+      keyId: charge.keyId ?? env.RAZORPAY_KEY_ID,
+      amount: charge.amount ?? amount,
+      currency: charge.currency ?? currency,
+      diamonds,
+      prefill: {
+        name: buyer?.displayName,
+        email: buyer?.email,
+      },
       status: payment.status,
     },
     'Payment created',
@@ -88,9 +106,17 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
   }
 
   const provider = getPaymentProvider();
-  const result = await provider.verify(payment.providerRef!);
+  const result = await provider.verify(payment.providerRef!, {
+    razorpayPaymentId: req.body?.razorpay_payment_id,
+    razorpayOrderId: req.body?.razorpay_order_id,
+    razorpaySignature: req.body?.razorpay_signature,
+  });
 
   if (result.status === PaymentStatus.Succeeded) {
+    if (result.meta) {
+      payment.meta = { ...(payment.meta ?? {}), ...result.meta };
+      await payment.save();
+    }
     await settlePayment(payment._id.toString());
     const fresh = await Payment.findById(payment._id);
     return ok(res, fresh, 'Payment successful, diamonds credited');
@@ -99,18 +125,21 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
   payment.status = result.status;
   if (result.status === PaymentStatus.Failed) payment.failureReason = 'Verification failed';
   await payment.save();
-  return ok(res, payment, 'Payment not completed');
+
+  if (result.status === PaymentStatus.Pending) {
+    throw ApiError.badRequest('Payment not completed yet. Finish checkout and try again.');
+  }
+  throw ApiError.badRequest('Payment verification failed');
 });
 
 /** Idempotently mark a payment succeeded and credit diamonds once. */
 async function settlePayment(paymentId: string): Promise<void> {
-  // Atomic transition Created/Pending -> Succeeded prevents double crediting.
   const payment = await Payment.findOneAndUpdate(
     { _id: paymentId, status: { $in: [PaymentStatus.Created, PaymentStatus.Pending] } },
     { $set: { status: PaymentStatus.Succeeded } },
     { new: true },
   );
-  if (!payment) return; // already settled or not settleable
+  if (!payment) return;
 
   await creditDiamonds({
     userId: payment.user,
@@ -141,7 +170,9 @@ export const listMyPayments = asyncHandler(async (req: Request, res: Response) =
 /** POST /payments/webhook — provider callbacks (raw body). */
 export const webhook = asyncHandler(async (req: Request, res: Response) => {
   const provider = getPaymentProvider();
-  const signature = req.headers['stripe-signature'] as string | undefined;
+  const signature =
+    (req.headers['x-razorpay-signature'] as string | undefined) ||
+    (req.headers['stripe-signature'] as string | undefined);
   const event = await provider.handleWebhook(req.body as Buffer, signature);
   if (!event) return res.status(400).json({ received: false });
 
