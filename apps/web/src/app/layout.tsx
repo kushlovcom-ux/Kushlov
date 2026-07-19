@@ -30,8 +30,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
+    // suppressHydrationWarning: theme + browser extensions (e.g. Dark Reader)
+    // inject attributes/styles before React hydrates.
     <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body className="min-h-screen font-sans">
+      <body className="min-h-screen font-sans" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

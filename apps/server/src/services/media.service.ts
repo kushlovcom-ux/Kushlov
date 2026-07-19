@@ -18,7 +18,8 @@ export interface UploadedMedia {
 
 function mapType(resource: string, format?: string): MediaType {
   if (resource === 'video') {
-    const audioFormats = ['mp3', 'wav', 'ogg', 'm4a', 'webm'];
+    // webm is commonly used for live verification video — treat as video, not audio.
+    const audioFormats = ['mp3', 'wav', 'ogg', 'm4a', 'aac'];
     if (format && audioFormats.includes(format)) return MediaType.Audio;
     return MediaType.Video;
   }
@@ -29,12 +30,20 @@ function mapType(resource: string, format?: string): MediaType {
  * Stream a buffer directly to Cloudinary. Falls back to an inline data URL in
  * local dev when Cloudinary is not configured, so the app remains runnable.
  */
+/** Dev-only data URLs must stay tiny — large video base64 OOMs Node and resets the connection. */
+const DEV_DATA_URL_MAX_BYTES = 1.5 * 1024 * 1024;
+
 export async function uploadBuffer(
   file: Express.Multer.File,
   folder: string,
   options: UploadApiOptions = {},
 ): Promise<UploadedMedia> {
   if (!hasCloudinary) {
+    if (file.size > DEV_DATA_URL_MAX_BYTES || file.mimetype.startsWith('video/')) {
+      throw ApiError.badRequest(
+        'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET to upload verification media.',
+      );
+    }
     logger.warn('Cloudinary not configured — returning data URL fallback (dev only)');
     const dataUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
     return {
@@ -54,10 +63,16 @@ export async function uploadBuffer(
       {
         folder: `kushlov/${folder}`,
         resource_type: 'auto',
+        timeout: 120_000,
         ...options,
       },
       (error, res) => {
-        if (error || !res) return reject(ApiError.internal(error?.message ?? 'Upload failed'));
+        if (error || !res) {
+          logger.error({ err: error, folder, mimetype: file.mimetype, bytes: file.size }, 'Cloudinary upload failed');
+          return reject(
+            ApiError.internal(error?.message ?? 'Media upload failed — please try a shorter video'),
+          );
+        }
         resolve(res);
       },
     );

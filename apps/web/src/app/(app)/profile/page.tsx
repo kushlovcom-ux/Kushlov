@@ -1,8 +1,9 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Camera } from 'lucide-react';
+import { Camera, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, apiError } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
@@ -98,6 +99,25 @@ export default function ProfilePage() {
         <Button loading={save.isPending} onClick={() => save.mutate()}>
           Save changes
         </Button>
+
+        {(user?.role === 'user' || (user?.role === 'host' && !user?.isHostApproved)) && (
+          <Link
+            href="/become-host"
+            className="flex items-center gap-3 rounded-2xl border border-brand-pink/30 bg-brand-pink/10 p-4 transition-colors hover:bg-brand-pink/15"
+          >
+            <ShieldCheck className="h-6 w-6 shrink-0 text-brand-pink" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">
+                {user?.role === 'host' ? 'Host verification' : 'Become a Host'}
+              </p>
+              <p className="text-xs text-white/50">
+                {user?.role === 'host'
+                  ? 'Complete or resubmit your 3-step verification'
+                  : 'Get verified to go live and earn'}
+              </p>
+            </div>
+          </Link>
+        )}
 
         <LocationSetup compact />
       </div>

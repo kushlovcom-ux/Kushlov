@@ -12,27 +12,35 @@ const VIDEO = ['video/mp4', 'video/webm', 'video/quicktime'];
 const AUDIO = ['audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/wav'];
 const DOC = ['application/pdf', ...IMAGE];
 
+/** MediaRecorder often sends `video/webm;codecs=vp9,opus` — compare the base type only. */
+function baseMime(mimetype: string) {
+  return (mimetype || '').split(';')[0].trim().toLowerCase();
+}
+
 function fileFilter(allowed: string[]) {
   return (_req: unknown, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-    if (allowed.includes(file.mimetype)) cb(null, true);
+    const mime = baseMime(file.mimetype);
+    file.mimetype = mime;
+    if (allowed.includes(mime)) cb(null, true);
     else cb(ApiError.badRequest(`Unsupported file type: ${file.mimetype}`));
   };
 }
 
 export const uploadImage = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
   fileFilter: fileFilter(IMAGE),
 });
 
+/** Selfies + live verification video (kept modest to avoid OOM / connection resets). */
 export const uploadMedia = multer({
   storage,
-  limits: { fileSize: 200 * 1024 * 1024 },
+  limits: { fileSize: 40 * 1024 * 1024, files: 6, fieldSize: 2 * 1024 * 1024 },
   fileFilter: fileFilter([...IMAGE, ...VIDEO, ...AUDIO]),
 });
 
 export const uploadDocument = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024, files: 4 },
   fileFilter: fileFilter(DOC),
 });

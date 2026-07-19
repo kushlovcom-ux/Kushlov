@@ -79,7 +79,14 @@ export function AppNav() {
 
       <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto no-scrollbar">
         {nav.map((n) => item(n.href, n.label, n.icon, navBadgeForHref(n.href, badges)))}
-        {user?.role === 'user' && item('/become-host', 'Become a Host', ShieldCheck)}
+        {/* Normal users + unapproved hosts (incl. need-more-info) can open verification */}
+        {(user?.role === 'user' ||
+          (user?.role === 'host' && !user?.isHostApproved)) &&
+          item(
+            '/become-host',
+            user?.role === 'host' ? 'Host verification' : 'Become a Host',
+            ShieldCheck,
+          )}
         {user?.role === 'admin' &&
           item('/admin', 'Admin', LayoutDashboard, adminBadges.total)}
       </nav>

@@ -26,11 +26,26 @@ interface Props {
 }
 
 const SELFIE_COUNT = 3;
-const MAX_VIDEO_SEC = 30;
+const MAX_VIDEO_SEC = 15;
 const MIN_VIDEO_SEC = 3;
 
-function blobToFile(blob: Blob, name: string): File {
-  return new File([blob], name, { type: blob.type });
+/** Strip codec params so the server accepts `video/webm;codecs=…`. */
+function baseMime(type: string, fallback: string) {
+  const base = (type || '').split(';')[0].trim().toLowerCase();
+  return base || fallback;
+}
+
+function blobToFile(blob: Blob, name: string, fallbackMime: string): File {
+  return new File([blob], name, { type: baseMime(blob.type, fallbackMime) });
+}
+
+function pickRecorderMime(): string {
+  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+    return 'video/webm;codecs=vp8,opus';
+  }
+  if (MediaRecorder.isTypeSupported('video/webm')) return 'video/webm';
+  if (MediaRecorder.isTypeSupported('video/mp4')) return 'video/mp4';
+  return '';
 }
 
 /** Live camera capture for host identity verification — no file picker. */
@@ -72,7 +87,8 @@ export function IdentityLiveCapture({ instructions, onSubmit, onBack, loading }:
     stopStream();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+        // Keep resolution modest — large webm uploads were crashing the API (connection reset).
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         audio: phase === 'video',
       });
       streamRef.current = stream;
@@ -118,7 +134,7 @@ export function IdentityLiveCapture({ instructions, onSubmit, onBack, loading }:
         }
       },
       'image/jpeg',
-      0.92,
+      0.72,
     );
   };
 
@@ -142,20 +158,26 @@ export function IdentityLiveCapture({ instructions, onSubmit, onBack, loading }:
     if (!stream) return;
 
     chunksRef.current = [];
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-      ? 'video/webm;codecs=vp9,opus'
-      : MediaRecorder.isTypeSupported('video/webm')
-        ? 'video/webm'
-        : 'video/mp4';
+    const mimeType = pickRecorderMime();
 
     try {
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const recorder = mimeType
+        ? new MediaRecorder(stream, {
+            mimeType,
+            videoBitsPerSecond: 800_000,
+            audioBitsPerSecond: 64_000,
+          })
+        : new MediaRecorder(stream, {
+            videoBitsPerSecond: 800_000,
+            audioBitsPerSecond: 64_000,
+          });
       recorderRef.current = recorder;
+      const blobType = baseMime(recorder.mimeType || mimeType, 'video/webm');
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const blob = new Blob(chunksRef.current, { type: blobType });
         const preview = URL.createObjectURL(blob);
         setVideoCapture({ blob, preview });
         setIsRecording(false);
@@ -193,10 +215,15 @@ export function IdentityLiveCapture({ instructions, onSubmit, onBack, loading }:
     if (selfies.length < SELFIE_COUNT || !videoCapture) return;
     const form = new FormData();
     selfies.forEach((s, i) => {
-      form.append('selfies', blobToFile(s.blob, `live-selfie-${i + 1}.jpg`));
+      form.append('selfies', blobToFile(s.blob, `live-selfie-${i + 1}.jpg`, 'image/jpeg'));
       form.append('instructions', s.instruction);
     });
-    form.append('video', blobToFile(videoCapture.blob, 'live-verification.webm'));
+    const videoMime = baseMime(videoCapture.blob.type, 'video/webm');
+    const videoExt = videoMime.includes('mp4') ? 'mp4' : 'webm';
+    form.append(
+      'video',
+      blobToFile(videoCapture.blob, `live-verification.${videoExt}`, videoMime),
+    );
     form.append('videoInstruction', videoInstruction);
     onSubmit(form);
   };

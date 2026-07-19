@@ -44,6 +44,15 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     const keyValue = (err as { keyValue?: Record<string, unknown> }).keyValue ?? {};
     const key = Object.keys(keyValue)[0] ?? 'field';
     message = `${key} already exists`;
+  } else if ((err as { name?: string; code?: string })?.name === 'MulterError') {
+    statusCode = StatusCodes.BAD_REQUEST;
+    const code = (err as { code?: string }).code;
+    message =
+      code === 'LIMIT_FILE_SIZE'
+        ? 'File is too large. Use a shorter verification video (under 15 seconds).'
+        : err instanceof Error
+          ? err.message
+          : 'Upload failed';
   } else if (err instanceof Error) {
     message = err.message || message;
   }

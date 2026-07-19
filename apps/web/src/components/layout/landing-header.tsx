@@ -7,32 +7,52 @@ import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/auth';
 import { AuthUserMenu } from '@/components/layout/auth-user-menu';
 
-/** Landing page header — auth-aware (login vs profile/logout). */
+/** Guest nav — must match SSR so hydration stays stable. */
+function GuestNav() {
+  return (
+    <>
+      <Link href="/login?next=/contact">
+        <Button variant="ghost" className="gap-2">
+          <Mail className="h-4 w-4" />
+          <span className="hidden sm:inline">Contact Us</span>
+        </Button>
+      </Link>
+      <Link href="/login">
+        <Button variant="ghost">Log in</Button>
+      </Link>
+      <Link href="/register">
+        <Button>Get started</Button>
+      </Link>
+    </>
+  );
+}
+
+/** Landing page header — auth-aware after store hydration (avoids SSR mismatch). */
 export function LandingHeader() {
-  const { accessToken, sessionChecked } = useAuthStore();
-  const isLoggedIn = sessionChecked && Boolean(accessToken);
+  const hydrated = useAuthStore((s) => s.hydrated);
+  const sessionChecked = useAuthStore((s) => s.sessionChecked);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const ready = hydrated && sessionChecked;
+  const isLoggedIn = ready && Boolean(accessToken);
 
   return (
-    <header className="container flex items-center justify-between py-6">
+    <header className="container flex items-center justify-between py-6" suppressHydrationWarning>
       <Logo />
-      <nav className="flex items-center gap-2 sm:gap-3">
-        <Link href={isLoggedIn ? '/contact' : '/login?next=/contact'}>
-          <Button variant="ghost" className="gap-2">
-            <Mail className="h-4 w-4" />
-            <span className="hidden sm:inline">Contact Us</span>
-          </Button>
-        </Link>
-        {isLoggedIn ? (
-          <AuthUserMenu />
-        ) : (
+      <nav className="flex items-center gap-2 sm:gap-3" suppressHydrationWarning>
+        {!ready ? (
+          <GuestNav />
+        ) : isLoggedIn ? (
           <>
-            <Link href="/login">
-              <Button variant="ghost">Log in</Button>
+            <Link href="/contact">
+              <Button variant="ghost" className="gap-2">
+                <Mail className="h-4 w-4" />
+                <span className="hidden sm:inline">Contact Us</span>
+              </Button>
             </Link>
-            <Link href="/register">
-              <Button>Get started</Button>
-            </Link>
+            <AuthUserMenu />
           </>
+        ) : (
+          <GuestNav />
         )}
       </nav>
     </header>

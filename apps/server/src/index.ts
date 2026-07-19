@@ -14,6 +14,10 @@ async function bootstrap(): Promise<void> {
 
   const app = createApp();
   const httpServer = createServer(app);
+  // Identity verification uploads (selfies + live video) can take a while.
+  httpServer.requestTimeout = 180_000;
+  httpServer.headersTimeout = 185_000;
+  httpServer.keepAliveTimeout = 190_000;
   initSocket(httpServer);
 
   httpServer.listen(env.PORT, () => {

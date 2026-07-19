@@ -37,6 +37,7 @@ import { debitGold } from '../../services/wallet.service';
 import { notify } from '../../services/notification.service';
 import { uploadBuffer } from '../../services/media.service';
 import { closeRoom } from '../../services/livekit.service';
+import { purgeUserCompletely } from '../../services/user-purge.service';
 
 // --------------------------------------------------------------------------
 // Dashboard / analytics
@@ -104,10 +105,19 @@ export const adminBadges = asyncHandler(async (_req: Request, res: Response) => 
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
   const { q, role, status } = req.query as Record<string, string>;
-  const filter: Record<string, unknown> = {};
-  if (role) filter.role = role;
-  if (status) filter.status = status;
-  if (q) filter.$or = [{ email: new RegExp(q, 'i') }, { username: new RegExp(q, 'i') }];
+  const filter: Record<string, unknown> = {
+    // Soft-deleted leftovers stay hidden; hard-delete removes the row entirely.
+    status: { $ne: AccountStatus.Deleted },
+  };
+  if (role === Role.User || role === Role.Host) filter.role = role;
+  if (status && status !== AccountStatus.Deleted) filter.status = status;
+  if (q) {
+    filter.$or = [
+      { email: new RegExp(q, 'i') },
+      { username: new RegExp(q, 'i') },
+      { displayName: new RegExp(q, 'i') },
+    ];
+  }
 
   const [items, total] = await Promise.all([
     User.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
@@ -141,10 +151,12 @@ export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.params.id);
   if (!user) throw ApiError.notFound('User not found');
   if (user.role === Role.Admin) throw ApiError.forbidden('Cannot delete an admin account');
-  user.status = AccountStatus.Deleted;
+
+  // Invalidate sessions first, then hard-delete user + related data.
   user.tokenVersion += 1;
   await user.save();
-  return ok(res, null, 'User deleted');
+  await purgeUserCompletely(user._id);
+  return ok(res, null, 'User permanently deleted');
 });
 
 // --------------------------------------------------------------------------
@@ -191,7 +203,14 @@ export const reviewVerification = asyncHandler(async (req: Request, res: Respons
       hostSince: new Date(),
     });
   } else if (decision === VerificationStatus.Rejected) {
-    await User.findByIdAndUpdate(request.user, { isHostApproved: false });
+    await User.findByIdAndUpdate(request.user, {
+      isHostApproved: false,
+    });
+  } else if (decision === VerificationStatus.NeedMoreInfo) {
+    // Ensure the host can open /become-host and complete the full 3-step flow again.
+    await User.findByIdAndUpdate(request.user, {
+      isHostApproved: false,
+    });
   }
 
   await notify({
@@ -613,12 +632,16 @@ export const deleteInquiry = asyncHandler(async (req: Request, res: Response) =>
 // Online users (presence)
 // --------------------------------------------------------------------------
 export const listOnlineUsers = asyncHandler(async (req: Request, res: Response) => {
-  const { q } = req.query as Record<string, string>;
+  const { q, role } = req.query as Record<string, string>;
   const filter: Record<string, unknown> = {
     isOnline: true,
-    role: { $in: [Role.User, Role.Host] },
     status: AccountStatus.Active,
   };
+  if (role === Role.User || role === Role.Host) {
+    filter.role = role;
+  } else {
+    filter.role = { $in: [Role.User, Role.Host] };
+  }
   if (q) {
     filter.$or = [
       { displayName: new RegExp(q, 'i') },

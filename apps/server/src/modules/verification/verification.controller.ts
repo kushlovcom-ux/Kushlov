@@ -21,8 +21,16 @@ export const getMyVerification = asyncHandler(async (req: Request, res: Response
 /** POST /verification/basic — Step 1: create/update basic host info. */
 export const submitBasic = asyncHandler(async (req: Request, res: Response) => {
   const { name, username, bio, gender, dob, languages, country } = req.body;
+
+  // Keep "need more info" until the host finishes the full re-verification (identity step).
+  const existing = await VerificationRequest.findOne({ user: req.user!.id }).sort({ createdAt: -1 });
+  const keepNeedMoreInfo = existing?.status === VerificationStatus.NeedMoreInfo;
+
   const request = await VerificationRequest.findOneAndUpdate(
-    { user: req.user!.id, status: { $in: [VerificationStatus.Pending, VerificationStatus.NeedMoreInfo] } },
+    {
+      user: req.user!.id,
+      status: { $in: [VerificationStatus.Pending, VerificationStatus.NeedMoreInfo] },
+    },
     {
       $set: {
         user: req.user!.id,
@@ -34,7 +42,9 @@ export const submitBasic = asyncHandler(async (req: Request, res: Response) => {
         'basic.languages': languages ?? [],
         'basic.country': country,
         currentStep: VerificationStep.Documents,
-        status: VerificationStatus.Pending,
+        status: keepNeedMoreInfo
+          ? VerificationStatus.NeedMoreInfo
+          : VerificationStatus.Pending,
       },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -51,12 +61,21 @@ export const submitDocuments = asyncHandler(async (req: Request, res: Response) 
   const govId = files?.governmentId?.[0];
   if (!govId) throw ApiError.badRequest('Government ID is required');
 
-  const govMedia = await uploadBuffer(govId, `verification/${req.user!.id}/documents`);
+  // PDFs must use Cloudinary "raw" so admins can open/preview them (not as broken images).
+  const govOpts =
+    govId.mimetype === 'application/pdf' ? { resource_type: 'raw' as const } : {};
+  const govMedia = await uploadBuffer(govId, `verification/${req.user!.id}/documents`, govOpts);
   request.documents.governmentId = { url: govMedia.url, publicId: govMedia.publicId };
 
   const addressProof = files?.addressProof?.[0];
   if (addressProof) {
-    const addrMedia = await uploadBuffer(addressProof, `verification/${req.user!.id}/documents`);
+    const addrOpts =
+      addressProof.mimetype === 'application/pdf' ? { resource_type: 'raw' as const } : {};
+    const addrMedia = await uploadBuffer(
+      addressProof,
+      `verification/${req.user!.id}/documents`,
+      addrOpts,
+    );
     request.documents.addressProof = { url: addrMedia.url, publicId: addrMedia.publicId };
   }
 
@@ -80,33 +99,52 @@ export const submitIdentity = asyncHandler(async (req: Request, res: Response) =
   if (selfies.length < 3) throw ApiError.badRequest('Exactly 3 live selfie photos are required');
   if (!video) throw ApiError.badRequest('A live verification video is required');
 
+  // Guard against oversized payloads that OOM the process (seen as ERR_CONNECTION_RESET).
+  const totalBytes =
+    selfies.reduce((sum, f) => sum + (f.size || 0), 0) + (video.size || 0);
+  if (totalBytes > 45 * 1024 * 1024) {
+    throw ApiError.badRequest('Verification media is too large. Record a shorter video (under 15s) and retry.');
+  }
+
   const instructions: string[] = Array.isArray(req.body.instructions)
     ? req.body.instructions
     : req.body.instructions
       ? [req.body.instructions]
       : [];
 
-  const uploadedSelfies = [];
-  for (let i = 0; i < selfies.length; i += 1) {
-    const media = await uploadBuffer(selfies[i], `verification/${req.user!.id}/selfies`);
-    uploadedSelfies.push({ url: media.url, publicId: media.publicId, instruction: instructions[i] });
+  try {
+    const uploadedSelfies = [];
+    for (let i = 0; i < selfies.length; i += 1) {
+      const media = await uploadBuffer(selfies[i], `verification/${req.user!.id}/selfies`);
+      uploadedSelfies.push({
+        url: media.url,
+        publicId: media.publicId,
+        instruction: instructions[i],
+      });
+    }
+    const videoMedia = await uploadBuffer(video, `verification/${req.user!.id}/video`, {
+      resource_type: 'video',
+    });
+
+    request.selfies = uploadedSelfies as any;
+    request.verificationVideo = {
+      url: videoMedia.url,
+      publicId: videoMedia.publicId,
+      instruction: req.body.videoInstruction,
+    } as any;
+
+    const activeInstructions = await AdminInstruction.find({ isActive: true }).distinct('_id');
+    request.instructionsUsed = activeInstructions as any;
+    request.currentStep = VerificationStep.Submitted;
+    request.status = VerificationStatus.Pending;
+    request.set('reviewNote', undefined);
+    await request.save();
+
+    return ok(res, request, 'Identity evidence submitted — pending admin review');
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw ApiError.internal(
+      err instanceof Error ? err.message : 'Failed to upload verification media',
+    );
   }
-  const videoMedia = await uploadBuffer(video, `verification/${req.user!.id}/video`, {
-    resource_type: 'video',
-  });
-
-  request.selfies = uploadedSelfies as any;
-  request.verificationVideo = {
-    url: videoMedia.url,
-    publicId: videoMedia.publicId,
-    instruction: req.body.videoInstruction,
-  } as any;
-
-  const activeInstructions = await AdminInstruction.find({ isActive: true }).distinct('_id');
-  request.instructionsUsed = activeInstructions as any;
-  request.currentStep = VerificationStep.Submitted;
-  request.status = VerificationStatus.Pending;
-  await request.save();
-
-  return ok(res, request, 'Identity evidence submitted — pending admin review');
 });

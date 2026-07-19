@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface OnlineUser {
   id: string;
@@ -20,23 +22,43 @@ interface OnlineUser {
   locationLabel: string;
 }
 
+type RoleFilter = 'all' | 'user' | 'host';
+
 export default function AdminOnlinePage() {
   const [q, setQ] = useState('');
+  const [role, setRole] = useState<RoleFilter>('all');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-online', q],
+    queryKey: ['admin-online', q, role],
     queryFn: () =>
       unwrap<{ items: OnlineUser[]; total: number }>(
-        api.get('/admin/online', { params: { q: q || undefined } }),
+        api.get('/admin/online', {
+          params: {
+            q: q || undefined,
+            role: role === 'all' ? undefined : role,
+          },
+        }),
       ),
     refetchInterval: 15_000,
   });
+
+  const filters: { id: RoleFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'user', label: 'Normal users' },
+    { id: 'host', label: 'Hosts' },
+  ];
 
   return (
     <div>
       <PageHeader
         title="Online now"
-        subtitle="Users and hosts currently connected"
+        subtitle={
+          role === 'user'
+            ? 'Normal users currently online'
+            : role === 'host'
+              ? 'Hosts currently online'
+              : 'Users and hosts currently connected'
+        }
         action={
           <Input
             value={q}
@@ -46,6 +68,23 @@ export default function AdminOnlinePage() {
           />
         }
       />
+
+      <div className="flex flex-wrap gap-2 px-6 pt-2">
+        {filters.map((f) => (
+          <Button
+            key={f.id}
+            size="sm"
+            variant={role === f.id ? 'default' : 'secondary'}
+            className={cn(role === f.id && 'bg-brand-gradient')}
+            onClick={() => setRole(f.id)}
+          >
+            {f.label}
+            {role === f.id && data != null && (
+              <span className="ml-1.5 text-xs opacity-80">({data.total})</span>
+            )}
+          </Button>
+        ))}
+      </div>
 
       <div className="space-y-2 p-6">
         {isLoading &&
@@ -85,7 +124,13 @@ export default function AdminOnlinePage() {
         })}
 
         {!isLoading && data?.items.length === 0 && (
-          <p className="py-16 text-center text-white/40">No users online right now.</p>
+          <p className="py-16 text-center text-white/40">
+            {role === 'user'
+              ? 'No normal users online right now.'
+              : role === 'host'
+                ? 'No hosts online right now.'
+                : 'No users online right now.'}
+          </p>
         )}
       </div>
     </div>
