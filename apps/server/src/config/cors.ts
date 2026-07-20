@@ -10,6 +10,8 @@ const DEFAULT_ORIGINS = [
   'http://127.0.0.1:3000',
   'https://kushlov-web.vercel.app',
   'https://kushlov-server.vercel.app',
+  'https://www.klproind.com',
+  'https://klproind.com',
 ];
 
 /** Local dev servers (Next.js on :3000, etc.). */
