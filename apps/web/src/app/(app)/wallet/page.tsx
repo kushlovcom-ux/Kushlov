@@ -65,20 +65,6 @@ interface WithdrawSettings {
   minGold: number;
   currency: string;
 }
-interface DiamondConversions {
-  hostVideo?: { label: string };
-  hostAudio?: { label: string };
-  hostMessages?: { label: string };
-  userVideo?: { label: string };
-  userAudio?: { label: string };
-  userMessages?: { label: string };
-  hostHostVideo?: { label: string };
-  hostHostAudio?: { label: string };
-  hostHostMessages?: { label: string };
-  video?: { label: string };
-  audio?: { label: string };
-  messages?: { label: string };
-}
 interface WithdrawReq {
   _id: string;
   goldAmount: number;
@@ -144,10 +130,7 @@ export default function WalletPage() {
   });
   const publicSettings = useQuery({
     queryKey: ['public-settings'],
-    queryFn: () =>
-      unwrap<{ withdraw: WithdrawSettings; diamondConversions?: DiamondConversions }>(
-        api.get('/settings'),
-      ),
+    queryFn: () => unwrap<{ withdraw: WithdrawSettings }>(api.get('/settings')),
   });
 
   const buy = useMutation({
@@ -275,84 +258,6 @@ export default function WalletPage() {
           <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100/80">
             You earn gold when users message, call, or gift you. Buy diamonds below to call and
             message other hosts and normal users.
-          </div>
-        )}
-
-        {publicSettings.data?.diamondConversions && (
-          <div className="rounded-2xl border border-brand-blue/20 bg-brand-blue/5 p-5">
-            <h3 className="flex items-center gap-2 font-semibold text-brand-blue">
-              <Gem className="h-5 w-5" />
-              Diamond conversions
-            </h3>
-            <p className="mt-1 text-sm text-white/45">What 1 diamond gets you on Kushlov</p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {!isHost && (
-                <>
-                  <div>
-                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/40">
-                      With hosts
-                    </p>
-                    <ul className="space-y-2 text-sm text-white/80">
-                      {[
-                        publicSettings.data.diamondConversions.hostVideo?.label ??
-                          publicSettings.data.diamondConversions.video?.label,
-                        publicSettings.data.diamondConversions.hostAudio?.label ??
-                          publicSettings.data.diamondConversions.audio?.label,
-                        publicSettings.data.diamondConversions.hostMessages?.label ??
-                          publicSettings.data.diamondConversions.messages?.label,
-                      ]
-                        .filter(Boolean)
-                        .map((label) => (
-                          <li key={String(label)} className="flex items-start gap-2">
-                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-blue" />
-                            {label}
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/40">
-                      With users
-                    </p>
-                    <ul className="space-y-2 text-sm text-white/80">
-                      {[
-                        publicSettings.data.diamondConversions.userVideo?.label,
-                        publicSettings.data.diamondConversions.userAudio?.label,
-                        publicSettings.data.diamondConversions.userMessages?.label,
-                      ]
-                        .filter(Boolean)
-                        .map((label) => (
-                          <li key={String(label)} className="flex items-start gap-2">
-                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-pink" />
-                            {label}
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                </>
-              )}
-              {isHost && (
-                <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/40">
-                    Host → Host
-                  </p>
-                  <ul className="space-y-2 text-sm text-white/80">
-                    {[
-                      publicSettings.data.diamondConversions.hostHostVideo?.label,
-                      publicSettings.data.diamondConversions.hostHostAudio?.label,
-                      publicSettings.data.diamondConversions.hostHostMessages?.label,
-                    ]
-                      .filter(Boolean)
-                      .map((label) => (
-                        <li key={String(label)} className="flex items-start gap-2">
-                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-                          {label}
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              )}
-            </div>
           </div>
         )}
 
