@@ -10,3 +10,14 @@ allowBuilds:
   "@tailwindcss/oxide": true
   "@firebase/util": true
   protobufjs: true
+
+minimumReleaseAgeExclude:
+  - '@react-navigation/bottom-tabs@7.18.12'
+  - '@react-navigation/core@7.21.9'
+  - '@react-navigation/elements@2.9.34'
+  - '@react-navigation/native-stack@7.18.4'
+  - '@react-navigation/native@7.3.12'
+  - '@react-navigation/routers@7.6.3'
+  - '@tanstack/query-core@5.101.3'
+  - '@tanstack/react-query@5.101.3'
+  - livekit-client@2.20.2

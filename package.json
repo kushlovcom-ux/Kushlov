@@ -11,6 +11,7 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "dev:web": "pnpm --filter @kushlov/web dev",
     "dev:server": "pnpm --filter @kushlov/server dev",
+    "dev:mobile": "npm --prefix apps/mobile start",
     "build": "pnpm -r build",
     "start": "pnpm --parallel --filter \"./apps/*\" start",
     "lint": "pnpm -r lint",
