@@ -1,0 +1,15 @@
+# Reduce upload size. Do NOT exclude workspace package.json folders
+# that appear in pnpm-lock.yaml (apps/web, apps/server, packages/*).
+**/node_modules/**
+**/.git/**
+**/.expo/**
+**/dist/**
+**/.next/**
+**/coverage/**
+**/android/**
+**/ios/**
+**/*.log
+apps/web/.next/**
+apps/web/node_modules/**
+apps/server/dist/**
+apps/server/node_modules/**
