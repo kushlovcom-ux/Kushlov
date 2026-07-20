@@ -232,6 +232,8 @@ export interface PublicUser {
   country?: string;
   isHostApproved?: boolean;
   isOnline?: boolean;
+  /** True when the user is on an ongoing audio/video call. */
+  isBusy?: boolean;
   averageRating?: number;
   totalReviews?: number;
   /** Host pricing in gold (admin-set). Converted to diamonds at billing. */

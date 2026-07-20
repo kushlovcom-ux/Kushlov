@@ -16,12 +16,13 @@ import { startCall } from '@/lib/start-call';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { LocationSetup } from '@/components/location/location-setup';
 import { OnlineStatus } from '@/components/common/online-status';
 import { useAuthStore } from '@/store/auth';
 import { cn } from '@/lib/utils';
 
-type DiscoverUser = PublicUser & { distanceKm?: number };
+type DiscoverUser = PublicUser & { distanceKm?: number; isBusy?: boolean };
 
 export default function DiscoverPage() {
   const searchParams = useSearchParams();
@@ -51,7 +52,8 @@ export default function DiscoverPage() {
         api.get('/users', { params: { q: deferredQ || undefined, limit: 24 } }),
       ),
     enabled: location.data?.hasLocation === true,
-    staleTime: 20_000,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   });
 
   const like = useMutation({
@@ -138,6 +140,14 @@ export default function DiscoverPage() {
                           <UserAvatar name={u.displayName} className="h-12 w-12 text-lg sm:h-14 sm:w-14" />
                         </div>
                       )}
+                      {u.role === Role.Host && u.isHostApproved && (
+                        <Badge
+                          variant="success"
+                          className="absolute left-2 top-2 text-[10px] uppercase tracking-wide"
+                        >
+                          Host
+                        </Badge>
+                      )}
                     </Link>
 
                     <div className="flex flex-1 flex-col gap-1 p-2 sm:p-2.5">
@@ -146,7 +156,7 @@ export default function DiscoverPage() {
                           {u.displayName}
                         </p>
                         <p className="truncate text-[11px] text-white/45">@{u.username}</p>
-                        <OnlineStatus online={u.isOnline} />
+                        <OnlineStatus online={u.isOnline} busy={u.isBusy} />
                       </Link>
 
                       {showHostRating && (
@@ -194,13 +204,19 @@ export default function DiscoverPage() {
                               variant="secondary"
                               className="h-8 w-full touch-manipulation"
                               aria-label="Video call"
-                              onClick={() =>
+                              disabled={!!u.isBusy}
+                              title={u.isBusy ? 'User is busy on a call' : 'Video call'}
+                              onClick={() => {
+                                if (u.isBusy) {
+                                  toast.error('This user is busy on another call');
+                                  return;
+                                }
                                 startCall(CallType.Video, u.id, u.displayName, {
                                   peerIsHost: u.role === Role.Host && !!u.isHostApproved,
                                   peerRole: u.role,
                                   peerHostApproved: u.isHostApproved,
-                                })
-                              }
+                                });
+                              }}
                             >
                               <Video className="h-3.5 w-3.5" />
                             </Button>
@@ -209,13 +225,19 @@ export default function DiscoverPage() {
                               variant="secondary"
                               className="h-8 w-full touch-manipulation"
                               aria-label="Audio call"
-                              onClick={() =>
+                              disabled={!!u.isBusy}
+                              title={u.isBusy ? 'User is busy on a call' : 'Audio call'}
+                              onClick={() => {
+                                if (u.isBusy) {
+                                  toast.error('This user is busy on another call');
+                                  return;
+                                }
                                 startCall(CallType.Audio, u.id, u.displayName, {
                                   peerIsHost: u.role === Role.Host && !!u.isHostApproved,
                                   peerRole: u.role,
                                   peerHostApproved: u.isHostApproved,
-                                })
-                              }
+                                });
+                              }}
                             >
                               <PhoneCall className="h-3.5 w-3.5" />
                             </Button>

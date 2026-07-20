@@ -10,12 +10,23 @@ import {
   EXCLUSION_RADIUS_KM,
   assertUsersCanConnect,
   distanceBetweenUsers,
+  getAllLocatedUserIds,
   getDiscoverableUserIds,
   requireUserCoordinates,
 } from '../../services/location.service';
 import { haversineKm } from '@kushlov/utils';
 import { getUserInteractionHistory } from '../../services/interaction.service';
 import { grantWelcomeGiftIfEligible } from '../../services/welcome-gift.service';
+import { PRESENCE_ONLINE_MS, sweepStalePresence, touchPresence } from '../../services/presence.service';
+import { getBusyUserIds } from '../../services/call-busy.service';
+
+/** POST /users/me/presence — heartbeat so Online Now / Discover stay accurate on Vercel. */
+export const pingPresence = asyncHandler(async (req: Request, res: Response) => {
+  await touchPresence(req.user!.id);
+  // Opportunistic cleanup of stale presence flags.
+  void sweepStalePresence();
+  return ok(res, { ok: true });
+});
 
 /** GET /users/me/search-contacts — search connectable people by name (no location filter). */
 export const searchContacts = asyncHandler(async (req: Request, res: Response) => {
@@ -242,12 +253,14 @@ export const removeGalleryItem = asyncHandler(async (req: Request, res: Response
 });
 
 /**
- * GET /users — search & filter users/hosts with pagination.
- * Supports q (text), gender, country, role, minAge/maxAge, online.
+ * GET /users — Discover browse + name search.
+ * Browse: outside ~10 km exclusion zone, online only.
+ * Search (q): any distance, name/username match (nearby included).
  */
 export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
   const { q, gender, country, role, online } = req.query as Record<string, string>;
+  const isSearch = Boolean(q?.trim());
 
   const me = await User.findById(req.user!.id).select('role');
   if (!me) throw ApiError.notFound('User not found');
@@ -255,18 +268,29 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
   const exclude = [...blocked.map(String), req.user!.id];
 
-  // Only show users outside the local exclusion zone.
-  const discoverableIds = await getDiscoverableUserIds(req.user!.id, exclude);
-  if (discoverableIds.length === 0) {
+  await sweepStalePresence();
+
+  // Browse hides people within exclusion radius; name search ignores distance.
+  const candidateIds = isSearch
+    ? await getAllLocatedUserIds(exclude)
+    : await getDiscoverableUserIds(req.user!.id, exclude);
+
+  if (candidateIds.length === 0) {
     return ok(res, buildPaginated([], page, limit, 0));
   }
 
   const [myLng, myLat] = await requireUserCoordinates(req.user!.id);
+  const onlineCutoff = new Date(Date.now() - PRESENCE_ONLINE_MS);
 
   const userFilter: Record<string, unknown> = {
-    _id: { $nin: exclude, $in: discoverableIds },
+    _id: { $nin: exclude, $in: candidateIds },
     status: 'active',
   };
+
+  // Browse: only currently online users. Search: show name matches even if offline.
+  if (!isSearch || online === 'true') {
+    userFilter.lastSeenAt = { $gte: onlineCutoff };
+  }
 
   // Visibility: normal users see hosts + users; hosts see users + other hosts.
   if (me.role === Role.Host) {
@@ -298,31 +322,50 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   }
 
   if (gender) userFilter.gender = gender;
-  if (online === 'true') userFilter.isOnline = true;
-  if (q) userFilter.$text = { $search: q };
+
+  if (isSearch) {
+    const term = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameMatch = {
+      $or: [
+        { displayName: new RegExp(term, 'i') },
+        { username: new RegExp(term, 'i') },
+      ],
+    };
+    if (userFilter.$or) {
+      userFilter.$and = [{ $or: userFilter.$or as unknown[] }, nameMatch];
+      delete userFilter.$or;
+    } else {
+      Object.assign(userFilter, nameMatch);
+    }
+  }
 
   if (country) {
-    const profileUserIds = await Profile.find({ country, user: { $in: discoverableIds } }).distinct(
+    const profileUserIds = await Profile.find({ country, user: { $in: candidateIds } }).distinct(
       'user',
     );
     userFilter._id = { $nin: exclude, $in: profileUserIds };
   }
 
-  const sortingHostsOnly = userFilter.role === Role.Host;
-  const sort: Record<string, 1 | -1> = sortingHostsOnly
-    ? { averageRating: -1, totalReviews: -1, isOnline: -1, lastSeenAt: -1 }
-    : { averageRating: -1, totalReviews: -1, isOnline: -1, lastSeenAt: -1, createdAt: -1 };
+  const sort: Record<string, 1 | -1> = {
+    averageRating: -1,
+    totalReviews: -1,
+    isOnline: -1,
+    lastSeenAt: -1,
+    createdAt: -1,
+  };
 
   const [users, total] = await Promise.all([
     User.find(userFilter).sort(sort).skip(skip).limit(limit),
     User.countDocuments(userFilter),
   ]);
 
-  // Only load locations for the current page (not the full discoverable set).
   const pageIds = users.map((u) => u._id);
-  const profiles = pageIds.length
-    ? await Profile.find({ user: { $in: pageIds } }).select('user location')
-    : [];
+  const [profiles, busyIds] = await Promise.all([
+    pageIds.length
+      ? Profile.find({ user: { $in: pageIds } }).select('user location')
+      : Promise.resolve([]),
+    getBusyUserIds(pageIds),
+  ]);
   const profileMap = new Map(profiles.map((p) => [p.user.toString(), p]));
 
   const items = users.map((u) => {
@@ -332,6 +375,7 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
       const [lng, lat] = prof.location.coordinates;
       pub.distanceKm = Math.round(haversineKm(myLat, myLng, lat, lng) * 10) / 10;
     }
+    pub.isBusy = busyIds.has(u._id.toString());
     return pub;
   });
 

@@ -18,6 +18,7 @@ import { getSettings } from '../../services/settings.service';
 import { emitToUser } from '../../socket/io';
 import { assertUsersCanConnect } from '../../services/location.service';
 import { getLiveKitPublicUrl } from '../../config/env';
+import { getBusyUserIds } from '../../services/call-busy.service';
 import {
   computeCallDiamondCost,
   isApprovedHost,
@@ -45,6 +46,14 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   }
 
   await assertUsersCanConnect(req.user!.id, calleeId);
+
+  const busy = await getBusyUserIds([req.user!.id, calleeId]);
+  if (busy.has(req.user!.id)) {
+    throw ApiError.badRequest('You are already on another call');
+  }
+  if (busy.has(calleeId)) {
+    throw ApiError.badRequest('This user is busy on another call');
+  }
 
   const callee = await User.findById(calleeId).select(
     'displayName role isHostApproved isOnline videoPrice audioPrice',
@@ -132,7 +141,34 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   );
 });
 
-/** POST /calls/:type/:id/accept — callee (host) accepts and receives a token. */
+/** GET /calls/:type/:id — poll call status (HTTP fallback when sockets are off). */
+export const getCall = asyncHandler(async (req: Request, res: Response) => {
+  const type = req.params.type as CallType;
+  const call = await modelFor(type).findById(req.params.id);
+  if (!call) throw ApiError.notFound('Call not found');
+  const uid = req.user!.id;
+  if (![call.caller.toString(), call.callee.toString()].includes(uid)) {
+    throw ApiError.forbidden('Not your call');
+  }
+
+  let token: string | undefined;
+  let livekitUrl: string | undefined;
+  if (call.status === CallStatus.Ongoing) {
+    token = await createLiveKitToken({ identity: uid, roomName: call.roomName });
+    livekitUrl = getLiveKitPublicUrl() ?? undefined;
+  }
+
+  return ok(res, {
+    call,
+    status: call.status,
+    token,
+    roomName: call.roomName,
+    livekitUrl,
+    maxDurationSec: call.maxDurationSec,
+  });
+});
+
+/** POST /calls/:type/:id/accept — callee accepts and receives a token. */
 export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
   const call = await modelFor(type).findById(req.params.id);
@@ -287,4 +323,46 @@ export const callHistory = asyncHandler(async (req: Request, res: Response) => {
   const total = all.length;
   const items = all.slice(skip, skip + limit);
   return ok(res, buildPaginated(items as unknown as ICall[], page, limit, total));
+});
+
+/** GET /calls/incoming — ringing invites for this user (HTTP fallback when sockets are off). */
+export const listIncomingCalls = asyncHandler(async (req: Request, res: Response) => {
+  const since = new Date(Date.now() - 90_000);
+  const filter = {
+    callee: req.user!.id,
+    status: CallStatus.Ringing,
+    createdAt: { $gte: since },
+  };
+
+  const [audio, video] = await Promise.all([
+    AudioCall.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('caller', 'displayName avatarUrl role isHostApproved'),
+    VideoCall.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('caller', 'displayName avatarUrl role isHostApproved'),
+  ]);
+
+  const items = [...audio, ...video]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map((call) => {
+      const caller = call.caller as any;
+      return {
+        callId: call._id.toString(),
+        type: call.type,
+        roomName: call.roomName,
+        maxDurationSec: call.maxDurationSec,
+        from: {
+          id: caller?._id?.toString?.() ?? caller?.id,
+          displayName: caller?.displayName,
+          avatarUrl: caller?.avatarUrl,
+          role: caller?.role,
+          isHostApproved: caller?.isHostApproved,
+        },
+      };
+    });
+
+  return ok(res, { items });
 });

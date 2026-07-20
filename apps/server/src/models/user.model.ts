@@ -138,6 +138,9 @@ userSchema.index({ isPopularHost: 1, popularSortOrder: 1, averageRating: -1 });
 /** Serialize a user into the public API shape (never leaks secrets). */
 userSchema.methods.toPublic = function toPublic() {
   const u = this as IUser;
+  const ONLINE_MS = 90_000;
+  const recentlySeen =
+    !!u.lastSeenAt && Date.now() - new Date(u.lastSeenAt).getTime() < ONLINE_MS;
   return {
     id: u._id.toString(),
     email: u.email,
@@ -151,7 +154,7 @@ userSchema.methods.toPublic = function toPublic() {
     gender: u.gender,
     country: u.country,
     isHostApproved: u.isHostApproved,
-    isOnline: u.isOnline,
+    isOnline: recentlySeen || !!u.isOnline,
     authProvider: u.authProvider,
     emailVerified: u.emailVerified,
     averageRating: u.averageRating ?? 0,

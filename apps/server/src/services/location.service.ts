@@ -4,7 +4,10 @@ import { haversineKm, DEFAULT_DISCOVERY_RADIUS_KM } from '@kushlov/utils';
 import { Profile, User } from '../models';
 import { ApiError } from '../utils/ApiError';
 
-/** Local exclusion zone — users closer than this cannot see or connect (privacy). */
+/**
+ * Local exclusion zone (km). Users closer than this are hidden on Discover browse
+ * (privacy). Name search ignores this and can find anyone.
+ */
 export const EXCLUSION_RADIUS_KM = Number(
   process.env.DISCOVERY_RADIUS_KM ?? DEFAULT_DISCOVERY_RADIUS_KM,
 );
@@ -26,17 +29,30 @@ export async function requireUserCoordinates(userId: string): Promise<[number, n
   return profile.location.coordinates as [number, number];
 }
 
-/** User ids OUTSIDE the exclusion zone (can be discovered / connected). */
+/** All users who have shared a map location (except excluded ids). */
+export async function getAllLocatedUserIds(
+  excludeIds: (string | Types.ObjectId)[] = [],
+): Promise<Types.ObjectId[]> {
+  const exclude = excludeIds.map(String);
+  const ids = await Profile.find({
+    user: { $nin: exclude },
+    'location.coordinates.0': { $exists: true },
+  }).distinct('user');
+  return ids as Types.ObjectId[];
+}
+
+/**
+ * Discover browse: users OUTSIDE the local exclusion zone (~10 km).
+ * Nearby / same-location users are intentionally hidden until searched by name.
+ */
 export async function getDiscoverableUserIds(
   userId: string,
   excludeIds: (string | Types.ObjectId)[] = [],
 ): Promise<Types.ObjectId[]> {
   const [lng, lat] = await requireUserCoordinates(userId);
   const exclude = [userId, ...excludeIds.map(String)];
-
   const radiusRadians = EXCLUSION_RADIUS_KM / 6378.1;
 
-  // Positive $geoWithin uses the 2dsphere index (cheap). Then exclude those nearby.
   const nearbyIds = await Profile.find({
     user: { $nin: exclude },
     location: {
@@ -78,7 +94,8 @@ export async function distanceBetweenUsers(
 }
 
 /**
- * Block connections when users are within the exclusion zone (default 20 km).
+ * Require both users to have shared location. Distance does not block connect/call
+ * (search can surface nearby people by name).
  * Admins bypass this check.
  */
 export async function assertUsersCanConnect(
@@ -87,20 +104,13 @@ export async function assertUsersCanConnect(
 ): Promise<void> {
   if (userId === targetUserId) return;
 
-  const [actor] = await Promise.all([
-    User.findById(userId).select('role'),
-  ]);
+  const actor = await User.findById(userId).select('role');
   if (actor?.role === Role.Admin) return;
 
-  const [lng1, lat1] = await requireUserCoordinates(userId);
+  await requireUserCoordinates(userId);
   const targetProfile = await Profile.findOne({ user: targetUserId }).select('location');
   if (!targetProfile?.location?.coordinates) {
     throw ApiError.forbidden('This user has not shared their location yet.');
-  }
-  const [lng2, lat2] = targetProfile.location.coordinates;
-  const km = haversineKm(lat1, lng1, lat2, lng2);
-  if (km <= EXCLUSION_RADIUS_KM) {
-    throw ApiError.forbidden('This profile isn’t available to connect with right now. Try someone else nearby.');
   }
 }
 

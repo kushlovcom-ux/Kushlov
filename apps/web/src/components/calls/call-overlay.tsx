@@ -54,7 +54,7 @@ function isApprovedHostPeer(role?: string, isHostApproved?: boolean) {
  * Global incoming/outgoing call UI, plus optional post-call host review for normal users.
  */
 export function CallOverlay() {
-  const socket = useSocket().socket;
+  const { socket, connected } = useSocket();
   const user = useAuthStore((s) => s.user);
   const [incoming, setIncoming] = useState<IncomingInvite | null>(null);
   const [outgoing, setOutgoing] = useState<{
@@ -173,6 +173,88 @@ export function CallOverlay() {
       socket.off(SocketEvents.CallEnd, onEnd);
     };
   }, [socket, user, offerReviewIfEligible]);
+
+  // HTTP poll for incoming calls when Socket.io is unavailable (e.g. Vercel serverless).
+  useEffect(() => {
+    if (!user || user.role === 'admin') return;
+    if (connected) return;
+    if (incoming || active) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const data = await unwrap<{ items: IncomingInvite[] }>(api.get('/calls/incoming'));
+        const next = data.items?.[0];
+        if (!cancelled && next) {
+          setIncoming((prev) => {
+            if (prev?.callId === next.callId) return prev;
+            toast('Incoming call', {
+              description: `${next.from?.displayName ?? 'Someone'} is calling (${next.type})`,
+            });
+            return next;
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    void poll();
+    const id = window.setInterval(poll, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [user, connected, incoming, active]);
+
+  // Poll outgoing call until accepted/rejected when sockets are unavailable.
+  useEffect(() => {
+    if (!outgoing || connected) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const data = await unwrap<{
+          status: string;
+          token?: string;
+          roomName?: string;
+          livekitUrl?: string;
+          maxDurationSec?: number;
+        }>(api.get(`/calls/${outgoing.type}/${outgoing.callId}`));
+
+        if (cancelled) return;
+        if (data.status === 'ongoing' && data.token) {
+          setActive({
+            callId: outgoing.callId,
+            type: outgoing.type,
+            roomName: data.roomName ?? outgoing.roomName,
+            token: data.token,
+            livekitUrl: data.livekitUrl ?? outgoing.livekitUrl,
+            maxDurationSec: data.maxDurationSec ?? outgoing.maxDurationSec,
+            peerName: outgoing.peerName,
+            peerId: outgoing.peerId,
+            peerIsHost: outgoing.peerIsHost,
+            role: 'caller',
+          });
+          setOutgoing(null);
+        } else if (data.status === 'rejected' || data.status === 'missed' || data.status === 'failed') {
+          setOutgoing(null);
+          toast.error('Call declined');
+        } else if (data.status === 'ended') {
+          setOutgoing(null);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    void poll();
+    const id = window.setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [outgoing, connected]);
 
   // Countdown for diamond-limited calls.
   useEffect(() => {

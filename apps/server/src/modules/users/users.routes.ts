@@ -19,6 +19,7 @@ router.get('/me/search-contacts', ctrl.searchContacts);
 router.get('/me/profile', ctrl.getMyProfile);
 router.get('/me/location', ctrl.getMyLocation);
 router.post('/me/location', validate({ body: updateLocationSchema }), ctrl.updateMyLocation);
+router.post('/me/presence', ctrl.pingPresence);
 router.patch('/me/profile', validate({ body: updateProfileSchema }), ctrl.updateMyProfile);
 router.post('/me/avatar', uploadImage.single('file'), ctrl.uploadAvatar);
 router.post('/me/cover', uploadImage.single('file'), ctrl.uploadCover);

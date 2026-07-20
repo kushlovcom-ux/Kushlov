@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import {
   AccountStatus,
+  DiamondTxnReason,
   GoldTxnReason,
+  LedgerDirection,
   LiveStatus,
   NotificationType,
   PaymentStatus,
@@ -38,6 +40,8 @@ import { notify } from '../../services/notification.service';
 import { uploadBuffer } from '../../services/media.service';
 import { closeRoom } from '../../services/livekit.service';
 import { purgeUserCompletely } from '../../services/user-purge.service';
+import { PRESENCE_ONLINE_MS, sweepStalePresence } from '../../services/presence.service';
+import { creditDiamonds } from '../../services/wallet.service';
 
 // --------------------------------------------------------------------------
 // Dashboard / analytics
@@ -633,9 +637,12 @@ export const deleteInquiry = asyncHandler(async (req: Request, res: Response) =>
 // --------------------------------------------------------------------------
 export const listOnlineUsers = asyncHandler(async (req: Request, res: Response) => {
   const { q, role } = req.query as Record<string, string>;
+  await sweepStalePresence();
+
+  const cutoff = new Date(Date.now() - PRESENCE_ONLINE_MS);
   const filter: Record<string, unknown> = {
-    isOnline: true,
     status: AccountStatus.Active,
+    $or: [{ isOnline: true, lastSeenAt: { $gte: cutoff } }, { lastSeenAt: { $gte: cutoff } }],
   };
   if (role === Role.User || role === Role.Host) {
     filter.role = role;
@@ -643,10 +650,14 @@ export const listOnlineUsers = asyncHandler(async (req: Request, res: Response) 
     filter.role = { $in: [Role.User, Role.Host] };
   }
   if (q) {
-    filter.$or = [
-      { displayName: new RegExp(q, 'i') },
-      { username: new RegExp(q, 'i') },
-      { email: new RegExp(q, 'i') },
+    filter.$and = [
+      {
+        $or: [
+          { displayName: new RegExp(q, 'i') },
+          { username: new RegExp(q, 'i') },
+          { email: new RegExp(q, 'i') },
+        ],
+      },
     ];
   }
 
@@ -670,4 +681,93 @@ export const listOnlineUsers = asyncHandler(async (req: Request, res: Response) 
   });
 
   return ok(res, { items, total: items.length });
+});
+
+// --------------------------------------------------------------------------
+// Admin diamond grants
+// --------------------------------------------------------------------------
+export const grantDiamonds = asyncHandler(async (req: Request, res: Response) => {
+  const { userId, amount, note } = req.body as {
+    userId: string;
+    amount: number;
+    note?: string;
+  };
+  if (!userId) throw ApiError.badRequest('userId is required');
+  const diamonds = Number(amount);
+  if (!Number.isFinite(diamonds) || diamonds <= 0 || diamonds > 1_000_000) {
+    throw ApiError.badRequest('Amount must be between 1 and 1,000,000');
+  }
+
+  const target = await User.findById(userId);
+  if (!target) throw ApiError.notFound('User not found');
+  if (target.role === Role.Admin) {
+    throw ApiError.badRequest('Cannot grant diamonds to an admin account');
+  }
+
+  const admin = await User.findById(req.user!.id).select('email displayName');
+  const wallet = await creditDiamonds({
+    userId: target._id,
+    amount: Math.floor(diamonds),
+    reason: DiamondTxnReason.AdminAdjust,
+    meta: {
+      adminId: req.user!.id,
+      adminEmail: admin?.email,
+      adminName: admin?.displayName,
+      note: note?.trim() || undefined,
+    },
+  });
+
+  await notify({
+    userId: target._id.toString(),
+    type: NotificationType.Announcement,
+    title: 'Diamonds received',
+    body: `An admin added ${Math.floor(diamonds)} diamonds to your wallet.`,
+    data: { amount: Math.floor(diamonds) },
+  });
+
+  return ok(
+    res,
+    {
+      user: (target as any).toPublic(),
+      diamondsGranted: Math.floor(diamonds),
+      balance: wallet.diamonds,
+    },
+    `Granted ${Math.floor(diamonds)} diamonds`,
+  );
+});
+
+export const listDiamondGrants = asyncHandler(async (req: Request, res: Response) => {
+  const { page, limit, skip } = parsePagination(req.query);
+  const filter = {
+    reason: DiamondTxnReason.AdminAdjust,
+    direction: LedgerDirection.Credit,
+  };
+
+  const [items, total] = await Promise.all([
+    DiamondTransaction.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('user', 'displayName username email avatarUrl role'),
+    DiamondTransaction.countDocuments(filter),
+  ]);
+
+  return ok(
+    res,
+    buildPaginated(
+      items.map((txn) => ({
+        id: txn._id.toString(),
+        amount: txn.amount,
+        balanceAfter: txn.balanceAfter,
+        note: (txn.meta as any)?.note,
+        adminId: (txn.meta as any)?.adminId,
+        adminEmail: (txn.meta as any)?.adminEmail,
+        user: txn.user,
+        createdAt: txn.createdAt,
+      })),
+      page,
+      limit,
+      total,
+    ),
+  );
 });

@@ -14,7 +14,9 @@ const initiateSchema = z.object({
 });
 
 router.post('/initiate', validate({ body: initiateSchema }), ctrl.initiateCall);
+router.get('/incoming', ctrl.listIncomingCalls);
 router.get('/history', ctrl.callHistory);
+router.get('/:type/:id', ctrl.getCall);
 router.post('/:type/:id/accept', ctrl.acceptCall);
 router.post('/:type/:id/reject', ctrl.rejectCall);
 router.post('/:type/:id/end', ctrl.endCall);

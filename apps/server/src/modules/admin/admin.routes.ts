@@ -77,6 +77,18 @@ router.patch(
 router.get('/payments', ctrl.listPayments);
 router.get('/transactions', ctrl.listTransactions);
 router.get('/subscriptions', ctrl.listSubscriptions);
+router.post(
+  '/diamonds/grant',
+  validate({
+    body: z.object({
+      userId: z.string().min(1),
+      amount: z.number().positive().max(1_000_000),
+      note: z.string().max(300).optional(),
+    }),
+  }),
+  ctrl.grantDiamonds,
+);
+router.get('/diamonds/grants', ctrl.listDiamondGrants);
 
 // Withdrawals
 router.get('/withdrawals', ctrl.listWithdrawals);

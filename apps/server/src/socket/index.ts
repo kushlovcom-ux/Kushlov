@@ -12,6 +12,17 @@ interface AuthedSocket extends Socket {
   userId?: string;
 }
 
+/** Track open sockets per user so multi-tab disconnect doesn't flip offline early. */
+const connectionCounts = new Map<string, number>();
+
+async function markOnline(userId: string) {
+  await User.findByIdAndUpdate(userId, { isOnline: true, lastSeenAt: new Date() });
+}
+
+async function markOffline(userId: string) {
+  await User.findByIdAndUpdate(userId, { isOnline: false, lastSeenAt: new Date() });
+}
+
 /** Initialize Socket.io, wire authentication and realtime event handlers. */
 export function initSocket(httpServer: HttpServer): IOServer {
   const io = new IOServer(httpServer, {
@@ -20,7 +31,6 @@ export function initSocket(httpServer: HttpServer): IOServer {
   });
   setIO(io);
 
-  // Authenticate every socket with a JWT (from handshake auth or query).
   io.use((socket: AuthedSocket, next) => {
     try {
       const token =
@@ -38,12 +48,16 @@ export function initSocket(httpServer: HttpServer): IOServer {
   io.on('connection', async (socket: AuthedSocket) => {
     const userId = socket.userId!;
     socket.join(`user:${userId}`);
-    await User.findByIdAndUpdate(userId, { isOnline: true, lastSeenAt: new Date() });
-    socket.broadcast.emit(SocketEvents.PresenceOnline, { userId });
-    socket.emit(SocketEvents.Connected, { userId });
-    logger.debug({ userId }, 'Socket connected');
 
-    // ---- Typing indicators ----
+    const prev = connectionCounts.get(userId) ?? 0;
+    connectionCounts.set(userId, prev + 1);
+    await markOnline(userId);
+    if (prev === 0) {
+      socket.broadcast.emit(SocketEvents.PresenceOnline, { userId });
+    }
+    socket.emit(SocketEvents.Connected, { userId });
+    logger.debug({ userId, connections: prev + 1 }, 'Socket connected');
+
     socket.on(SocketEvents.TypingStart, ({ conversationId, to }) => {
       if (to) io.to(`user:${to}`).emit(SocketEvents.TypingStart, { conversationId, from: userId });
     });
@@ -51,7 +65,6 @@ export function initSocket(httpServer: HttpServer): IOServer {
       if (to) io.to(`user:${to}`).emit(SocketEvents.TypingStop, { conversationId, from: userId });
     });
 
-    // ---- Send chat message over socket ----
     socket.on(SocketEvents.MessageSend, async (payload, ack) => {
       try {
         const message = await createMessage({
@@ -67,7 +80,6 @@ export function initSocket(httpServer: HttpServer): IOServer {
       }
     });
 
-    // ---- Live stream rooms ----
     socket.on(SocketEvents.LiveJoin, ({ liveId }) => {
       socket.join(`live:${liveId}`);
     });
@@ -75,11 +87,16 @@ export function initSocket(httpServer: HttpServer): IOServer {
       socket.leave(`live:${liveId}`);
     });
 
-    // ---- Disconnect / presence ----
     socket.on('disconnect', async () => {
-      await User.findByIdAndUpdate(userId, { isOnline: false, lastSeenAt: new Date() });
-      socket.broadcast.emit(SocketEvents.PresenceOffline, { userId });
-      logger.debug({ userId }, 'Socket disconnected');
+      const remaining = Math.max(0, (connectionCounts.get(userId) ?? 1) - 1);
+      if (remaining === 0) {
+        connectionCounts.delete(userId);
+        await markOffline(userId);
+        socket.broadcast.emit(SocketEvents.PresenceOffline, { userId });
+      } else {
+        connectionCounts.set(userId, remaining);
+      }
+      logger.debug({ userId, connections: remaining }, 'Socket disconnected');
     });
   });
 
