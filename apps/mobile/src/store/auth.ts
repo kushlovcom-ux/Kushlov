@@ -1,32 +1,14 @@
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { createJSONStorage, persist, StateStorage } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type { PublicUser } from '@/types';
 import { STORAGE_KEYS } from '@/constants/storageKeys';
 
-const secureStorage: StateStorage = {
-  getItem: async (name) => {
-    try {
-      return await SecureStore.getItemAsync(name);
-    } catch {
-      return null;
-    }
-  },
-  setItem: async (name, value) => {
-    try {
-      await SecureStore.setItemAsync(name, value);
-    } catch {
-      // SecureStore unavailable (web/simulator edge cases)
-    }
-  },
-  removeItem: async (name) => {
-    try {
-      await SecureStore.deleteItemAsync(name);
-    } catch {
-      // ignore
-    }
-  },
-};
+/**
+ * Auth persistence uses AsyncStorage (not SecureStore).
+ * Android SecureStore has a ~2048 byte limit — storing user + tokens there
+ * silently fails / can leave the app stuck on a blank splash after install.
+ */
 
 export type AuthState = {
   user: PublicUser | null;
@@ -81,17 +63,28 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: STORAGE_KEYS.auth,
-      storage: createJSONStorage(() => secureStorage),
+      storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
-        user: s.user,
-        accessToken: s.accessToken,
-        refreshToken: s.refreshToken,
+        user: s.rememberMe ? s.user : null,
+        accessToken: s.rememberMe ? s.accessToken : null,
+        refreshToken: s.rememberMe ? s.refreshToken : null,
         rememberMe: s.rememberMe,
         onboardingSeen: s.onboardingSeen,
       }),
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          // Never block UI if storage rehydrate fails
+          useAuthStore.getState().setHydrated(true);
+          return;
+        }
         state?.setHydrated(true);
       },
     },
   ),
 );
+
+// Safety: if rehydrate never completes, unblock UI after 2s
+setTimeout(() => {
+  const s = useAuthStore.getState();
+  if (!s.hydrated) s.setHydrated(true);
+}, 2000);

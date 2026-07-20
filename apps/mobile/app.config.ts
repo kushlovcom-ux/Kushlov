@@ -7,11 +7,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: 'kushlov',
     version: '1.0.0',
     orientation: 'portrait',
-    icon: './assets/icon.png',
+    icon: './assets/adaptive-icon.png',
     scheme: 'kushlov',
     userInterfaceStyle: 'automatic',
     splash: {
-      image: './assets/splash-icon.png',
+      image: './assets/adaptive-icon.png',
       resizeMode: 'contain',
       backgroundColor: '#0a0a0b',
     },
@@ -33,9 +33,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: './assets/android-icon-foreground.png',
-        backgroundImage: './assets/android-icon-background.png',
-        monochromeImage: './assets/android-icon-monochrome.png',
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundImage: './assets/adaptive-icon.png',
+        monochromeImage: './assets/adaptive-icon.png',
         backgroundColor: '#0a0a0b',
       },
       package: 'com.kushlov.app',
@@ -71,7 +71,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       [
         'expo-notifications',
         {
-          icon: './assets/notification-icon.png',
+          icon: './assets/adaptive-icon.png',
           color: '#ec4899',
         },
       ],
@@ -95,7 +95,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         'expo-splash-screen',
         {
           backgroundColor: '#0a0a0b',
-          image: './assets/splash-icon.png',
+          image: './assets/adaptive-icon.png',
           imageWidth: 200,
         },
       ],

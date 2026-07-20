@@ -36,9 +36,21 @@ export function CallOverlay() {
   const [elapsed, setElapsed] = useState(0);
   const [nativeOk, setNativeOk] = useState<boolean | null>(null);
 
+  // Only touch LiveKit when a call is actually happening (avoids launch crashes).
   useEffect(() => {
-    ensureLiveKitNative().then(setNativeOk);
-  }, []);
+    if (!active && !incoming) return;
+    let cancelled = false;
+    ensureLiveKitNative()
+      .then((ok) => {
+        if (!cancelled) setNativeOk(ok);
+      })
+      .catch(() => {
+        if (!cancelled) setNativeOk(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, incoming]);
 
   useEffect(() => {
     if (!active?.connectedAt) {
