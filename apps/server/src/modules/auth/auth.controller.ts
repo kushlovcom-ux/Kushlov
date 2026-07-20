@@ -200,19 +200,28 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
-  const { email } = req.body;
+  const email = String(req.body.email ?? '').trim().toLowerCase();
   const user = await User.findOne({ email });
-  // Always return success to avoid leaking which emails exist.
-  if (user) {
-    const { raw, hash, expires } = createResetToken();
-    user.passwordResetToken = hash;
-    user.passwordResetExpires = expires;
-    await user.save();
-    const resetUrl = `${env.CLIENT_URL}/reset-password?token=${raw}`;
-    const mail = passwordResetEmail(user.displayName, resetUrl);
-    await sendMail({ to: user.email, ...mail });
+  if (!user) {
+    throw ApiError.notFound('Email is not registered');
   }
-  return ok(res, null, 'If that email exists, a reset link has been sent');
+
+  const { raw, hash, expires } = createResetToken();
+  user.passwordResetToken = hash;
+  user.passwordResetExpires = expires;
+  await user.save();
+
+  const resetUrl = `${env.CLIENT_URL}/reset-password?token=${raw}`;
+  const mail = passwordResetEmail(user.displayName, resetUrl);
+  try {
+    await sendMail({ to: user.email, ...mail });
+  } catch (err) {
+    throw ApiError.internal(
+      err instanceof Error ? err.message : 'Failed to send reset email. Please try again.',
+    );
+  }
+
+  return ok(res, null, 'Password reset link has been sent to your email');
 });
 
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {

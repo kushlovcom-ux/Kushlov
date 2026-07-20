@@ -15,23 +15,33 @@ const schema = z.object({ email: z.string().email() });
 type Form = z.infer<typeof schema>;
 
 export default function ForgotPasswordPage() {
-  const { register, handleSubmit, formState } = useForm<Form>({ resolver: zodResolver(schema) });
+  const { register, handleSubmit, formState, reset } = useForm<Form>({
+    resolver: zodResolver(schema),
+  });
   const mut = useMutation({
     mutationFn: (v: Form) => api.post('/auth/forgot-password', v),
-    onSuccess: () => toast.success('If that email exists, a reset link is on its way.'),
+    onSuccess: (res) => {
+      toast.success(res.data?.message ?? 'Password reset link has been sent to your email');
+      reset();
+    },
     onError: (e) => toast.error(apiError(e)),
   });
 
   return (
     <div>
       <h1 className="text-2xl font-bold">Forgot password</h1>
-      <p className="mt-1 text-sm text-white/50">We&apos;ll email you a reset link.</p>
+      <p className="mt-1 text-sm text-white/50">
+        Enter your registered email and we&apos;ll send a reset link.
+      </p>
       <form onSubmit={handleSubmit((v) => mut.mutate(v))} className="mt-6 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="email">Email</Label>
           <Input id="email" type="email" placeholder="you@example.com" {...register('email')} />
+          {formState.errors.email && (
+            <p className="text-xs text-red-400">{formState.errors.email.message}</p>
+          )}
         </div>
-        <Button type="submit" className="w-full" loading={mut.isPending} disabled={formState.isSubmitSuccessful && mut.isSuccess}>
+        <Button type="submit" className="w-full" loading={mut.isPending}>
           Send reset link
         </Button>
       </form>
