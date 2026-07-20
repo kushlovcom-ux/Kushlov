@@ -207,16 +207,22 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
   }
 
   const { raw, hash, expires } = createResetToken();
-  user.passwordResetToken = hash;
-  user.passwordResetExpires = expires;
-  await user.save();
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { passwordResetToken: hash, passwordResetExpires: expires } },
+  );
 
-  const resetUrl = `${env.CLIENT_URL}/reset-password?token=${raw}`;
+  const resetUrl = `${env.CLIENT_URL.replace(/\/$/, '')}/reset-password?token=${raw}`;
   const mail = passwordResetEmail(user.displayName, resetUrl);
   try {
     await sendMail({ to: user.email, ...mail });
   } catch (err) {
-    throw ApiError.internal(
+    // Clear unused token if email failed so the user can retry cleanly.
+    await User.updateOne(
+      { _id: user._id },
+      { $unset: { passwordResetToken: 1, passwordResetExpires: 1 } },
+    );
+    throw ApiError.badRequest(
       err instanceof Error ? err.message : 'Failed to send reset email. Please try again.',
     );
   }

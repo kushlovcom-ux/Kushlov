@@ -43,6 +43,8 @@ const EnvSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
+  /** Set to "true" after verifying your custom domain in Resend Dashboard. */
+  RESEND_DOMAIN_VERIFIED: z.string().optional(),
   MAIL_FROM: z.string().default('Kushlov <onboarding@resend.dev>'),
 
   PAYMENT_PROVIDER: z.string().default('mock'),
@@ -99,6 +101,7 @@ export const env = parsed.success
       SMTP_USER: process.env.SMTP_USER,
       SMTP_PASS: process.env.SMTP_PASS,
       RESEND_API_KEY: process.env.RESEND_API_KEY,
+      RESEND_DOMAIN_VERIFIED: process.env.RESEND_DOMAIN_VERIFIED,
       MAIL_FROM: process.env.MAIL_FROM ?? 'Kushlov <onboarding@resend.dev>',
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER ?? 'mock',
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
