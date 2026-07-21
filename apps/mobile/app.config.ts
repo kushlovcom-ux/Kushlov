@@ -7,6 +7,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: 'kushlov',
     version: '1.0.0',
     orientation: 'portrait',
+    // Razorpay does not support the New Architecture yet — keep it off for stable Android launches.
+    newArchEnabled: false,
     icon: './assets/adaptive-icon.png',
     scheme: 'kushlov',
     userInterfaceStyle: 'automatic',
