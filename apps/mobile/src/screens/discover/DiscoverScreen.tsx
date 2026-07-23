@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { FlashList } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
+import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { SkeletonRow } from '@/components/ui/Skeleton';
@@ -69,7 +70,17 @@ export function DiscoverScreen() {
   return (
     <Screen padded={false}>
       <View style={styles.pad}>
-        <Header title="Discover" />
+        <Header
+          title="Discover"
+          right={
+            <Button
+              title="Group call"
+              size="sm"
+              variant="secondary"
+              onPress={() => nav.navigate('GroupCall')}
+            />
+          }
+        />
         <SearchBar value={q} onChangeText={setQ} />
         {discover.isLoading ? (
           <>

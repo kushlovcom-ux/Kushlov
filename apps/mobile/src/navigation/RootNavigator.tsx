@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthNavigator } from './AuthNavigator';
 import { AppNavigator } from './AppNavigator';
 import { linking } from './linking';
+import { navigationRef } from './navigationRef';
 import { useAuth } from '@/hooks/useAuth';
 import { useIsDark, useThemeColors } from '@/hooks/useThemeColors';
 import { useAuthStore } from '@/store/auth';
@@ -40,7 +41,7 @@ export function RootNavigator() {
   };
 
   return (
-    <NavigationContainer linking={linking} theme={theme}>
+    <NavigationContainer ref={navigationRef} linking={linking} theme={theme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!onboardingSeen ? (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />

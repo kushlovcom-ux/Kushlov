@@ -287,12 +287,16 @@ export const SocketEvents = {
   CallAccept: 'call:accept',
   CallReject: 'call:reject',
   CallEnd: 'call:end',
+  CallParticipantJoined: 'call:participant_joined',
   // live
   LiveJoin: 'live:join',
   LiveLeave: 'live:leave',
   LiveChat: 'live:chat',
   LiveGift: 'live:gift',
   LiveViewerCount: 'live:viewer_count',
+  LiveColiveInvite: 'live:colive_invite',
+  LiveColiveAccept: 'live:colive_accept',
+  LiveColiveLeave: 'live:colive_leave',
   // notifications
   Notification: 'notification:new',
 } as const;

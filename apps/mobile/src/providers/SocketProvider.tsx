@@ -1,10 +1,14 @@
 import React, { useEffect } from 'react';
+import { Alert } from 'react-native';
 import { connectSocket, disconnectSocket, getSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/auth';
 import { useCallStore } from '@/store/call';
 import { CallStatus, SocketEvents, type CallSession } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/constants/queryKeys';
+import { liveApi } from '@/api/live';
+import { navigationRef } from '@/navigation/navigationRef';
+import { getErrorMessage } from '@/api/client';
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.accessToken);
@@ -37,12 +41,45 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       qc.invalidateQueries({ queryKey: queryKeys.badges });
     };
 
+    const onColiveInvite = (payload: {
+      liveId: string;
+      title?: string;
+      from?: { displayName?: string };
+    }) => {
+      Alert.alert(
+        'Co-live invite',
+        `${payload.from?.displayName ?? 'A host'} invited you to join “${payload.title ?? 'their stream'}”`,
+        [
+          { text: 'Decline', style: 'cancel' },
+          {
+            text: 'Join',
+            onPress: () => {
+              void (async () => {
+                try {
+                  await liveApi.coliveAccept(payload.liveId);
+                  if (navigationRef.isReady()) {
+                    navigationRef.navigate('App', {
+                      screen: 'LiveRoom',
+                      params: { liveId: payload.liveId },
+                    } as never);
+                  }
+                } catch (err) {
+                  Alert.alert('Co-live', getErrorMessage(err));
+                }
+              })();
+            },
+          },
+        ],
+      );
+    };
+
     socket.on(SocketEvents.CallInvite, onInvite);
     socket.on(SocketEvents.CallAccept, onAccept);
     socket.on(SocketEvents.CallReject, onEnd);
     socket.on(SocketEvents.CallEnd, onEnd);
     socket.on(SocketEvents.MessageNew, onMessage);
     socket.on(SocketEvents.Notification, onNotification);
+    socket.on(SocketEvents.LiveColiveInvite, onColiveInvite);
 
     return () => {
       const s = getSocket();
@@ -52,6 +89,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       s?.off(SocketEvents.CallEnd, onEnd);
       s?.off(SocketEvents.MessageNew, onMessage);
       s?.off(SocketEvents.Notification, onNotification);
+      s?.off(SocketEvents.LiveColiveInvite, onColiveInvite);
     };
   }, [token, setIncoming, updateSession, clearCall, qc]);
 

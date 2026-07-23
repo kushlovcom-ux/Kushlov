@@ -5,7 +5,13 @@ export function startCall(
   type: CallType,
   calleeId: string,
   peerName: string,
-  opts?: { peerIsHost?: boolean; peerRole?: string; peerHostApproved?: boolean },
+  opts?: {
+    peerIsHost?: boolean;
+    peerRole?: string;
+    peerHostApproved?: boolean;
+    /** Extra participant ids for group start (1B), not including calleeId. */
+    participantIds?: string[];
+  },
 ) {
   window.dispatchEvent(
     new CustomEvent('kushlov:start-call', {
@@ -16,6 +22,7 @@ export function startCall(
         peerIsHost: opts?.peerIsHost,
         peerRole: opts?.peerRole,
         peerHostApproved: opts?.peerHostApproved,
+        participantIds: opts?.participantIds,
       },
     }),
   );

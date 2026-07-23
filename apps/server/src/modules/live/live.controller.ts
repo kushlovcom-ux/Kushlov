@@ -7,7 +7,7 @@ import {
   SocketEvents,
 } from '@kushlov/types';
 import { buildPaginated, parsePagination } from '@kushlov/utils';
-import { Follower, Gift, LiveChat, LiveParticipant, LiveStream } from '../../models';
+import { Follower, Gift, LiveChat, LiveParticipant, LiveStream, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
@@ -16,7 +16,7 @@ import { uploadBuffer } from '../../services/media.service';
 import { spendDiamonds } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
 import { notify } from '../../services/notification.service';
-import { emitToRoom } from '../../socket/io';
+import { emitToRoom, emitToUser } from '../../socket/io';
 import { assertUsersCanConnect, getDiscoverableUserIds } from '../../services/location.service';
 import { refId } from '../../utils/refId';
 import { getLiveKitPublicUrl } from '../../config/env';
@@ -83,6 +83,31 @@ export const hostToken = asyncHandler(async (req: Request, res: Response) => {
     roomName: live.roomName,
     canPublish: true,
     canPublishData: true,
+  });
+  return ok(res, { token, roomName: live.roomName, livekitUrl: getLiveKitPublicUrl() });
+});
+
+/**
+ * GET /live/:id/preview-token — subscribe-only token for muted card previews.
+ * Does not create a LiveParticipant or bump viewerCount.
+ */
+export const previewToken = asyncHandler(async (req: Request, res: Response) => {
+  const live = await LiveStream.findById(req.params.id);
+  if (!live || live.status !== LiveStatus.Live) throw ApiError.notFound('Stream is not live');
+  if (live.host.toString() !== req.user!.id) {
+    await assertUsersCanConnect(req.user!.id, live.host.toString());
+  }
+  if (live.bannedUsers.some((u) => u.toString() === req.user!.id)) {
+    throw ApiError.forbidden('You are banned from this stream');
+  }
+
+  const token = await createLiveKitToken({
+    identity: `preview_${req.user!.id}_${live._id.toString()}`,
+    roomName: live.roomName,
+    canPublish: false,
+    canSubscribe: true,
+    canPublishData: false,
+    ttlSeconds: 120,
   });
   return ok(res, { token, roomName: live.roomName, livekitUrl: getLiveKitPublicUrl() });
 });
@@ -285,4 +310,187 @@ export const addModerator = asyncHandler(async (req: Request, res: Response) => 
     { $set: { role: 'moderator' } },
   );
   return ok(res, null, 'Moderator added');
+});
+
+/** GET /live/:id/viewers — host/moderator: who is currently watching. */
+export const listViewers = asyncHandler(async (req: Request, res: Response) => {
+  const live = await LiveStream.findById(req.params.id);
+  if (!live) throw ApiError.notFound('Stream not found');
+  const isModerator =
+    live.host.toString() === req.user!.id ||
+    live.moderators.some((m) => m.toString() === req.user!.id);
+  if (!isModerator) throw ApiError.forbidden('Only host/moderators can list viewers');
+
+  const participants = await LiveParticipant.find({
+    liveStream: live._id,
+    leftAt: { $exists: false },
+    role: { $ne: 'host' },
+  })
+    .sort({ joinedAt: -1 })
+    .limit(100)
+    .populate('user', 'displayName username avatarUrl');
+
+  return ok(res, {
+    viewerCount: live.viewerCount,
+    viewers: participants.map((p) => {
+      const u = p.user as unknown as {
+        _id?: { toString(): string };
+        id?: string;
+        displayName?: string;
+        username?: string;
+        avatarUrl?: string;
+      };
+      return {
+        id: u?.id ?? u?._id?.toString?.() ?? String(p.user),
+        displayName: u?.displayName,
+        username: u?.username,
+        avatarUrl: u?.avatarUrl,
+        role: p.role,
+        joinedAt: p.joinedAt,
+      };
+    }),
+  });
+});
+
+/** POST /live/:id/colive/invite — host A invites another live host B into A's room (2A). */
+export const coliveInvite = asyncHandler(async (req: Request, res: Response) => {
+  const live = await LiveStream.findById(req.params.id);
+  if (!live || live.status !== LiveStatus.Live) throw ApiError.notFound('Stream is not live');
+  if (live.host.toString() !== req.user!.id) throw ApiError.forbidden('Only the host can invite');
+  if (live.coHost) throw ApiError.badRequest('A co-host is already on this stream');
+
+  const { hostId } = req.body as { hostId: string };
+  if (!hostId || hostId === req.user!.id) throw ApiError.badRequest('Invalid hostId');
+
+  const otherLive = await LiveStream.findOne({
+    host: hostId,
+    status: LiveStatus.Live,
+  });
+  if (!otherLive) throw ApiError.badRequest('That host is not currently live');
+
+  const otherHost = await User.findById(hostId).select('displayName isHostApproved role');
+  if (!otherHost?.isHostApproved) throw ApiError.forbidden('Only approved hosts can co-live');
+
+  const from = await User.findById(req.user!.id).select('displayName avatarUrl');
+  emitToUser(hostId, SocketEvents.LiveColiveInvite, {
+    liveId: live._id.toString(),
+    roomName: live.roomName,
+    title: live.title,
+    from: {
+      id: from?._id.toString(),
+      displayName: from?.displayName,
+      avatarUrl: from?.avatarUrl,
+    },
+  });
+
+  return ok(res, { invited: true }, 'Co-live invite sent');
+});
+
+/** POST /live/:id/colive/accept — invited host joins A's room as publisher; ends own stream. */
+export const coliveAccept = asyncHandler(async (req: Request, res: Response) => {
+  const live = await LiveStream.findById(req.params.id);
+  if (!live || live.status !== LiveStatus.Live) throw ApiError.notFound('Stream is not live');
+  if (live.host.toString() === req.user!.id) {
+    throw ApiError.badRequest('You are already the host of this stream');
+  }
+  if (live.coHost && live.coHost.toString() !== req.user!.id) {
+    throw ApiError.badRequest('A co-host is already on this stream');
+  }
+
+  const rejoining = live.coHost?.toString() === req.user!.id;
+
+  if (!rejoining) {
+    // End invitee's own live stream if any.
+    const own = await LiveStream.findOne({ host: req.user!.id, status: LiveStatus.Live });
+    if (own) {
+      own.status = LiveStatus.Ended;
+      own.endedAt = new Date();
+      await own.save();
+      try {
+        await closeRoom(own.roomName);
+      } catch {
+        /* ignore */
+      }
+      emitToRoom(roomOf(own._id.toString()), SocketEvents.LiveLeave, { ended: true });
+    }
+
+    live.coHost = req.user!.id as unknown as typeof live.coHost;
+    await live.save();
+
+    await LiveParticipant.updateOne(
+      { liveStream: live._id, user: req.user!.id },
+      { $set: { joinedAt: new Date(), leftAt: undefined, role: 'cohost' } },
+      { upsert: true },
+    );
+  }
+
+  const token = await createLiveKitToken({
+    identity: req.user!.id,
+    roomName: live.roomName,
+    canPublish: true,
+    canPublishData: true,
+  });
+
+  const coHost = await User.findById(req.user!.id).select('displayName avatarUrl username');
+  if (!rejoining) {
+    emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveColiveAccept, {
+      liveId: live._id.toString(),
+      coHost: {
+        id: coHost?._id.toString(),
+        displayName: coHost?.displayName,
+        avatarUrl: coHost?.avatarUrl,
+        username: coHost?.username,
+      },
+    });
+    emitToUser(live.host.toString(), SocketEvents.LiveColiveAccept, {
+      liveId: live._id.toString(),
+      coHost: {
+        id: coHost?._id.toString(),
+        displayName: coHost?.displayName,
+        avatarUrl: coHost?.avatarUrl,
+      },
+    });
+  }
+
+  return ok(
+    res,
+    {
+      token,
+      roomName: live.roomName,
+      livekitUrl: getLiveKitPublicUrl(),
+      live,
+    },
+    rejoining ? 'Rejoined as co-host' : 'Joined as co-host',
+  );
+});
+
+/** POST /live/:id/colive/leave — co-host leaves (or host removes co-host). */
+export const coliveLeave = asyncHandler(async (req: Request, res: Response) => {
+  const live = await LiveStream.findById(req.params.id);
+  if (!live) throw ApiError.notFound('Stream not found');
+  const uid = req.user!.id;
+  const isHost = live.host.toString() === uid;
+  const isCoHost = live.coHost?.toString() === uid;
+  if (!isHost && !isCoHost) throw ApiError.forbidden('Not a co-live participant');
+
+  const leavingId = isCoHost ? uid : live.coHost?.toString();
+  if (!leavingId) return ok(res, { ok: true }, 'No co-host');
+
+  live.coHost = undefined;
+  await live.save();
+  await LiveParticipant.updateOne(
+    { liveStream: live._id, user: leavingId },
+    { $set: { leftAt: new Date() } },
+  );
+  try {
+    await removeParticipant(live.roomName, leavingId);
+  } catch {
+    /* ignore */
+  }
+
+  emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveColiveLeave, {
+    liveId: live._id.toString(),
+    userId: leavingId,
+  });
+  return ok(res, { ok: true }, 'Co-host left');
 });

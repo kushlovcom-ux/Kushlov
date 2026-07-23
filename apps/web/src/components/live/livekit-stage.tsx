@@ -12,9 +12,16 @@ import {
 import { Track } from 'livekit-client';
 import { clientEnv } from '@/lib/env';
 import { useLiveKitUrl } from '@/hooks/use-livekit-url';
+import { VideoFilterBar } from '@/components/calls/video-filter-bar';
 
 /** In-room video UI — avoids VideoConference placeholder track bugs. */
-function LiveRoomVideo({ isHost }: { isHost?: boolean }) {
+function LiveRoomVideo({
+  isHost,
+  showFilters,
+}: {
+  isHost?: boolean;
+  showFilters?: boolean;
+}) {
   const cameraTracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: false }],
     { onlySubscribed: false },
@@ -48,6 +55,7 @@ function LiveRoomVideo({ isHost }: { isHost?: boolean }) {
           </div>
         )}
       </div>
+      {showFilters ? <VideoFilterBar className="border-t border-white/10 py-2" /> : null}
       {isHost && (
         <ControlBar
           variation="minimal"
@@ -61,8 +69,7 @@ function LiveRoomVideo({ isHost }: { isHost?: boolean }) {
 }
 
 /**
- * LiveKit room wrapper for 1:1 calls and live streams.
- * Uses a lightweight grid instead of VideoConference to avoid placeholder track errors.
+ * LiveKit room wrapper for 1:1 / multi-party calls and live streams.
  */
 export function LiveKitStage({
   token,
@@ -70,15 +77,21 @@ export function LiveKitStage({
   onDisconnected,
   audioOnly = false,
   isHost = false,
+  /** Publish local A/V. Defaults to true for calls; live viewers should pass false. */
+  publish,
+  showFilters = false,
 }: {
   token: string;
   serverUrl?: string;
   onDisconnected?: () => void;
   audioOnly?: boolean;
   isHost?: boolean;
+  publish?: boolean;
+  showFilters?: boolean;
 }) {
   const { url: settingsUrl, isLoading } = useLiveKitUrl();
   const url = serverUrl || clientEnv.livekitUrl || settingsUrl;
+  const shouldPublish = publish ?? true;
 
   if (isLoading && !url) {
     return (
@@ -103,14 +116,14 @@ export function LiveKitStage({
       token={token}
       serverUrl={url}
       connect
-      video={!audioOnly}
-      audio
+      video={shouldPublish && !audioOnly}
+      audio={shouldPublish}
       onDisconnected={onDisconnected}
       data-lk-theme="default"
       style={{ height: '100%', borderRadius: '1rem', overflow: 'hidden' }}
       options={{ adaptiveStream: true, dynacast: true }}
     >
-      <LiveRoomVideo isHost={isHost} />
+      <LiveRoomVideo isHost={isHost} showFilters={showFilters && !audioOnly && shouldPublish} />
     </LiveKitRoom>
   );
 }

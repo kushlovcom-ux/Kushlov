@@ -18,10 +18,13 @@ export const liveApi = {
     const res = await api.post('/live/start', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return res.data.data as LiveRoom;
+    const data = res.data.data as { live?: LiveRoom } & LiveRoom;
+    return (data.live ?? data) as LiveRoom;
   },
   hostToken: (id: string) =>
     apiGet<{ token: string; livekitUrl?: string; roomName?: string }>(`/live/${id}/host-token`),
+  previewToken: (id: string) =>
+    apiGet<{ token: string; livekitUrl?: string; roomName?: string }>(`/live/${id}/preview-token`),
   end: (id: string) => apiPost<LiveRoom>(`/live/${id}/end`),
   join: (id: string) =>
     apiPost<LiveRoom & { token?: string; livekitUrl?: string }>(`/live/${id}/join`),
@@ -35,4 +38,26 @@ export const liveApi = {
     apiPost<{ ok: boolean }>(`/live/${id}/ban/${userId}`),
   addModerator: (id: string, userId: string) =>
     apiPost<{ ok: boolean }>(`/live/${id}/moderator/${userId}`),
+  viewers: (id: string) =>
+    apiGet<{
+      viewerCount: number;
+      viewers: Array<{
+        id: string;
+        displayName?: string;
+        username?: string;
+        avatarUrl?: string;
+        role?: string;
+        joinedAt?: string;
+      }>;
+    }>(`/live/${id}/viewers`),
+  coliveInvite: (id: string, hostId: string) =>
+    apiPost<{ invited: boolean }>(`/live/${id}/colive/invite`, { hostId }),
+  coliveAccept: (id: string) =>
+    apiPost<{
+      token: string;
+      livekitUrl?: string;
+      roomName?: string;
+      live?: LiveRoom;
+    }>(`/live/${id}/colive/accept`),
+  coliveLeave: (id: string) => apiPost<{ ok: boolean }>(`/live/${id}/colive/leave`),
 };

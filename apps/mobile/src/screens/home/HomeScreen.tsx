@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { FlashList } from '@shopify/flash-list';
@@ -41,12 +41,24 @@ export function HomeScreen() {
     <Screen padded={false}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.pad}>
         <View style={styles.top}>
-          <View>
-            <Text variant="caption" muted>
-              Welcome back
-            </Text>
-            <Text variant="h2">{user?.displayName ?? 'Explorer'}</Text>
-          </View>
+          <Pressable
+            onPress={() => nav.navigate('MainTabs', { screen: 'Home' })}
+            accessibilityRole="button"
+            accessibilityLabel="Kushlov home"
+            style={styles.brandTap}
+          >
+            <Image
+              source={require('../../assets/images/kush.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <View>
+              <Text variant="caption" muted>
+                Kushlov
+              </Text>
+              <Text variant="h2">{user?.displayName ?? 'Explorer'}</Text>
+            </View>
+          </Pressable>
           <View style={styles.topRight}>
             {wallet.data ? <DiamondBadge amount={wallet.data.diamonds} /> : null}
             <Pressable onPress={() => nav.navigate('Notifications')}>
@@ -147,6 +159,8 @@ function Section({
 const styles = StyleSheet.create({
   pad: { padding: spacing.lg, paddingBottom: 40 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  brandTap: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  logo: { width: 36, height: 36, borderRadius: 10 },
   topRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   banner: { padding: spacing.md, borderRadius: 12, marginBottom: spacing.md },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.md },

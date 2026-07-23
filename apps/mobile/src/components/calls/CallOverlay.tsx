@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -9,16 +9,23 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
+import { LiveKitStage } from '@/components/live/LiveKitStage';
+import { AddCallParticipant } from '@/components/calls/AddCallParticipant';
+import {
+  VideoFilterBar,
+  FilterOverlay,
+  type VideoFilterId,
+} from '@/components/calls/VideoFilterBar';
 import { callsApi } from '@/api/calls';
 import { getErrorMessage } from '@/api/client';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import { connectRoom, disconnectRoom, ensureLiveKitNative } from '@/services/livekit';
+import { ensureLiveKitNative } from '@/services/livekit';
 import { useCallStore } from '@/store/call';
 import { CallStatus, CallType } from '@/types';
 import { formatDuration } from '@/utils/format';
 import { haptics } from '@/utils/haptics';
-import type { Room } from 'livekit-client';
 import { spacing } from '@/theme';
+import type { Room } from 'livekit-client';
 
 export function CallOverlay() {
   const c = useThemeColors();
@@ -31,12 +38,15 @@ export function CallOverlay() {
   const setCameraOff = useCallStore((s) => s.setCameraOff);
   const setSpeakerOn = useCallStore((s) => s.setSpeakerOn);
   const markConnected = useCallStore((s) => s.markConnected);
-  const [room, setRoom] = useState<Room | null>(null);
-  const [connecting, setConnecting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [nativeOk, setNativeOk] = useState<boolean | null>(null);
+  const [room, setRoom] = useState<Room | null>(null);
+  const [filter, setFilter] = useState<VideoFilterId>('none');
 
-  // Only touch LiveKit when a call is actually happening (avoids launch crashes).
+  const onRoom = useCallback((r: Room | null) => {
+    setRoom(r);
+  }, []);
+
   useEffect(() => {
     if (!active && !incoming) return;
     let cancelled = false;
@@ -64,40 +74,16 @@ export function CallOverlay() {
   }, [active?.connectedAt]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function join() {
-      if (!active?.session.token || !active.session.livekitUrl) return;
-      setConnecting(true);
-      try {
-        const r = await connectRoom({
-          url: active.session.livekitUrl,
-          token: active.session.token,
-        });
-        if (cancelled) {
-          await disconnectRoom(r);
-          return;
-        }
-        setRoom(r);
-        markConnected();
-        useCallStore.getState().updateSession({ status: CallStatus.Ongoing });
-      } catch (err) {
-        Alert.alert('Call error', getErrorMessage(err));
-      } finally {
-        if (!cancelled) setConnecting(false);
-      }
-    }
-    join();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.session.id, active?.session.token]);
-
-  useEffect(() => {
-    return () => {
-      disconnectRoom(room).catch(() => undefined);
-    };
-  }, [room]);
+    if (!active?.session.token || !active.session.livekitUrl) return;
+    if (!active.connectedAt) markConnected();
+    useCallStore.getState().updateSession({ status: CallStatus.Ongoing });
+  }, [
+    active?.session.id,
+    active?.session.token,
+    active?.session.livekitUrl,
+    active?.connectedAt,
+    markConnected,
+  ]);
 
   const endCall = async () => {
     haptics.medium();
@@ -108,7 +94,6 @@ export function CallOverlay() {
     } catch {
       // ignore
     }
-    await disconnectRoom(room);
     setRoom(null);
     clear();
   };
@@ -156,18 +141,10 @@ export function CallOverlay() {
     }
   };
 
-  const flipCamera = async () => {
-    try {
-      await room?.localParticipant.setCameraEnabled(true);
-    } catch {
-      // soft fail
-    }
-  };
-
   if (incoming && !active) {
     const peer = incoming.caller;
     return (
-      <View style={[styles.overlay, { backgroundColor: c.bg }]}>
+      <View style={[styles.overlay, styles.centerFill, { backgroundColor: c.bg }]}>
         <Text variant="caption" muted>
           Incoming {incoming.type} call
         </Text>
@@ -195,21 +172,52 @@ export function CallOverlay() {
 
   const peer = active.peer;
   const isVideo = active.session.type === CallType.Video;
+  const token = active.session.token;
+  const url = active.session.livekitUrl;
 
   return (
     <View style={[styles.overlay, { backgroundColor: '#050506' }]}>
-      {nativeOk === false ? (
-        <Text muted style={{ textAlign: 'center', paddingHorizontal: 24 }}>
-          LiveKit native modules are unavailable in Expo Go. Accept/end still work; media requires a
-          dev client build.
+      {token && url ? (
+        <View style={StyleSheet.absoluteFill}>
+          <LiveKitStage
+            token={token}
+            serverUrl={url}
+            publish
+            audioOnly={!isVideo}
+            onDisconnected={() => void endCall()}
+            onRoom={onRoom}
+            style={{ flex: 1, borderRadius: 0 }}
+          />
+          {isVideo ? <FilterOverlay filter={filter} /> : null}
+        </View>
+      ) : (
+        <View style={styles.centerMeta}>
+          <Avatar uri={peer?.avatarUrl} name={peer?.displayName} size={88} />
+          <Text variant="h2">{peer?.displayName ?? 'Call'}</Text>
+          <ActivityIndicator color={c.primary} style={{ marginTop: 12 }} />
+        </View>
+      )}
+
+      <View style={styles.topMeta} pointerEvents="box-none">
+        <Text variant="caption" muted>
+          {active.session.status === CallStatus.Ringing ? 'Ringing…' : formatDuration(elapsed)}
         </Text>
+        <Text variant="bodyBold">{peer?.displayName ?? 'Call'}</Text>
+        {nativeOk === false ? (
+          <Text muted style={{ textAlign: 'center', paddingHorizontal: 24, marginTop: 8 }}>
+            LiveKit native modules unavailable in Expo Go. Use a dev client / EAS build for media.
+          </Text>
+        ) : null}
+        <View style={{ marginTop: 12 }}>
+          <AddCallParticipant callId={active.session.id} type={active.session.type} />
+        </View>
+      </View>
+
+      {isVideo ? (
+        <View style={styles.filterBar}>
+          <VideoFilterBar room={room} onFilterChange={setFilter} />
+        </View>
       ) : null}
-      <Text variant="caption" muted>
-        {active.session.status === CallStatus.Ringing ? 'Ringing…' : formatDuration(elapsed)}
-      </Text>
-      <Avatar uri={peer?.avatarUrl} name={peer?.displayName} size={88} />
-      <Text variant="h2">{peer?.displayName ?? 'Call'}</Text>
-      {connecting ? <ActivityIndicator color={c.primary} style={{ marginTop: 12 }} /> : null}
 
       <View style={styles.controls}>
         <Ctrl
@@ -233,9 +241,6 @@ export function CallOverlay() {
             color={c.elevated}
           />
         )}
-        {isVideo ? (
-          <Ctrl icon="camera-reverse" label="Flip" onPress={flipCamera} color={c.elevated} />
-        ) : null}
         <Ctrl icon="call" label="End" onPress={endCall} color={c.danger} rotate />
       </View>
     </View>
@@ -280,12 +285,38 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 1000,
+  },
+  centerFill: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.md,
     padding: spacing['2xl'],
   },
-  actions: { flexDirection: 'row', gap: 40, marginTop: 40 },
+  centerMeta: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  topMeta: {
+    position: 'absolute',
+    top: 56,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    gap: 4,
+  },
+  filterBar: {
+    position: 'absolute',
+    bottom: 120,
+    left: 0,
+    right: 0,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 40,
+    marginTop: 40,
+  },
   round: {
     width: 68,
     height: 68,

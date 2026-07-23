@@ -3,6 +3,10 @@ import { Platform } from 'react-native';
 export type LiveKitConnectParams = {
   url: string;
   token: string;
+  /** Publish local microphone after connect (default false). */
+  publishAudio?: boolean;
+  /** Publish local camera after connect (default false). */
+  publishVideo?: boolean;
 };
 
 let nativeReady = false;
@@ -18,6 +22,11 @@ export async function ensureLiveKitNative(): Promise<boolean> {
     if (lk?.registerGlobals && !nativeReady) {
       lk.registerGlobals();
       nativeReady = true;
+    }
+    try {
+      await lk?.AudioSession?.startAudioSession?.();
+    } catch {
+      // optional on some platforms
     }
     return !!(webrtc && lk);
   } catch {
@@ -40,6 +49,16 @@ export async function createRoom() {
 export async function connectRoom(params: LiveKitConnectParams) {
   const room = await createRoom();
   await room.connect(params.url, params.token);
+  try {
+    if (params.publishAudio) {
+      await room.localParticipant.setMicrophoneEnabled(true);
+    }
+    if (params.publishVideo) {
+      await room.localParticipant.setCameraEnabled(true);
+    }
+  } catch {
+    // Permission denial / device missing — room still usable for subscribe
+  }
   return room;
 }
 

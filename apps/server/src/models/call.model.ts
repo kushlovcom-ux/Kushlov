@@ -5,6 +5,10 @@ export interface ICall extends Document {
   type: CallType;
   caller: Types.ObjectId;
   callee: Types.ObjectId;
+  /** All joined participants (includes caller + callees). */
+  participants: Types.ObjectId[];
+  /** Users invited but not yet joined. */
+  pendingInvites: Types.ObjectId[];
   roomName: string;
   status: CallStatus;
   startedAt?: Date;
@@ -28,6 +32,14 @@ function callSchema(type: CallType) {
       type: { type: String, enum: Object.values(CallType), default: type },
       caller: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
       callee: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+      participants: {
+        type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+        default: [],
+      },
+      pendingInvites: {
+        type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+        default: [],
+      },
       roomName: { type: String, required: true, index: true },
       status: {
         type: String,
@@ -48,6 +60,8 @@ function callSchema(type: CallType) {
   );
   schema.index({ caller: 1, createdAt: -1 });
   schema.index({ callee: 1, createdAt: -1 });
+  schema.index({ participants: 1, status: 1 });
+  schema.index({ pendingInvites: 1, status: 1 });
   return schema;
 }
 

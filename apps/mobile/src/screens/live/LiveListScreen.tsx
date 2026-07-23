@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
@@ -10,13 +10,17 @@ import { ErrorView } from '@/components/ui/ErrorView';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
+import { LiveCardPreview } from '@/components/live/LiveCardPreview';
 import { liveApi } from '@/api/live';
 import { queryKeys } from '@/constants/queryKeys';
 import { useAuth } from '@/hooks/useAuth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { spacing } from '@/theme';
+import { LiveStatus } from '@/types';
 import type { AppStackParamList } from '@/navigation/types';
 import type { LiveRoom } from '@/types';
+
+const MAX_PREVIEWS = 4;
 
 export function LiveListScreen() {
   const c = useThemeColors();
@@ -26,7 +30,9 @@ export function LiveListScreen() {
     queryKey: queryKeys.live,
     queryFn: () => liveApi.list({ limit: 40 }),
   });
-  const items: LiveRoom[] = list.data?.items ?? [];
+  const items: LiveRoom[] = (list.data?.items ?? []).filter(
+    (r) => !r.status || r.status === LiveStatus.Live,
+  );
 
   return (
     <Screen>
@@ -50,17 +56,25 @@ export function LiveListScreen() {
         ) : items.length === 0 ? (
           <EmptyState title="No one is live" description="Check back soon or become a host." />
         ) : (
-          items.map((room) => (
+          items.map((room, index) => (
             <Pressable
               key={room.id}
               onPress={() => nav.navigate('LiveRoom', { liveId: room.id })}
               style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}
             >
-              {room.thumbnailUrl ? (
-                <Image source={{ uri: room.thumbnailUrl }} style={styles.thumb} />
-              ) : (
-                <View style={[styles.thumb, { backgroundColor: c.elevated }]} />
-              )}
+              <View style={styles.thumbWrap}>
+                <LiveCardPreview
+                  liveId={room.id}
+                  thumbnailUrl={room.thumbnailUrl}
+                  active={index < MAX_PREVIEWS}
+                  style={styles.thumb}
+                />
+                <View style={styles.liveBadge}>
+                  <Text variant="tiny" color="#fff">
+                    LIVE
+                  </Text>
+                </View>
+              </View>
               <View style={{ flex: 1, gap: 4 }}>
                 <Text variant="bodyBold" numberOfLines={1}>
                   {room.title}
@@ -87,5 +101,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     alignItems: 'center',
   },
-  thumb: { width: 72, height: 72, borderRadius: 12 },
+  thumbWrap: { width: 96, height: 72, borderRadius: 12, overflow: 'hidden' },
+  thumb: { width: 96, height: 72, borderRadius: 12 },
+  liveBadge: {
+    position: 'absolute',
+    left: 6,
+    top: 6,
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
 });

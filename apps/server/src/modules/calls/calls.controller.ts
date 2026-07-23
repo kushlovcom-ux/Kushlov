@@ -29,33 +29,70 @@ import {
 } from '../../services/pricing.service';
 
 const modelFor = (type: CallType) => (type === CallType.Audio ? AudioCall : VideoCall);
+const MAX_CALL_PARTICIPANTS = 6;
+
+function participantIdsOf(call: ICall): string[] {
+  const ids = new Set<string>([
+    call.caller.toString(),
+    call.callee.toString(),
+    ...(call.participants ?? []).map((p) => p.toString()),
+  ]);
+  return [...ids];
+}
+
+function isCallMember(call: ICall, userId: string): boolean {
+  return participantIdsOf(call).includes(userId);
+}
+
+function isPendingInvitee(call: ICall, userId: string): boolean {
+  return (call.pendingInvites ?? []).some((p) => p.toString() === userId);
+}
+
 
 /**
  * POST /calls/initiate
  * - Normal users may call hosts or other users (diamonds required)
  * - Hosts may call other approved hosts or normal users (diamonds required)
+ * - Optional participantIds[] for group start (1B); first id is primary callee
  * - Call auto-ends when caller's affordable duration (from diamonds) runs out
  */
 export const initiateCall = asyncHandler(async (req: Request, res: Response) => {
-  const { type, calleeId } = req.body as { type: CallType; calleeId: string };
-  if (calleeId === req.user!.id) throw ApiError.badRequest('You cannot call yourself');
+  const { type, calleeId, participantIds } = req.body as {
+    type: CallType;
+    calleeId?: string;
+    participantIds?: string[];
+  };
+
+  const extras = (participantIds ?? []).map(String).filter((id) => id && id !== req.user!.id);
+  const primaryCalleeId = String(calleeId || extras[0] || '');
+  if (!primaryCalleeId) throw ApiError.badRequest('calleeId or participantIds required');
+  if (primaryCalleeId === req.user!.id) throw ApiError.badRequest('You cannot call yourself');
+
+  const groupIds = [...new Set([primaryCalleeId, ...extras])].slice(0, MAX_CALL_PARTICIPANTS - 1);
+  if (groupIds.length + 1 > MAX_CALL_PARTICIPANTS) {
+    throw ApiError.badRequest(`Max ${MAX_CALL_PARTICIPANTS} participants per call`);
+  }
 
   const callerRole = req.user!.role;
   if (callerRole !== Role.User && callerRole !== Role.Host) {
     throw ApiError.forbidden('You cannot initiate calls');
   }
 
-  await assertUsersCanConnect(req.user!.id, calleeId);
+  for (const id of groupIds) {
+    await assertUsersCanConnect(req.user!.id, id);
+  }
 
-  const busy = await getBusyUserIds([req.user!.id, calleeId]);
+  const busy = await getBusyUserIds([req.user!.id, ...groupIds]);
   if (busy.has(req.user!.id)) {
     throw ApiError.badRequest('You are already on another call');
   }
-  if (busy.has(calleeId)) {
-    throw ApiError.badRequest('This user is busy on another call');
+  for (const id of groupIds) {
+    if (busy.has(id)) {
+      throw ApiError.badRequest('One of the invited users is busy on another call');
+    }
   }
 
-  const callee = await User.findById(calleeId).select(
+  const callee = await User.findById(primaryCalleeId).select(
     'displayName role isHostApproved isOnline videoPrice audioPrice',
   );
   if (!callee) throw ApiError.notFound('Callee not found');
@@ -89,12 +126,14 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     );
   }
 
-  const roomName = `${directRoomName(req.user!.id, calleeId)}_${type}_${Date.now()}`;
+  const roomName = `${directRoomName(req.user!.id, primaryCalleeId)}_${type}_${Date.now()}`;
   const Model = modelFor(type);
   const call = await Model.create({
     type,
     caller: req.user!.id,
-    callee: calleeId,
+    callee: primaryCalleeId,
+    participants: [req.user!.id],
+    pendingInvites: groupIds,
     roomName,
     status: CallStatus.Ringing,
     ratePerMinute,
@@ -111,10 +150,11 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   const caller = await User.findById(req.user!.id).select(
     'displayName avatarUrl role isHostApproved',
   );
-  emitToUser(calleeId, SocketEvents.CallInvite, {
+  const invitePayload = {
     callId: call._id.toString(),
     type,
     roomName,
+    conference: groupIds.length > 1,
     from: {
       id: caller?._id.toString(),
       displayName: caller?.displayName,
@@ -124,7 +164,10 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     },
     ratePerMinute,
     maxDurationSec,
-  });
+  };
+  for (const id of groupIds) {
+    emitToUser(id, SocketEvents.CallInvite, invitePayload);
+  }
 
   return created(
     res,
@@ -147,13 +190,13 @@ export const getCall = asyncHandler(async (req: Request, res: Response) => {
   const call = await modelFor(type).findById(req.params.id);
   if (!call) throw ApiError.notFound('Call not found');
   const uid = req.user!.id;
-  if (![call.caller.toString(), call.callee.toString()].includes(uid)) {
+  if (!isCallMember(call, uid) && !isPendingInvitee(call, uid)) {
     throw ApiError.forbidden('Not your call');
   }
 
   let token: string | undefined;
   let livekitUrl: string | undefined;
-  if (call.status === CallStatus.Ongoing) {
+  if (call.status === CallStatus.Ongoing && isCallMember(call, uid)) {
     token = await createLiveKitToken({ identity: uid, roomName: call.roomName });
     livekitUrl = getLiveKitPublicUrl() ?? undefined;
   }
@@ -168,71 +211,129 @@ export const getCall = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-/** POST /calls/:type/:id/accept — callee accepts and receives a token. */
+/** POST /calls/:type/:id/accept — callee or pending invitee accepts and receives a token. */
 export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
   const call = await modelFor(type).findById(req.params.id);
   if (!call) throw ApiError.notFound('Call not found');
-  if (call.callee.toString() !== req.user!.id) throw ApiError.forbidden('Not your call');
-  if (call.status !== CallStatus.Ringing) {
-    throw ApiError.badRequest('Call is no longer ringing');
+  const uid = req.user!.id;
+  const isPrimaryCallee = call.callee.toString() === uid;
+  const isInvitee = isPendingInvitee(call, uid);
+  if (!isPrimaryCallee && !isInvitee) throw ApiError.forbidden('Not your call');
+
+  if (call.status !== CallStatus.Ringing && call.status !== CallStatus.Ongoing) {
+    throw ApiError.badRequest('Call is no longer joinable');
   }
 
-  // Refresh max duration from caller's current balance at accept time.
-  const wallet = await ensureWallet(call.caller.toString());
-  const maxDurationSec = maxAffordableCallSeconds({
-    diamonds: wallet.diamonds,
-    ratePerMinute: call.ratePerMinute,
-    secondsPerDiamond: call.secondsPerDiamond || 60,
-  });
-  if (maxDurationSec < 1) {
-    call.status = CallStatus.Failed;
-    call.endedAt = new Date();
-    await call.save();
-    emitToUser(call.caller.toString(), SocketEvents.CallReject, {
-      callId: call._id.toString(),
-      reason: 'insufficient_diamonds',
+  // First acceptor starts a ringing call; later invitees join ongoing.
+  if (call.status === CallStatus.Ringing) {
+    const wallet = await ensureWallet(call.caller.toString());
+    const maxDurationSec = maxAffordableCallSeconds({
+      diamonds: wallet.diamonds,
+      ratePerMinute: call.ratePerMinute,
+      secondsPerDiamond: call.secondsPerDiamond || 60,
     });
-    throw ApiError.badRequest('Caller no longer has enough diamonds for this call');
+    if (maxDurationSec < 1) {
+      call.status = CallStatus.Failed;
+      call.endedAt = new Date();
+      await call.save();
+      emitToUser(call.caller.toString(), SocketEvents.CallReject, {
+        callId: call._id.toString(),
+        reason: 'insufficient_diamonds',
+      });
+      throw ApiError.badRequest('Caller no longer has enough diamonds for this call');
+    }
+
+    call.status = CallStatus.Ongoing;
+    call.startedAt = new Date();
+    call.maxDurationSec = maxDurationSec;
   }
 
-  call.status = CallStatus.Ongoing;
-  call.startedAt = new Date();
-  call.maxDurationSec = maxDurationSec;
+  call.pendingInvites = (call.pendingInvites ?? []).filter((p) => p.toString() !== uid);
+  const parts = new Set(participantIdsOf(call));
+  parts.add(uid);
+  call.participants = [...parts] as unknown as typeof call.participants;
   await call.save();
 
-  const [calleeToken, callerToken] = await Promise.all([
-    createLiveKitToken({ identity: req.user!.id, roomName: call.roomName }),
-    createLiveKitToken({ identity: call.caller.toString(), roomName: call.roomName }),
-  ]);
-  const livekitUrl = getLiveKitPublicUrl();
-  emitToUser(call.caller.toString(), SocketEvents.CallAccept, {
-    callId: call._id.toString(),
-    type,
+  const joinerToken = await createLiveKitToken({
+    identity: uid,
     roomName: call.roomName,
-    livekitUrl,
-    maxDurationSec,
-    token: callerToken,
+    canPublish: true,
   });
+  const livekitUrl = getLiveKitPublicUrl();
+
+  // Notify caller (and other members) that someone joined / call accepted.
+  const joiner = await User.findById(uid).select('displayName avatarUrl');
+  for (const memberId of participantIdsOf(call)) {
+    if (memberId === uid) continue;
+    const payload =
+      memberId === call.caller.toString() && isPrimaryCallee
+        ? {
+            callId: call._id.toString(),
+            type,
+            roomName: call.roomName,
+            livekitUrl,
+            maxDurationSec: call.maxDurationSec,
+            token: await createLiveKitToken({
+              identity: memberId,
+              roomName: call.roomName,
+              canPublish: true,
+            }),
+          }
+        : {
+            callId: call._id.toString(),
+            type,
+            roomName: call.roomName,
+            livekitUrl,
+            maxDurationSec: call.maxDurationSec,
+            participant: {
+              id: uid,
+              displayName: joiner?.displayName,
+              avatarUrl: joiner?.avatarUrl,
+            },
+          };
+    emitToUser(
+      memberId,
+      memberId === call.caller.toString() && isPrimaryCallee
+        ? SocketEvents.CallAccept
+        : SocketEvents.CallParticipantJoined,
+      payload,
+    );
+  }
+
   return ok(
     res,
     {
       call,
-      token: calleeToken,
+      token: joinerToken,
       roomName: call.roomName,
       livekitUrl,
-      maxDurationSec,
+      maxDurationSec: call.maxDurationSec,
     },
     'Call accepted',
   );
 });
 
-/** POST /calls/:type/:id/reject — callee rejects. */
+/** POST /calls/:type/:id/reject — callee / invitee rejects. */
 export const rejectCall = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
   const call = await modelFor(type).findById(req.params.id);
   if (!call) throw ApiError.notFound('Call not found');
-  if (call.callee.toString() !== req.user!.id) throw ApiError.forbidden('Not your call');
+  const uid = req.user!.id;
+  const isPrimary = call.callee.toString() === uid;
+  const isInvitee = isPendingInvitee(call, uid);
+  if (!isPrimary && !isInvitee) throw ApiError.forbidden('Not your call');
+
+  // Secondary invitee declining: just remove from pending.
+  if (!isPrimary || call.status === CallStatus.Ongoing) {
+    call.pendingInvites = (call.pendingInvites ?? []).filter((p) => p.toString() !== uid);
+    await call.save();
+    emitToUser(call.caller.toString(), SocketEvents.CallReject, {
+      callId: call._id.toString(),
+      userId: uid,
+    });
+    return ok(res, call, 'Invite declined');
+  }
 
   call.status = CallStatus.Rejected;
   call.endedAt = new Date();
@@ -241,13 +342,62 @@ export const rejectCall = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, call, 'Call rejected');
 });
 
+/** POST /calls/:type/:id/invite — add a user to an ongoing conference (1A). */
+export const inviteToCall = asyncHandler(async (req: Request, res: Response) => {
+  const type = req.params.type as CallType;
+  const { userId } = req.body as { userId: string };
+  if (!userId) throw ApiError.badRequest('userId required');
+
+  const call = await modelFor(type).findById(req.params.id);
+  if (!call) throw ApiError.notFound('Call not found');
+  if (call.status !== CallStatus.Ongoing) throw ApiError.badRequest('Call is not ongoing');
+  if (!isCallMember(call, req.user!.id)) throw ApiError.forbidden('Not your call');
+
+  if (userId === req.user!.id) throw ApiError.badRequest('Cannot invite yourself');
+  if (isCallMember(call, userId) || isPendingInvitee(call, userId)) {
+    throw ApiError.badRequest('User already on this call');
+  }
+  if (participantIdsOf(call).length + (call.pendingInvites?.length ?? 0) >= MAX_CALL_PARTICIPANTS) {
+    throw ApiError.badRequest(`Max ${MAX_CALL_PARTICIPANTS} participants`);
+  }
+
+  await assertUsersCanConnect(req.user!.id, userId);
+  const busy = await getBusyUserIds([userId]);
+  if (busy.has(userId)) throw ApiError.badRequest('User is busy on another call');
+
+  const invitee = await User.findById(userId).select('displayName role isHostApproved');
+  if (!invitee) throw ApiError.notFound('User not found');
+
+  call.pendingInvites = [...(call.pendingInvites ?? []), invitee._id];
+  await call.save();
+
+  const from = await User.findById(req.user!.id).select(
+    'displayName avatarUrl role isHostApproved',
+  );
+  emitToUser(userId, SocketEvents.CallInvite, {
+    callId: call._id.toString(),
+    type,
+    roomName: call.roomName,
+    conference: true,
+    from: {
+      id: from?._id.toString(),
+      displayName: from?.displayName,
+      avatarUrl: from?.avatarUrl,
+      role: from?.role,
+      isHostApproved: from?.isHostApproved,
+    },
+    maxDurationSec: call.maxDurationSec,
+  });
+
+  return ok(res, { call }, 'Invite sent');
+});
+
 /** POST /calls/:type/:id/end — end the call, compute billing, settle balances. */
 export const endCall = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
   const call = await modelFor(type).findById(req.params.id);
   if (!call) throw ApiError.notFound('Call not found');
-  const isParticipant = [call.caller.toString(), call.callee.toString()].includes(req.user!.id);
-  if (!isParticipant) throw ApiError.forbidden('Not your call');
+  if (!isCallMember(call, req.user!.id)) throw ApiError.forbidden('Not your call');
 
   if (call.status === CallStatus.Ended || call.status === CallStatus.Failed) {
     return ok(res, call, 'Already ended');
@@ -266,6 +416,7 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
   call.endedAt = endedAt;
   call.durationSec = durationSec;
   call.status = call.startedAt ? CallStatus.Ended : CallStatus.Missed;
+  call.pendingInvites = [];
 
   if (call.status === CallStatus.Ended && durationSec > 0) {
     const cost = computeCallDiamondCost({
@@ -301,11 +452,13 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
   }
 
   await call.save();
-  const other = call.caller.toString() === req.user!.id ? call.callee : call.caller;
-  emitToUser(other.toString(), SocketEvents.CallEnd, {
-    callId: call._id.toString(),
-    durationSec,
-  });
+  for (const memberId of participantIdsOf(call)) {
+    if (memberId === req.user!.id) continue;
+    emitToUser(memberId, SocketEvents.CallEnd, {
+      callId: call._id.toString(),
+      durationSec,
+    });
+  }
   return ok(res, call, 'Call ended');
 });
 
@@ -329,8 +482,8 @@ export const callHistory = asyncHandler(async (req: Request, res: Response) => {
 export const listIncomingCalls = asyncHandler(async (req: Request, res: Response) => {
   const since = new Date(Date.now() - 90_000);
   const filter = {
-    callee: req.user!.id,
-    status: CallStatus.Ringing,
+    $or: [{ callee: req.user!.id }, { pendingInvites: req.user!.id }],
+    status: { $in: [CallStatus.Ringing, CallStatus.Ongoing] },
     createdAt: { $gte: since },
   };
 
@@ -347,6 +500,12 @@ export const listIncomingCalls = asyncHandler(async (req: Request, res: Response
 
   const items = [...audio, ...video]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .filter((call) => {
+      // Only show if still pending for this user, or primary ringing callee
+      const uid = req.user!.id;
+      if (call.status === CallStatus.Ringing && call.callee.toString() === uid) return true;
+      return (call.pendingInvites ?? []).some((p) => p.toString() === uid);
+    })
     .map((call) => {
       const caller = call.caller as any;
       return {
@@ -354,6 +513,7 @@ export const listIncomingCalls = asyncHandler(async (req: Request, res: Response
         type: call.type,
         roomName: call.roomName,
         maxDurationSec: call.maxDurationSec,
+        conference: (call.participants?.length ?? 0) > 1 || (call.pendingInvites?.length ?? 0) > 1,
         from: {
           id: caller?._id?.toString?.() ?? caller?.id,
           displayName: caller?.displayName,

@@ -3,6 +3,8 @@ import { LiveStatus } from '@kushlov/types';
 
 export interface ILiveStream extends Document {
   host: Types.ObjectId;
+  /** Optional co-host publishing into this room (2A). */
+  coHost?: Types.ObjectId;
   title: string;
   thumbnailUrl?: string;
   thumbnailPublicId?: string;
@@ -23,6 +25,7 @@ export interface ILiveStream extends Document {
 const liveStreamSchema = new Schema<ILiveStream>(
   {
     host: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    coHost: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     title: { type: String, required: true, maxlength: 120 },
     thumbnailUrl: String,
     thumbnailPublicId: String,
@@ -49,7 +52,7 @@ export const LiveStream = model<ILiveStream>('LiveStream', liveStreamSchema, 'li
 export interface ILiveParticipant extends Document {
   liveStream: Types.ObjectId;
   user: Types.ObjectId;
-  role: 'viewer' | 'moderator' | 'host';
+  role: 'viewer' | 'moderator' | 'host' | 'cohost';
   joinedAt: Date;
   leftAt?: Date;
   isMuted: boolean;
@@ -59,7 +62,11 @@ const liveParticipantSchema = new Schema<ILiveParticipant>(
   {
     liveStream: { type: Schema.Types.ObjectId, ref: 'LiveStream', required: true, index: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    role: { type: String, enum: ['viewer', 'moderator', 'host'], default: 'viewer' },
+    role: {
+      type: String,
+      enum: ['viewer', 'moderator', 'host', 'cohost'],
+      default: 'viewer',
+    },
     joinedAt: { type: Date, default: Date.now },
     leftAt: Date,
     isMuted: { type: Boolean, default: false },

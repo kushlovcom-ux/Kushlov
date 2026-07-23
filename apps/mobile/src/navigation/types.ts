@@ -30,6 +30,7 @@ export type AppStackParamList = {
   BlockedUsers: undefined;
   NotificationSettings: undefined;
   CallHistory: undefined;
+  GroupCall: undefined;
   History: undefined;
   Transactions: undefined;
   LiveRoom: { liveId: string };

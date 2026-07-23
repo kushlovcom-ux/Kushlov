@@ -73,8 +73,10 @@ export function AppNav() {
   return (
     <aside className="sticky top-0 hidden h-screen w-16 flex-col border-r border-white/10 bg-card/40 p-3 md:flex lg:w-64">
       <div className="shrink-0 px-2 py-3">
-        <Logo withWordmark={false} size={32} className="lg:hidden" />
-        <Logo size={30} className="hidden lg:flex" />
+        <Link href="/discover" aria-label="Kushlov home" className="inline-flex">
+          <Logo withWordmark={false} size={32} className="lg:hidden" />
+          <Logo size={30} className="hidden lg:flex" />
+        </Link>
       </div>
 
       <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto no-scrollbar">

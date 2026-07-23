@@ -11,6 +11,7 @@ import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { PostCallReviewDialog } from '@/components/calls/post-call-review-dialog';
+import { AddCallParticipant } from '@/components/calls/add-call-participant';
 
 const LiveKitStage = dynamic(
   () => import('@/components/live/livekit-stage').then((m) => m.LiveKitStage),
@@ -292,6 +293,7 @@ export function CallOverlay() {
         peerIsHost?: boolean;
         peerRole?: string;
         peerHostApproved?: boolean;
+        participantIds?: string[];
       };
       try {
         const data = await unwrap<{
@@ -300,7 +302,15 @@ export function CallOverlay() {
           roomName: string;
           livekitUrl?: string;
           maxDurationSec: number;
-        }>(api.post('/calls/initiate', { type: detail.type, calleeId: detail.calleeId }));
+        }>(
+          api.post('/calls/initiate', {
+            type: detail.type,
+            calleeId: detail.calleeId,
+            participantIds: detail.participantIds?.length
+              ? [detail.calleeId, ...detail.participantIds]
+              : undefined,
+          }),
+        );
         const peerIsHost =
           detail.peerIsHost ??
           isApprovedHostPeer(detail.peerRole, detail.peerHostApproved ?? true);
@@ -465,10 +475,16 @@ export function CallOverlay() {
                   serverUrl={active.livekitUrl}
                   audioOnly={active.type === CallType.Audio}
                   isHost={active.role === 'callee'}
+                  publish
+                  showFilters={active.type === CallType.Video}
                   onDisconnected={() => void endActive()}
                 />
               </div>
-              <div className="flex justify-center border-t border-white/10 p-4">
+              <div className="flex flex-col items-center gap-2 border-t border-white/10 p-4">
+                <AddCallParticipant
+                  callId={active.callId}
+                  type={active.type}
+                />
                 <Button variant="destructive" onClick={() => void endActive()}>
                   <PhoneOff className="h-4 w-4" /> End call
                 </Button>

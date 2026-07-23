@@ -19,7 +19,9 @@ export function AppTopBar() {
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between gap-4 border-b border-white/10 bg-card/80 px-4 py-3 backdrop-blur-xl md:px-6">
       <div className="md:hidden">
-        <Logo withWordmark={false} size={28} />
+        <Link href="/discover" aria-label="Kushlov home" className="inline-flex">
+          <Logo withWordmark={false} size={28} />
+        </Link>
       </div>
       <p className="hidden text-sm text-white/45 md:block">
         Welcome back — explore, connect, and go live.

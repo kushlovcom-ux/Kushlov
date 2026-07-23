@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { LocationSetup } from '@/components/location/location-setup';
 import { OnlineStatus } from '@/components/common/online-status';
+import { GroupCallDialog } from '@/components/calls/group-call-dialog';
 import { useAuthStore } from '@/store/auth';
 import { cn } from '@/lib/utils';
 
@@ -76,15 +77,18 @@ export default function DiscoverPage() {
           isHost ? 'Meet people and hosts ready to connect' : 'Discover hosts and people ready to connect'
         }
         action={
-          <div className="relative w-full max-w-xs">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by name…"
-              className="pl-9"
-              disabled={needsLocation}
-            />
+          <div className="flex w-full max-w-lg items-center gap-2">
+            <GroupCallDialog />
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search by name…"
+                className="pl-9"
+                disabled={needsLocation}
+              />
+            </div>
           </div>
         }
       />

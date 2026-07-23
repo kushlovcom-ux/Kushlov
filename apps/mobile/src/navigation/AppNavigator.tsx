@@ -18,6 +18,7 @@ import { PrivacyScreen } from '@/screens/settings/PrivacyScreen';
 import { BlockedUsersScreen } from '@/screens/settings/BlockedUsersScreen';
 import { NotificationSettingsScreen } from '@/screens/settings/NotificationSettingsScreen';
 import { CallHistoryScreen } from '@/screens/calls/CallHistoryScreen';
+import { GroupCallScreen } from '@/screens/calls/GroupCallScreen';
 import { TransactionsScreen } from '@/screens/wallet/TransactionsScreen';
 import { LiveRoomScreen } from '@/screens/live/LiveRoomScreen';
 import { GoLiveScreen } from '@/screens/live/GoLiveScreen';
@@ -83,6 +84,7 @@ export function AppNavigator() {
       <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
       <Stack.Screen name="CallHistory" component={CallHistoryScreen} />
+      <Stack.Screen name="GroupCall" component={GroupCallScreen} />
       <Stack.Screen name="History" component={CallHistoryScreen} />
       <Stack.Screen name="Transactions" component={TransactionsScreen} />
       <Stack.Screen name="LiveRoom" component={LiveRoomScreen} />
