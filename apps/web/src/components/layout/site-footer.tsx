@@ -45,7 +45,9 @@ export function SiteFooter() {
         <div className="grid gap-12 lg:grid-cols-12">
           {/* Brand column */}
           <div className="lg:col-span-4">
-            <Logo size={36} />
+            <Link href="/" aria-label="Kushlov home" className="inline-flex">
+              <Logo size={36} />
+            </Link>
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/55">
               Kushlov is a premium dating and live-streaming platform where people meet, match,
               chat, call, and go live — all in one beautiful experience.

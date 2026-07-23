@@ -204,6 +204,28 @@ export default function AdminSettingsPage() {
         }
       />
       <div className="grid gap-6 p-6 lg:grid-cols-2">
+        <Card className="lg:col-span-2 border-brand-pink/30">
+          <CardHeader>
+            <CardTitle>Live stream chat price</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-white/45">
+              Diamonds charged to normal users (viewers) for each message sent in a live stream.
+              Hosts are never charged. Set to 0 for free live chat.
+            </p>
+            <div className="max-w-sm space-y-1.5">
+              <Label>Diamonds per live chat message</Label>
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                value={form.rates.liveChatPerMessage ?? 0}
+                onChange={(e) => setRate('liveChatPerMessage', Math.max(0, +e.target.value || 0))}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>User → Host conversions</CardTitle>
@@ -576,14 +598,6 @@ export default function AdminSettingsPage() {
                 type="number"
                 value={form.rates.chatPerMessage ?? form.rates.liveChatPerMessage}
                 onChange={(e) => setRate('chatPerMessage', +e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Live chat / message (diamonds)</Label>
-              <Input
-                type="number"
-                value={form.rates.liveChatPerMessage}
-                onChange={(e) => setRate('liveChatPerMessage', +e.target.value)}
               />
             </div>
           </CardContent>

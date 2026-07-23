@@ -66,7 +66,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 flex h-screen w-64 flex-col border-r border-white/10 bg-card/40 p-4">
-        <Logo size={30} />
+        <Link href="/" aria-label="Kushlov home" className="inline-flex">
+          <Logo size={30} />
+        </Link>
         <nav className="mt-6 flex flex-1 flex-col gap-1 overflow-y-auto no-scrollbar">
           {nav.map((n) => {
             const active = pathname === n.href;

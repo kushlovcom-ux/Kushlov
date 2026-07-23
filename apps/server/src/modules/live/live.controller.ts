@@ -225,8 +225,10 @@ export const liveChat = asyncHandler(async (req: Request, res: Response) => {
   if (!live || live.status !== LiveStatus.Live) throw ApiError.notFound('Stream is not live');
 
   const settings = await getSettings();
-  const cost = settings.rates.liveChatPerMessage;
-  if (cost > 0 && live.host.toString() !== req.user!.id) {
+  const cost = settings.rates.liveChatPerMessage ?? 0;
+  const isPublisher =
+    live.host.toString() === req.user!.id || live.coHost?.toString() === req.user!.id;
+  if (cost > 0 && !isPublisher) {
     await spendDiamonds({
       userId: req.user!.id,
       hostId: live.host,

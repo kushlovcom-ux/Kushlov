@@ -102,6 +102,10 @@ export async function getSettings(): Promise<ISettings> {
     settings.rates.hostUserMessagesPerDiamond = 5;
     dirty = true;
   }
+  if (settings.rates.liveChatPerMessage == null) {
+    settings.rates.liveChatPerMessage = 1;
+    dirty = true;
+  }
   if (settings.features.reviewsEnabled == null) {
     settings.features.reviewsEnabled = true;
     dirty = true;

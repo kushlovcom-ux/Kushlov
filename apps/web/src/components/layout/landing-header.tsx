@@ -37,7 +37,9 @@ export function LandingHeader() {
 
   return (
     <header className="container flex items-center justify-between py-6" suppressHydrationWarning>
-      <Logo />
+      <Link href="/" aria-label="Kushlov home" className="inline-flex">
+        <Logo />
+      </Link>
       <nav className="flex items-center gap-2 sm:gap-3" suppressHydrationWarning>
         {!ready ? (
           <GuestNav />
