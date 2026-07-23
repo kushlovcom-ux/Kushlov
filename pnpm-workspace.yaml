@@ -2,6 +2,11 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Keep a single Zod major across the monorepo so @hookform/resolvers
+# (web) does not typecheck against mobile's Zod 4 while schemas use Zod 3.
+overrides:
+  zod: 3.25.76
+
 # pnpm 11: allow lifecycle scripts for packages that need native/postinstall builds
 allowBuilds:
   esbuild: true
