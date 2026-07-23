@@ -73,3 +73,22 @@ export async function closeRoom(roomName: string): Promise<void> {
     /* room may already be gone */
   }
 }
+
+/** Returns participant identities currently in the room, or `null` if LiveKit is unavailable. */
+export async function listRoomIdentities(roomName: string): Promise<string[] | null> {
+  if (!hasLiveKit) return null;
+  try {
+    const participants = await getRoomClient().listParticipants(roomName);
+    return participants.map((p) => p.identity);
+  } catch {
+    // Room missing / empty — treat as no participants.
+    return [];
+  }
+}
+
+/** True when `identity` is connected to the LiveKit room. */
+export async function isIdentityInRoom(roomName: string, identity: string): Promise<boolean | null> {
+  const identities = await listRoomIdentities(roomName);
+  if (identities === null) return null;
+  return identities.includes(identity);
+}

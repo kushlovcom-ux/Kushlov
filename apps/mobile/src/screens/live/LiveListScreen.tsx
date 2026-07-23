@@ -30,9 +30,7 @@ export function LiveListScreen() {
     queryKey: queryKeys.live,
     queryFn: () => liveApi.list({ limit: 40 }),
   });
-  const items: LiveRoom[] = (list.data?.items ?? []).filter(
-    (r) => !r.status || r.status === LiveStatus.Live,
-  );
+  const items: LiveRoom[] = (list.data?.items ?? []).filter((r) => r.status === LiveStatus.Live);
 
   return (
     <Screen>

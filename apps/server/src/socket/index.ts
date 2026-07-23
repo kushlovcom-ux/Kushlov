@@ -1,11 +1,13 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server as IOServer, Socket } from 'socket.io';
-import { SocketEvents } from '@kushlov/types';
+import { LiveStatus, SocketEvents } from '@kushlov/types';
 import { getAllowedOrigins } from '../config/cors';
 import { logger } from '../config/logger';
 import { verifyAccessToken } from '../utils/jwt';
-import { User } from '../models';
+import { LiveStream, User } from '../models';
 import { createMessage } from '../modules/chat/chat.service';
+import { markLiveEnded } from '../services/live-lifecycle.service';
+import { isIdentityInRoom } from '../services/livekit.service';
 import { setIO } from './io';
 
 interface AuthedSocket extends Socket {
@@ -92,6 +94,19 @@ export function initSocket(httpServer: HttpServer): IOServer {
       if (remaining === 0) {
         connectionCounts.delete(userId);
         await markOffline(userId);
+        // End leftover streams only when the host is also gone from LiveKit
+        // (avoids killing a stream on a brief socket reconnect).
+        try {
+          const open = await LiveStream.find({ host: userId, status: LiveStatus.Live });
+          await Promise.all(
+            open.map(async (live) => {
+              const present = await isIdentityInRoom(live.roomName, userId);
+              if (present === false) await markLiveEnded(live);
+            }),
+          );
+        } catch (err) {
+          logger.warn({ err, userId }, 'Failed to end live streams on disconnect');
+        }
         socket.broadcast.emit(SocketEvents.PresenceOffline, { userId });
       } else {
         connectionCounts.set(userId, remaining);

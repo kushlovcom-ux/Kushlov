@@ -49,7 +49,7 @@ export default function LivePage() {
   });
 
   const lives = useMemo(
-    () => (data?.items ?? []).filter((l) => !l.status || l.status === 'live'),
+    () => (data?.items ?? []).filter((l) => l.status === 'live'),
     [data?.items],
   );
 

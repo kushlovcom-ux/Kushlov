@@ -11,7 +11,16 @@ import { Follower, Gift, LiveChat, LiveParticipant, LiveStream, User } from '../
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
-import { createLiveKitToken, closeRoom, removeParticipant } from '../../services/livekit.service';
+import {
+  createLiveKitToken,
+  closeRoom,
+  removeParticipant,
+} from '../../services/livekit.service';
+import {
+  markLiveEnded,
+  endOpenLivesForHost,
+  pruneStaleLiveStreams,
+} from '../../services/live-lifecycle.service';
 import { uploadBuffer } from '../../services/media.service';
 import { spendDiamonds } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
@@ -27,6 +36,9 @@ const roomOf = (id: string) => `live:${id}`;
 export const startLive = asyncHandler(async (req: Request, res: Response) => {
   const settings = await getSettings();
   if (!settings.features.liveEnabled) throw ApiError.forbidden('Live streaming is disabled');
+
+  // One active stream per host — close any leftovers from a prior session.
+  await endOpenLivesForHost(req.user!.id);
 
   const roomName = `live_${req.user!.id}_${Date.now()}`;
   let thumbnailUrl: string | undefined;
@@ -118,17 +130,14 @@ export const endLive = asyncHandler(async (req: Request, res: Response) => {
   if (!live) throw ApiError.notFound('Stream not found');
   if (live.host.toString() !== req.user!.id) throw ApiError.forbidden('Not your stream');
 
-  live.status = LiveStatus.Ended;
-  live.endedAt = new Date();
-  await live.save();
-  await closeRoom(live.roomName);
-  emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveLeave, { ended: true });
+  await markLiveEnded(live);
   return ok(res, live, 'Stream ended');
 });
 
 /** GET /live — list currently live streams (hosts within discovery radius). */
 export const listLive = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
+  await pruneStaleLiveStreams();
   const discoverableIds = await getDiscoverableUserIds(req.user!.id);
   const filter = { status: LiveStatus.Live, host: { $in: discoverableIds } };
   const [items, total] = await Promise.all([
@@ -403,15 +412,7 @@ export const coliveAccept = asyncHandler(async (req: Request, res: Response) => 
     // End invitee's own live stream if any.
     const own = await LiveStream.findOne({ host: req.user!.id, status: LiveStatus.Live });
     if (own) {
-      own.status = LiveStatus.Ended;
-      own.endedAt = new Date();
-      await own.save();
-      try {
-        await closeRoom(own.roomName);
-      } catch {
-        /* ignore */
-      }
-      emitToRoom(roomOf(own._id.toString()), SocketEvents.LiveLeave, { ended: true });
+      await markLiveEnded(own);
     }
 
     live.coHost = req.user!.id as unknown as typeof live.coHost;
