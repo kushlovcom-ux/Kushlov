@@ -19,17 +19,23 @@ import type { AppStackParamList } from '@/navigation/types';
 import { displayName, formatDiamonds } from '@/utils/format';
 import { spacing } from '@/theme';
 
-const LINKS: Array<{
+const ALL_LINKS: Array<{
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   route: keyof AppStackParamList;
+  hostOnlyHide?: boolean;
 }> = [
   { label: 'Edit profile', icon: 'create-outline', route: 'EditProfile' },
   { label: 'Wallet', icon: 'diamond-outline', route: 'Wallet' },
   { label: 'Call history', icon: 'call-outline', route: 'History' },
-  { label: 'Become a host', icon: 'star-outline', route: 'BecomeHost' },
+  {
+    label: 'Become a host',
+    icon: 'star-outline',
+    route: 'BecomeHost',
+    hostOnlyHide: true,
+  },
   { label: 'Settings', icon: 'settings-outline', route: 'Settings' },
-  { label: 'Contact support', icon: 'mail-outline', route: 'Contact' },
+  { label: 'Contact Us', icon: 'mail-outline', route: 'Contact' },
 ];
 
 export function ProfileScreen() {
@@ -105,7 +111,7 @@ export function ProfileScreen() {
         </View>
       </Card>
 
-      {LINKS.map((link) => (
+      {ALL_LINKS.filter((link) => !(link.hostOnlyHide && user?.isHostApproved)).map((link) => (
         <Pressable
           key={link.route}
           onPress={() => nav.navigate(link.route as never)}

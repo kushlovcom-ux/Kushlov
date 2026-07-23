@@ -27,7 +27,7 @@ export const registerSchema = z
     password: passwordSchema,
     confirmPassword: z.string(),
     country: z.string().min(2, 'Select a country'),
-    accountType: z.enum(['user', 'host']).default('user'),
+    accountType: z.literal('user').default('user'),
   })
   .refine((d) => d.password === d.confirmPassword, {
     message: 'Passwords do not match',

@@ -302,3 +302,15 @@ export const SocketEvents = {
 } as const;
 
 export type SocketEventName = (typeof SocketEvents)[keyof typeof SocketEvents];
+
+// ---------------------------------------------------------------------------
+// Video call face masks
+// ---------------------------------------------------------------------------
+export {
+  FACE_MASK_ATTR,
+  FACE_MASKS,
+  getFaceMask,
+  isFaceMaskId,
+  type FaceMaskDef,
+  type FaceMaskId,
+} from './face-masks';

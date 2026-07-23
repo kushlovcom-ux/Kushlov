@@ -16,10 +16,12 @@ import {
   FilterOverlay,
   type VideoFilterId,
 } from '@/components/calls/VideoFilterBar';
+import { FaceMaskBar } from '@/components/calls/FaceMaskBar';
 import { callsApi } from '@/api/calls';
 import { getErrorMessage } from '@/api/client';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { ensureLiveKitNative } from '@/services/livekit';
+import { dismissIncomingCallNotification } from '@/services/notifications';
 import { useCallStore } from '@/store/call';
 import { CallStatus, CallType } from '@/types';
 import { formatDuration } from '@/utils/format';
@@ -85,6 +87,20 @@ export function CallOverlay() {
     markConnected,
   ]);
 
+  // Ensure camera actually publishes on video calls once the room is ready.
+  useEffect(() => {
+    if (!room || !active) return;
+    if (active.session.type !== CallType.Video) return;
+    void (async () => {
+      try {
+        await room.localParticipant.setMicrophoneEnabled(!active.muted);
+        await room.localParticipant.setCameraEnabled(!active.cameraOff);
+      } catch {
+        // Permission / device issues — audio may still work
+      }
+    })();
+  }, [room, active?.session.id, active?.session.type, active?.muted, active?.cameraOff]);
+
   const endCall = async () => {
     haptics.medium();
     try {
@@ -100,8 +116,10 @@ export function CallOverlay() {
 
   const acceptIncoming = async () => {
     if (!incoming) return;
+    haptics.success();
     try {
       const session = await callsApi.accept(incoming.type, incoming.id);
+      await dismissIncomingCallNotification(incoming.id);
       startCall(session, 'callee', incoming.caller);
       setIncoming(null);
     } catch (err) {
@@ -111,11 +129,13 @@ export function CallOverlay() {
 
   const rejectIncoming = async () => {
     if (!incoming) return;
+    haptics.medium();
     try {
       await callsApi.reject(incoming.type, incoming.id);
     } catch {
       // ignore
     }
+    await dismissIncomingCallNotification(incoming.id);
     setIncoming(null);
   };
 
@@ -143,26 +163,44 @@ export function CallOverlay() {
 
   if (incoming && !active) {
     const peer = incoming.caller;
+    const isVideo = incoming.type === CallType.Video;
     return (
       <View style={[styles.overlay, styles.centerFill, { backgroundColor: c.bg }]}>
-        <Text variant="caption" muted>
-          Incoming {incoming.type} call
+        <Text variant="caption" color={c.pink}>
+          Incoming {isVideo ? 'video' : 'audio'} call
         </Text>
         <Avatar uri={peer?.avatarUrl} name={peer?.displayName} size={96} />
         <Text variant="h2">{peer?.displayName ?? 'Someone'}</Text>
+        <Text muted style={{ textAlign: 'center', marginBottom: spacing.sm }}>
+          {isVideo ? 'Wants to video call you' : 'Wants to audio call you'}
+        </Text>
         <View style={styles.actions}>
-          <Pressable
-            onPress={rejectIncoming}
-            style={[styles.round, { backgroundColor: c.danger }]}
-          >
-            <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
-          </Pressable>
-          <Pressable
-            onPress={acceptIncoming}
-            style={[styles.round, { backgroundColor: c.success }]}
-          >
-            <Ionicons name="call" size={28} color="#fff" />
-          </Pressable>
+          <View style={styles.actionCol}>
+            <Pressable
+              onPress={rejectIncoming}
+              accessibilityLabel="Decline call"
+              accessibilityRole="button"
+              style={[styles.round, { backgroundColor: c.danger }]}
+            >
+              <Ionicons name="close" size={32} color="#fff" />
+            </Pressable>
+            <Text variant="bodyBold" color={c.danger}>
+              Decline
+            </Text>
+          </View>
+          <View style={styles.actionCol}>
+            <Pressable
+              onPress={acceptIncoming}
+              accessibilityLabel="Accept call"
+              accessibilityRole="button"
+              style={[styles.round, { backgroundColor: c.success }]}
+            >
+              <Ionicons name={isVideo ? 'videocam' : 'call'} size={28} color="#fff" />
+            </Pressable>
+            <Text variant="bodyBold" color={c.success}>
+              Accept
+            </Text>
+          </View>
         </View>
       </View>
     );
@@ -215,6 +253,7 @@ export function CallOverlay() {
 
       {isVideo ? (
         <View style={styles.filterBar}>
+          <FaceMaskBar room={room} />
           <VideoFilterBar room={room} onFilterChange={setFilter} />
         </View>
       ) : null}
@@ -314,13 +353,19 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    gap: 40,
+    gap: 48,
     marginTop: 40,
+    alignItems: 'flex-start',
+  },
+  actionCol: {
+    alignItems: 'center',
+    gap: 10,
+    minWidth: 88,
   },
   round: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },

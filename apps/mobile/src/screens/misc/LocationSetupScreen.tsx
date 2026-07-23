@@ -60,6 +60,7 @@ export function LocationSetupScreen({ navigation }: Props) {
         city: city || undefined,
       });
       await qc.invalidateQueries({ queryKey: queryKeys.location });
+      await qc.invalidateQueries({ queryKey: ['discover'] });
       Alert.alert('Saved', 'Your location is updated.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
@@ -74,9 +75,10 @@ export function LocationSetupScreen({ navigation }: Props) {
     <Screen scroll>
       <Header title="Location" onBack={() => navigation.goBack()} />
       <Text muted style={{ marginBottom: spacing.lg }}>
-        We use your location only to show nearby people and hosts.
+        Browse Discover hides people within about 10 km of you. Searching by name finds anyone,
+        nearby or far.
       </Text>
-      <Button title="Detect my location" onPress={detect} loading={loading} />
+      <Button title="Detect my location" onPress={detect} loading={loading} fullWidth />
       {coords ? (
         <Text muted style={{ marginTop: spacing.md }}>
           {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
@@ -84,7 +86,13 @@ export function LocationSetupScreen({ navigation }: Props) {
       ) : null}
       <View style={{ height: spacing.lg }} />
       <Input label="City (optional)" value={city} onChangeText={setCity} />
-      <Button title="Save location" onPress={save} loading={loading} style={{ marginTop: spacing.xl }} />
+      <Button
+        title="Save location"
+        onPress={save}
+        loading={loading}
+        fullWidth
+        style={{ marginTop: spacing.xl }}
+      />
     </Screen>
   );
 }

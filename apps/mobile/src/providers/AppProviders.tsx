@@ -8,11 +8,13 @@ import { SocketProvider } from './SocketProvider';
 import { useThemeStore } from '@/store/theme';
 import { useIsDark } from '@/hooks/useThemeColors';
 import { usePresence } from '@/hooks/usePresence';
+import { useIncomingCallWatcher } from '@/hooks/useIncomingCallWatcher';
 
 function ThemeBridge({ children }: { children: React.ReactNode }) {
   const syncSystem = useThemeStore((s) => s.syncSystem);
   const dark = useIsDark();
   usePresence();
+  useIncomingCallWatcher();
 
   useEffect(() => {
     const sub = Appearance.addChangeListener(() => syncSystem());

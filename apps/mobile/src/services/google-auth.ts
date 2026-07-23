@@ -1,5 +1,6 @@
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 import { useEffect } from 'react';
 import { env } from '@/config/env';
 
@@ -7,15 +8,25 @@ WebBrowser.maybeCompleteAuthSession();
 
 /**
  * Google Sign-In via expo-auth-session.
- * Returns an idToken suitable for POST /auth/google.
- * Requires EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (and iOS/Android client IDs in production).
+ * Android requires a native Android OAuth client ID (not the web client ID).
+ * Set EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID / EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+ * and EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (used to receive the ID token).
  */
 export function useGoogleAuth() {
+  const webClientId = env.googleWebClientId || undefined;
+  const androidClientId = env.googleAndroidClientId || undefined;
+  const iosClientId = env.googleIosClientId || undefined;
+
   const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: env.googleWebClientId || undefined,
-    iosClientId: env.googleWebClientId || undefined,
-    androidClientId: env.googleWebClientId || undefined,
+    webClientId,
+    iosClientId: iosClientId || webClientId,
+    androidClientId,
   });
+
+  const configured =
+    !!webClientId &&
+    (Platform.OS !== 'android' || !!androidClientId) &&
+    (Platform.OS !== 'ios' || !!(iosClientId || webClientId));
 
   const idToken =
     response?.type === 'success'
@@ -25,10 +36,11 @@ export function useGoogleAuth() {
       : null;
 
   return {
-    ready: !!request && !!env.googleWebClientId,
+    ready: !!request && configured,
     idToken,
     response,
     promptAsync,
+    configured,
   };
 }
 
@@ -37,6 +49,11 @@ export async function getGoogleIdToken(
 ): Promise<string> {
   if (!env.googleWebClientId) {
     throw new Error('Google Sign-In is not configured. Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID.');
+  }
+  if (Platform.OS === 'android' && !env.googleAndroidClientId) {
+    throw new Error(
+      'Google Sign-In needs EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID (Android OAuth client from Google Cloud Console).',
+    );
   }
   const result = await promptAsync();
   if (result.type !== 'success') {

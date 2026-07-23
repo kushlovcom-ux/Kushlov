@@ -4,6 +4,7 @@ import {
   CallType,
   DiamondTxnReason,
   GoldTxnReason,
+  NotificationType,
   Role,
   SocketEvents,
 } from '@kushlov/types';
@@ -19,6 +20,7 @@ import { emitToUser } from '../../socket/io';
 import { assertUsersCanConnect } from '../../services/location.service';
 import { getLiveKitPublicUrl } from '../../config/env';
 import { getBusyUserIds } from '../../services/call-busy.service';
+import { notify } from '../../services/notification.service';
 import {
   computeCallDiamondCost,
   isApprovedHost,
@@ -167,6 +169,18 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   };
   for (const id of groupIds) {
     emitToUser(id, SocketEvents.CallInvite, invitePayload);
+    void notify({
+      userId: id,
+      type: NotificationType.Call,
+      title: type === CallType.Video ? 'Incoming video call' : 'Incoming audio call',
+      body: `${caller?.displayName ?? 'Someone'} is calling you`,
+      actor: req.user!.id,
+      data: {
+        kind: 'incoming_call',
+        callId: call._id.toString(),
+        callType: type,
+      },
+    });
   }
 
   return created(
@@ -387,6 +401,18 @@ export const inviteToCall = asyncHandler(async (req: Request, res: Response) => 
       isHostApproved: from?.isHostApproved,
     },
     maxDurationSec: call.maxDurationSec,
+  });
+  void notify({
+    userId,
+    type: NotificationType.Call,
+    title: type === CallType.Video ? 'Incoming video call' : 'Incoming audio call',
+    body: `${from?.displayName ?? 'Someone'} invited you to a call`,
+    actor: req.user!.id,
+    data: {
+      kind: 'incoming_call',
+      callId: call._id.toString(),
+      callType: type,
+    },
   });
 
   return ok(res, { call }, 'Invite sent');

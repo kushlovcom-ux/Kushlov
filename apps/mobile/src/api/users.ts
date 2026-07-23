@@ -20,10 +20,37 @@ export const usersApi = {
     apiGet<Paginated<PublicUser>>('/users/hosts/top-rated', { params }),
   hosts: (params?: SearchUsersParams) =>
     apiGet<Paginated<PublicUser>>('/users/hosts', { params }),
-  getById: (id: string) => apiGet<PublicUser & { profile?: UserProfile }>(`/users/${id}`),
+  getById: async (id: string) => {
+    const data = await apiGet<{
+      user: PublicUser;
+      profile?: UserProfile;
+      distanceKm?: number | null;
+    }>(`/users/${id}`);
+    const user = data.user;
+    return {
+      ...user,
+      bio: data.profile?.bio ?? user.bio,
+      dob: data.profile?.dob ?? user.dob,
+      gender: data.profile?.gender ?? user.gender,
+      gallery: data.profile?.gallery ?? user.gallery ?? [],
+      languages: data.profile?.languages ?? user.languages,
+      interestedIn: data.profile?.interestedIn ?? user.interestedIn,
+      distanceKm: data.distanceKm ?? user.distanceKm,
+      coverUrl: user.coverUrl,
+      profile: data.profile,
+    } as PublicUser & { profile?: UserProfile };
+  },
   updateMe: (body: Partial<Pick<PublicUser, 'displayName' | 'country' | 'bio'>>) =>
     apiPatch<PublicUser>('/users/me', body),
-  badges: () => apiGet<NavBadges>('/users/me/badges'),
+  badges: async () => {
+    const raw = await apiGet<{ notifications?: number; messages?: number }>('/users/me/badges');
+    return {
+      notifications: raw.notifications ?? 0,
+      unreadNotifications: raw.notifications ?? 0,
+      messages: raw.messages ?? 0,
+      unreadMessages: raw.messages ?? 0,
+    };
+  },
   getProfile: () => apiGet<UserProfile>('/users/me/profile'),
   updateProfile: (body: Partial<UserProfile>) =>
     apiPatch<UserProfile>('/users/me/profile', body),

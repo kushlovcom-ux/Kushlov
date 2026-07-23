@@ -1,0 +1,159 @@
+import { useEffect, useRef } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import { callsApi } from '@/api/calls';
+import {
+  CALL_ACTION_ACCEPT,
+  CALL_ACTION_DECLINE,
+  addNotificationResponseListener,
+  dismissIncomingCallNotification,
+  presentIncomingCallNotification,
+  setupCallNotifications,
+} from '@/services/notifications';
+import { useAuthStore } from '@/store/auth';
+import { useCallStore } from '@/store/call';
+import { haptics } from '@/utils/haptics';
+
+/**
+ * Polls for ringing invites + wires notification Accept/Decline actions.
+ * Complements socket `call:invite` when the socket is briefly offline.
+ */
+export function useIncomingCallWatcher() {
+  const token = useAuthStore((s) => s.accessToken);
+  const setIncoming = useCallStore((s) => s.setIncoming);
+  const startCall = useCallStore((s) => s.startCall);
+  const notifiedId = useRef<string | null>(null);
+
+  useEffect(() => {
+    void setupCallNotifications();
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const ringIfNeeded = async (callId: string, callType: string, callerName?: string) => {
+      if (notifiedId.current === callId) return;
+      notifiedId.current = callId;
+      haptics.medium();
+      await presentIncomingCallNotification({
+        callId,
+        callType,
+        callerName,
+      });
+    };
+
+    const syncIncoming = async () => {
+      const { active, incoming } = useCallStore.getState();
+      if (active) return;
+      try {
+        const { items } = await callsApi.incoming();
+        const next = items[0] ?? null;
+        if (!next?.id) {
+          if (incoming) {
+            setIncoming(null);
+            await dismissIncomingCallNotification(incoming.id);
+            notifiedId.current = null;
+          }
+          return;
+        }
+        if (!incoming || incoming.id !== next.id) {
+          setIncoming(next);
+        }
+        await ringIfNeeded(next.id, String(next.type), next.caller?.displayName);
+      } catch {
+        // soft fail
+      }
+    };
+
+    void syncIncoming();
+    const interval = setInterval(() => void syncIncoming(), 3500);
+
+    const onAppState = (state: AppStateStatus) => {
+      if (state === 'active') void syncIncoming();
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+
+    let prevIncomingId = useCallStore.getState().incoming?.id ?? null;
+    const unsubStore = useCallStore.subscribe((state) => {
+      const nextId = state.incoming?.id ?? null;
+      if (nextId && nextId !== prevIncomingId && !state.active) {
+        void ringIfNeeded(
+          nextId,
+          String(state.incoming?.type ?? 'audio'),
+          state.incoming?.caller?.displayName,
+        );
+      }
+      if (!nextId && prevIncomingId) {
+        void dismissIncomingCallNotification(prevIncomingId);
+        if (notifiedId.current === prevIncomingId) notifiedId.current = null;
+      }
+      prevIncomingId = nextId;
+    });
+
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+      unsubStore();
+    };
+  }, [token, setIncoming]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const sub = addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data as {
+        kind?: string;
+        callId?: string;
+        callType?: string;
+      };
+      if (data?.kind !== 'incoming_call' || !data.callId || !data.callType) return;
+
+      const action = response.actionIdentifier;
+      void (async () => {
+        if (action === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          try {
+            const { items } = await callsApi.incoming();
+            const match = items.find((i) => i.id === data.callId) ?? items[0];
+            if (match) setIncoming(match);
+          } catch {
+            // ignore
+          }
+          return;
+        }
+
+        if (action === CALL_ACTION_DECLINE) {
+          try {
+            await callsApi.reject(data.callType, data.callId);
+          } catch {
+            // ignore
+          }
+          setIncoming(null);
+          await dismissIncomingCallNotification(data.callId);
+          notifiedId.current = null;
+          return;
+        }
+
+        if (action === CALL_ACTION_ACCEPT) {
+          try {
+            const session = await callsApi.accept(data.callType, data.callId);
+            const incoming = useCallStore.getState().incoming;
+            startCall(session, 'callee', incoming?.caller ?? session.caller);
+            setIncoming(null);
+            await dismissIncomingCallNotification(data.callId);
+            notifiedId.current = null;
+          } catch {
+            try {
+              const { items } = await callsApi.incoming();
+              const match = items.find((i) => i.id === data.callId);
+              if (match) setIncoming(match);
+            } catch {
+              // ignore
+            }
+          }
+        }
+      })();
+    });
+
+    return () => sub.remove();
+  }, [token, setIncoming, startCall]);
+}

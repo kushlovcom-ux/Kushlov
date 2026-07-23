@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Text } from '@/components/ui/Text';
+import { FaceMaskOverlay, useParticipantFaceMask } from '@/components/calls/FaceMaskBar';
 import { ensureLiveKitNative } from '@/services/livekit';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { Room } from 'livekit-client';
+import type { Participant } from 'livekit-client';
 
 type Props = {
   token: string;
@@ -175,30 +177,64 @@ function makeVideoGrid(
       <View style={[styles.grid, multi && styles.gridMulti, { backgroundColor: '#000' }]}>
         {tracks.map((trackRef, index) => {
           const ref = trackRef as {
-            participant: { identity: string; isLocal?: boolean };
+            participant: Participant;
             publication?: { trackSid?: string };
             source?: string;
           };
           const key = `${ref.participant.identity}-${ref.publication?.trackSid ?? ref.source ?? index}`;
           const isLocal = Boolean(ref.participant.isLocal);
           return (
-            <View
+            <ParticipantVideoTile
               key={key}
-              style={[multi ? styles.tileMulti : styles.tile, { backgroundColor: c.elevated }]}
-            >
-              <lk.VideoTrack
-                trackRef={trackRef}
-                style={StyleSheet.absoluteFill}
-                objectFit="cover"
-                mirror={isLocal}
-                zOrder={isLocal ? 1 : 0}
-              />
-            </View>
+              lk={lk}
+              trackRef={trackRef}
+              isLocal={isLocal}
+              elevated={c.elevated}
+              multi={multi}
+            />
           );
         })}
       </View>
     );
   };
+}
+
+function ParticipantVideoTile({
+  lk,
+  trackRef,
+  isLocal,
+  elevated,
+  multi,
+}: {
+  lk: {
+    VideoTrack: React.ComponentType<{
+      trackRef: unknown;
+      style?: ViewStyle;
+      objectFit?: 'cover' | 'contain';
+      mirror?: boolean;
+      zOrder?: number;
+    }>;
+  };
+  trackRef: unknown;
+  isLocal: boolean;
+  elevated: string;
+  multi: boolean;
+}) {
+  const participant = (trackRef as { participant: Participant }).participant;
+  const maskId = useParticipantFaceMask(participant);
+
+  return (
+    <View style={[multi ? styles.tileMulti : styles.tile, { backgroundColor: elevated }]}>
+      <lk.VideoTrack
+        trackRef={trackRef}
+        style={StyleSheet.absoluteFill}
+        objectFit="cover"
+        mirror={isLocal}
+        zOrder={isLocal ? 1 : 0}
+      />
+      <FaceMaskOverlay maskId={maskId} mirrored={isLocal} />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

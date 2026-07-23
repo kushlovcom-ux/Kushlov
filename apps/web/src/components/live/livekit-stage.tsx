@@ -1,6 +1,7 @@
 'use client';
 
 import '@livekit/components-styles';
+import { useEffect, useRef, useState } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -9,10 +10,57 @@ import {
   useTracks,
   isTrackReference,
 } from '@livekit/components-react';
-import { Track } from 'livekit-client';
+import { ParticipantEvent, Track, type Participant } from 'livekit-client';
+import { FACE_MASK_ATTR } from '@kushlov/types';
 import { clientEnv } from '@/lib/env';
 import { useLiveKitUrl } from '@/hooks/use-livekit-url';
 import { VideoFilterBar } from '@/components/calls/video-filter-bar';
+import { FaceMaskBar } from '@/components/calls/face-mask-bar';
+import { FaceMaskOverlay } from '@/components/calls/face-mask-overlay';
+
+function useParticipantFaceMask(participant: Participant) {
+  const [maskId, setMaskId] = useState(
+    () => participant.attributes?.[FACE_MASK_ATTR] || '',
+  );
+
+  useEffect(() => {
+    const sync = () => setMaskId(participant.attributes?.[FACE_MASK_ATTR] || '');
+    sync();
+    participant.on(ParticipantEvent.AttributesChanged, sync);
+    return () => {
+      participant.off(ParticipantEvent.AttributesChanged, sync);
+    };
+  }, [participant]);
+
+  return maskId;
+}
+
+function ParticipantTile({
+  trackRef,
+}: {
+  trackRef: {
+    participant: Participant;
+    publication?: { trackSid?: string };
+    source?: Track.Source;
+  };
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const maskId = useParticipantFaceMask(trackRef.participant);
+  const isLocal = trackRef.participant.isLocal;
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative h-full min-h-[200px] overflow-hidden rounded-xl bg-zinc-900"
+    >
+      <VideoTrack
+        trackRef={trackRef as never}
+        className="h-full w-full object-cover"
+      />
+      <FaceMaskOverlay containerRef={containerRef} maskId={maskId} mirrored={isLocal} />
+    </div>
+  );
+}
 
 /** In-room video UI — avoids VideoConference placeholder track bugs. */
 function LiveRoomVideo({
@@ -45,17 +93,20 @@ function LiveRoomVideo({
             }
           >
             {cameraTracks.map((trackRef) => (
-              <div
+              <ParticipantTile
                 key={`${trackRef.participant.identity}-${trackRef.publication?.trackSid ?? trackRef.source}`}
-                className="relative h-full min-h-[200px] overflow-hidden rounded-xl bg-zinc-900"
-              >
-                <VideoTrack trackRef={trackRef} className="h-full w-full object-cover" />
-              </div>
+                trackRef={trackRef}
+              />
             ))}
           </div>
         )}
       </div>
-      {showFilters ? <VideoFilterBar className="border-t border-white/10 py-2" /> : null}
+      {showFilters ? (
+        <div className="space-y-2 border-t border-white/10 py-2">
+          <FaceMaskBar className="px-2" />
+          <VideoFilterBar className="px-2" />
+        </div>
+      ) : null}
       {isHost && (
         <ControlBar
           variation="minimal"

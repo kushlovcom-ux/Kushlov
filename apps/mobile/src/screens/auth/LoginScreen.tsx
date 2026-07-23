@@ -1,14 +1,24 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
-import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
 import { getErrorMessage } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
 import { getGoogleIdToken, useGoogleAuth } from '@/services/google-auth';
+import { useThemeColors } from '@/hooks/useThemeColors';
 import { isValidEmail, isValidPassword } from '@/utils/validation';
 import { spacing } from '@/theme';
 import type { AuthStackParamList } from '@/navigation/types';
@@ -16,8 +26,9 @@ import type { AuthStackParamList } from '@/navigation/types';
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export function LoginScreen({ navigation }: Props) {
+  const c = useThemeColors();
   const { login, loginWithGoogle, isLoggingIn } = useAuth();
-  const { ready, promptAsync } = useGoogleAuth();
+  const { ready, promptAsync, configured } = useGoogleAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
@@ -37,6 +48,15 @@ export function LoginScreen({ navigation }: Props) {
 
   const onGoogle = async () => {
     try {
+      if (!configured) {
+        Alert.alert(
+          'Google Sign-In',
+          Platform.OS === 'android'
+            ? 'Set EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID (Android OAuth client from Google Cloud Console) and rebuild the app.'
+            : 'Google Sign-In is not configured for this build.',
+        );
+        return;
+      }
       const idToken = await getGoogleIdToken(promptAsync);
       await loginWithGoogle({ idToken });
     } catch (err) {
@@ -45,50 +65,92 @@ export function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <Screen scroll>
-      <Header title="Log in" onBack={() => navigation.goBack()} />
-      <Text muted style={{ marginBottom: spacing.lg }}>
-        Welcome back to Kushlov
-      </Text>
-      <Input
-        label="Email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        error={errors.email}
-      />
-      <View style={{ height: spacing.md }} />
-      <Input
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        error={errors.password}
-      />
-      <Pressable onPress={() => navigation.navigate('ForgotPassword')} style={styles.forgot}>
-        <Text variant="caption" color="#ec4899">
-          Forgot password?
-        </Text>
-      </Pressable>
-      <Button title="Log in" onPress={submit} loading={isLoggingIn} />
-      <Button
-        title="Continue with Google"
-        variant="secondary"
-        onPress={onGoogle}
-        disabled={!ready}
-        style={{ marginTop: spacing.md }}
-      />
-      <Pressable onPress={() => navigation.navigate('Register')} style={styles.footer}>
-        <Text muted>
-          New here? <Text color="#ec4899">Create an account</Text>
-        </Text>
-      </Pressable>
+    <Screen padded={false}>
+      <LinearGradient colors={['#1a0a14', c.bg, '#0a0612']} style={StyleSheet.absoluteFill} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
+            <Text variant="caption" color={c.pink}>
+              ← Back
+            </Text>
+          </Pressable>
+
+          <View style={styles.hero}>
+            <Image
+              source={require('../../assets/images/kush.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text variant="h1">Welcome back</Text>
+            <Text muted style={{ marginTop: 6 }}>
+              Sign in to continue your Kushlov story
+            </Text>
+          </View>
+
+          <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
+            <Input
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              error={errors.email}
+              placeholder="you@email.com"
+            />
+            <View style={{ height: spacing.md }} />
+            <Input
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              error={errors.password}
+              placeholder="Your password"
+            />
+            <Pressable onPress={() => navigation.navigate('ForgotPassword')} style={styles.forgot}>
+              <Text variant="caption" color={c.pink}>
+                Forgot password?
+              </Text>
+            </Pressable>
+            <Button title="Log in" onPress={submit} loading={isLoggingIn} fullWidth size="lg" />
+            {configured ? (
+              <Button
+                title="Continue with Google"
+                variant="secondary"
+                onPress={onGoogle}
+                disabled={!ready}
+                fullWidth
+                style={{ marginTop: spacing.md }}
+              />
+            ) : null}
+          </View>
+
+          <Pressable onPress={() => navigation.navigate('Register')} style={styles.footer}>
+            <Text muted>
+              New here? <Text color={c.pink}>Create an account</Text>
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: { padding: spacing['2xl'], paddingTop: 56, paddingBottom: 48 },
+  hero: { alignItems: 'center', marginVertical: spacing['2xl'] },
+  logo: { width: 72, height: 72, marginBottom: spacing.md },
+  card: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: spacing.xl,
+  },
   forgot: { alignSelf: 'flex-end', marginVertical: spacing.md },
   footer: { marginTop: spacing['2xl'], alignItems: 'center' },
 });

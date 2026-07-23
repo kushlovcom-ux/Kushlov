@@ -252,11 +252,16 @@ export interface UserProfile {
 }
 
 export interface UserLocation {
-  lat: number;
-  lng: number;
+  hasLocation?: boolean;
+  lat: number | null;
+  lng: number | null;
   city?: string;
   country?: string;
+  locationLabel?: string;
+  discoveryRadiusKm?: number;
+  exclusionRadiusKm?: number;
   updatedAt?: string;
+  locationUpdatedAt?: string;
 }
 
 export interface Conversation {
@@ -335,10 +340,14 @@ export interface LedgerEntry {
 
 export interface DiamondPackage {
   id: string;
-  name: string;
+  name?: string;
+  label?: string;
   diamonds: number;
   bonusDiamonds?: number;
-  priceInr: number;
+  bonus?: number;
+  priceInr?: number;
+  priceUsd?: number;
+  price?: number;
   currency?: string;
   isActive?: boolean;
   popular?: boolean;
@@ -361,6 +370,9 @@ export interface AppNotification {
   title: string;
   body: string;
   data?: Record<string, unknown>;
+  /** Server field */
+  isRead?: boolean;
+  /** Legacy / optional */
   readAt?: string;
   createdAt: string;
 }
@@ -395,8 +407,12 @@ export interface PlatformStats {
 }
 
 export interface NavBadges {
-  unreadMessages?: number;
+  /** Unread notifications */
+  notifications?: number;
   unreadNotifications?: number;
+  /** Unread messages */
+  messages?: number;
+  unreadMessages?: number;
   incomingCalls?: number;
   likes?: number;
   matches?: number;

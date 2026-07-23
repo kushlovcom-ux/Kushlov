@@ -18,6 +18,7 @@ import { Screen } from '@/components/common/Screen';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { LiveKitStage } from '@/components/live/LiveKitStage';
 import { VideoFilterBar, FilterOverlay, type VideoFilterId } from '@/components/calls/VideoFilterBar';
+import { FaceMaskBar } from '@/components/calls/FaceMaskBar';
 import { liveApi } from '@/api/live';
 import { getErrorMessage } from '@/api/client';
 import { queryKeys } from '@/constants/queryKeys';
@@ -312,7 +313,12 @@ export function LiveRoomScreen({ navigation, route }: Props) {
         )}
       </View>
 
-      {canPublish ? <VideoFilterBar room={room} onFilterChange={setFilter} /> : null}
+      {canPublish ? (
+        <View>
+          <FaceMaskBar room={room} />
+          <VideoFilterBar room={room} onFilterChange={setFilter} />
+        </View>
+      ) : null}
 
       <View style={styles.row}>
         <Button title="Like" size="sm" onPress={() => liveApi.like(liveId).catch(() => undefined)} />

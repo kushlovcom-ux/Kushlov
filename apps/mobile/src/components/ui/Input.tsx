@@ -44,10 +44,10 @@ export function Input({ label, error, right, style, ...rest }: Props) {
 const styles = StyleSheet.create({
   wrap: { width: '100%' },
   field: {
-    borderWidth: 1,
-    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderRadius: radius.lg,
     paddingHorizontal: spacing.md,
-    minHeight: 48,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
   },

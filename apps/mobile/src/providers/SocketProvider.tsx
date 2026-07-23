@@ -3,7 +3,8 @@ import { Alert } from 'react-native';
 import { connectSocket, disconnectSocket, getSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/auth';
 import { useCallStore } from '@/store/call';
-import { CallStatus, SocketEvents, type CallSession } from '@/types';
+import { CallStatus, SocketEvents } from '@/types';
+import { normalizeCallSession } from '@/utils/normalizeCall';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/constants/queryKeys';
 import { liveApi } from '@/api/live';
@@ -24,17 +25,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
     const socket = connectSocket(token);
 
-    const onInvite = (payload: CallSession) => {
-      setIncoming(payload);
+    const onInvite = (payload: unknown) => {
+      setIncoming(normalizeCallSession(payload));
     };
-    const onAccept = (payload: CallSession) => {
-      updateSession({ ...payload, status: CallStatus.Ongoing });
+    const onAccept = (payload: unknown) => {
+      const session = normalizeCallSession(payload);
+      updateSession({ ...session, status: CallStatus.Ongoing });
     };
     const onEnd = () => {
       clearCall();
     };
     const onMessage = () => {
       qc.invalidateQueries({ queryKey: queryKeys.conversations });
+      qc.invalidateQueries({ queryKey: queryKeys.badges });
     };
     const onNotification = () => {
       qc.invalidateQueries({ queryKey: queryKeys.notifications });

@@ -12,11 +12,13 @@ import { UserCard } from '@/components/common/UserCard';
 import { DiamondBadge } from '@/components/common/DiamondBadge';
 import { Screen } from '@/components/common/Screen';
 import { useAuth } from '@/hooks/useAuth';
+import { useBadges } from '@/hooks/useBadges';
 import { usePopularHosts, useTopRatedHosts } from '@/hooks/usePopularHosts';
 import { usePlatformStats, useSettings } from '@/hooks/useSettings';
 import { useDiscover } from '@/hooks/useDiscover';
 import { useWallet } from '@/hooks/useWallet';
 import { useThemeColors } from '@/hooks/useThemeColors';
+import { NavBadge } from '@/components/common/NavBadge';
 import { spacing } from '@/theme';
 import type { AppStackParamList } from '@/navigation/types';
 import type { PublicUser } from '@/types';
@@ -25,6 +27,7 @@ export function HomeScreen() {
   const c = useThemeColors();
   const nav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { user } = useAuth();
+  const badges = useBadges();
   const popular = usePopularHosts();
   const topRated = useTopRatedHosts();
   const online = useDiscover({ online: true, limit: 12 });
@@ -36,6 +39,12 @@ export function HomeScreen() {
   const topItems = topRated.data?.items ?? [];
   const onlineItems = online.data?.pages.flatMap((p) => p.items) ?? [];
   const loading = popular.isLoading || topRated.isLoading;
+  const notifCount =
+    badges.data?.notifications ?? badges.data?.unreadNotifications ?? 0;
+  const onlineCount = Math.max(
+    stats.data?.onlineUsers ?? 0,
+    onlineItems.filter((u) => u.isOnline).length,
+  );
 
   return (
     <Screen padded={false}>
@@ -61,8 +70,21 @@ export function HomeScreen() {
           </Pressable>
           <View style={styles.topRight}>
             {wallet.data ? <DiamondBadge amount={wallet.data.diamonds} /> : null}
-            <Pressable onPress={() => nav.navigate('Notifications')}>
+            <Pressable
+              onPress={() => nav.navigate('Contact')}
+              accessibilityLabel="Contact us"
+              hitSlop={8}
+            >
+              <Ionicons name="mail-outline" size={24} color={c.text} />
+            </Pressable>
+            <Pressable
+              onPress={() => nav.navigate('Notifications')}
+              accessibilityLabel="Notifications"
+              style={{ position: 'relative' }}
+              hitSlop={8}
+            >
               <Ionicons name="notifications-outline" size={24} color={c.text} />
+              <NavBadge count={notifCount} />
             </Pressable>
             <Pressable onPress={() => nav.navigate('Profile')}>
               <Avatar uri={user?.avatarUrl} name={user?.displayName} size={36} />
@@ -78,9 +100,9 @@ export function HomeScreen() {
           </View>
         ) : null}
 
-        {stats.data ? (
+        {stats.data || onlineItems.length > 0 ? (
           <Text variant="caption" muted style={{ marginBottom: spacing.md }}>
-            {stats.data.onlineUsers ?? 0} online · {stats.data.liveStreams ?? 0} live
+            {onlineCount} online · {stats.data?.liveStreams ?? 0} live
           </Text>
         ) : null}
 
@@ -119,11 +141,17 @@ export function HomeScreen() {
         </Section>
 
         <Section title="Online now">
-          {onlineItems.slice(0, 8).map((u) => (
-            <View key={u.id} style={{ marginBottom: 10 }}>
-              <UserCard user={u} onPress={() => nav.navigate('PublicProfile', { userId: u.id })} />
-            </View>
-          ))}
+          <View style={styles.grid}>
+            {onlineItems.slice(0, 8).map((u) => (
+              <View key={u.id} style={styles.gridItem}>
+                <UserCard
+                  user={u}
+                  variant="portrait"
+                  onPress={() => nav.navigate('PublicProfile', { userId: u.id })}
+                />
+              </View>
+            ))}
+          </View>
         </Section>
       </ScrollView>
     </Screen>
@@ -172,4 +200,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     marginRight: 10,
   },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  gridItem: { width: '48%', flexGrow: 1 },
 });

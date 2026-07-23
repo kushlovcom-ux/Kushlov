@@ -106,8 +106,8 @@ export function OnboardingScreen() {
             />
           ))}
         </View>
-        <Button title={index === SLIDES.length - 1 ? 'Get started' : 'Next'} onPress={next} />
-        <Button title="Skip" variant="ghost" onPress={() => void finish()} style={{ marginTop: 8 }} />
+        <Button title={index === SLIDES.length - 1 ? 'Get started' : 'Next'} onPress={next} fullWidth size="lg" />
+        <Button title="Skip" variant="ghost" onPress={() => void finish()} fullWidth style={{ marginTop: 8 }} />
       </View>
     </Screen>
   );
