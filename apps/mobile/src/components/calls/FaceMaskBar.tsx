@@ -13,6 +13,7 @@ import {
   getFaceMask,
   type FaceMaskId,
 } from '@/constants/faceMasks';
+import { useFaceMaskStore } from '@/store/faceMask';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { spacing } from '@/theme';
 import type { Participant, Room } from 'livekit-client';
@@ -29,16 +30,18 @@ type BarProps = {
 export function FaceMaskBar({ room, onMaskChange }: BarProps) {
   const c = useThemeColors();
   const [active, setActive] = useState<FaceMaskId>('none');
+  const setLocalMaskId = useFaceMaskStore((s) => s.setLocalMaskId);
 
   const apply = async (id: FaceMaskId) => {
     setActive(id);
+    setLocalMaskId(id === 'none' ? '' : id);
     onMaskChange?.(id);
     try {
       await room?.localParticipant.setAttributes({
         [FACE_MASK_ATTR]: id === 'none' ? '' : id,
       });
     } catch {
-      // soft fail
+      // soft fail — local overlay still shows via store
     }
   };
 

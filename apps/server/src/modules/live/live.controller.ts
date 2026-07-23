@@ -32,6 +32,51 @@ import { getLiveKitPublicUrl } from '../../config/env';
 
 const roomOf = (id: string) => `live:${id}`;
 
+async function countActiveViewers(liveId: unknown): Promise<number> {
+  return LiveParticipant.countDocuments({
+    liveStream: liveId,
+    leftAt: { $exists: false },
+    role: { $ne: 'host' },
+  });
+}
+
+function serializeLiveChat(doc: {
+  _id?: { toString(): string };
+  message?: string;
+  createdAt?: Date;
+  user?: {
+    _id?: { toString(): string };
+    id?: string;
+    displayName?: string;
+    username?: string;
+    avatarUrl?: string;
+  };
+}) {
+  const user = doc.user;
+  return {
+    _id: doc._id?.toString?.(),
+    message: doc.message ?? '',
+    createdAt: doc.createdAt,
+    user: {
+      id: user?.id ?? user?._id?.toString?.(),
+      displayName: user?.displayName ?? 'User',
+      username: user?.username,
+      avatarUrl: user?.avatarUrl,
+    },
+  };
+}
+
+/** Broadcast to the live socket room and always to the host (and co-host). */
+function emitLiveEvent(
+  live: { _id: { toString(): string }; host: { toString(): string }; coHost?: { toString(): string } | null },
+  event: string,
+  payload: unknown,
+) {
+  emitToRoom(roomOf(live._id.toString()), event, payload);
+  emitToUser(live.host.toString(), event, payload);
+  if (live.coHost) emitToUser(live.coHost.toString(), event, payload);
+}
+
 /** POST /live/start — approved host goes live. */
 export const startLive = asyncHandler(async (req: Request, res: Response) => {
   const settings = await getSettings();
@@ -90,13 +135,22 @@ export const hostToken = asyncHandler(async (req: Request, res: Response) => {
   if (!live) throw ApiError.notFound('Stream not found');
   if (live.host.toString() !== req.user!.id) throw ApiError.forbidden('Not your stream');
 
+  const viewerCount = await countActiveViewers(live._id);
+  live.viewerCount = viewerCount;
+  await live.save();
+
   const token = await createLiveKitToken({
     identity: req.user!.id,
     roomName: live.roomName,
     canPublish: true,
     canPublishData: true,
   });
-  return ok(res, { token, roomName: live.roomName, livekitUrl: getLiveKitPublicUrl() });
+  return ok(res, {
+    token,
+    roomName: live.roomName,
+    livekitUrl: getLiveKitPublicUrl(),
+    viewerCount,
+  });
 });
 
 /**
@@ -178,13 +232,13 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
 
   await LiveParticipant.updateOne(
     { liveStream: live._id, user: req.user!.id },
-    { $set: { joinedAt: new Date(), leftAt: undefined, role: 'viewer' } },
+    {
+      $set: { joinedAt: new Date(), role: 'viewer' },
+      $unset: { leftAt: '' },
+    },
     { upsert: true },
   );
-  const viewerCount = await LiveParticipant.countDocuments({
-    liveStream: live._id,
-    leftAt: { $exists: false },
-  });
+  const viewerCount = await countActiveViewers(live._id);
   live.viewerCount = viewerCount;
   live.peakViewers = Math.max(live.peakViewers, viewerCount);
   await live.save();
@@ -197,7 +251,7 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
     canPublishData: true,
   });
 
-  emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveViewerCount, { viewerCount });
+  emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
   return ok(res, { token, roomName: live.roomName, viewerCount, livekitUrl: getLiveKitPublicUrl() });
 });
 
@@ -209,13 +263,10 @@ export const leaveLive = asyncHandler(async (req: Request, res: Response) => {
     { liveStream: live._id, user: req.user!.id },
     { $set: { leftAt: new Date() } },
   );
-  const viewerCount = await LiveParticipant.countDocuments({
-    liveStream: live._id,
-    leftAt: { $exists: false },
-  });
+  const viewerCount = await countActiveViewers(live._id);
   live.viewerCount = viewerCount;
   await live.save();
-  emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveViewerCount, { viewerCount });
+  emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
   return ok(res, { viewerCount });
 });
 
@@ -246,8 +297,9 @@ export const liveChat = asyncHandler(async (req: Request, res: Response) => {
     message: req.body.message,
   });
   const populated = await chat.populate('user', 'displayName username avatarUrl');
-  emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveChat, populated);
-  return created(res, populated);
+  const payload = serializeLiveChat(populated as never);
+  emitLiveEvent(live, SocketEvents.LiveChat, payload);
+  return created(res, payload);
 });
 
 /** POST /live/:id/like — like the stream. */
@@ -342,7 +394,7 @@ export const listViewers = asyncHandler(async (req: Request, res: Response) => {
     .populate('user', 'displayName username avatarUrl');
 
   return ok(res, {
-    viewerCount: live.viewerCount,
+    viewerCount: await countActiveViewers(live._id),
     viewers: participants.map((p) => {
       const u = p.user as unknown as {
         _id?: { toString(): string };

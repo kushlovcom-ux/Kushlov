@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View, type ViewStyle } from 'react-nativ
 import { Text } from '@/components/ui/Text';
 import { FaceMaskOverlay, useParticipantFaceMask } from '@/components/calls/FaceMaskBar';
 import { ensureLiveKitNative } from '@/services/livekit';
+import { useFaceMaskStore } from '@/store/faceMask';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { Room } from 'livekit-client';
 import type { Participant } from 'livekit-client';
@@ -221,7 +222,9 @@ function ParticipantVideoTile({
   multi: boolean;
 }) {
   const participant = (trackRef as { participant: Participant }).participant;
-  const maskId = useParticipantFaceMask(participant);
+  const attrMask = useParticipantFaceMask(participant);
+  const localMask = useFaceMaskStore((s) => s.localMaskId);
+  const maskId = participant.isLocal ? localMask || attrMask : attrMask;
 
   return (
     <View style={[multi ? styles.tileMulti : styles.tile, { backgroundColor: elevated }]}>

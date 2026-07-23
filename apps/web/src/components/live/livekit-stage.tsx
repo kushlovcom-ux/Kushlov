@@ -11,14 +11,14 @@ import {
   isTrackReference,
 } from '@livekit/components-react';
 import { ParticipantEvent, Track, type Participant } from 'livekit-client';
-import { FACE_MASK_ATTR } from '@kushlov/types';
+import { FACE_MASK_ATTR, type FaceMaskId } from '@kushlov/types';
 import { clientEnv } from '@/lib/env';
 import { useLiveKitUrl } from '@/hooks/use-livekit-url';
 import { VideoFilterBar } from '@/components/calls/video-filter-bar';
 import { FaceMaskBar } from '@/components/calls/face-mask-bar';
 import { FaceMaskOverlay } from '@/components/calls/face-mask-overlay';
 
-function useParticipantFaceMask(participant: Participant) {
+function useParticipantFaceMask(participant: Participant, localOverride?: string) {
   const [maskId, setMaskId] = useState(
     () => participant.attributes?.[FACE_MASK_ATTR] || '',
   );
@@ -32,20 +32,23 @@ function useParticipantFaceMask(participant: Participant) {
     };
   }, [participant]);
 
+  if (participant.isLocal && localOverride) return localOverride;
   return maskId;
 }
 
 function ParticipantTile({
   trackRef,
+  localMaskId,
 }: {
   trackRef: {
     participant: Participant;
     publication?: { trackSid?: string };
     source?: Track.Source;
   };
+  localMaskId?: FaceMaskId | string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const maskId = useParticipantFaceMask(trackRef.participant);
+  const maskId = useParticipantFaceMask(trackRef.participant, localMaskId);
   const isLocal = trackRef.participant.isLocal;
 
   return (
@@ -70,6 +73,7 @@ function LiveRoomVideo({
   isHost?: boolean;
   showFilters?: boolean;
 }) {
+  const [localMaskId, setLocalMaskId] = useState<FaceMaskId>('none');
   const cameraTracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: false }],
     { onlySubscribed: false },
@@ -96,6 +100,7 @@ function LiveRoomVideo({
               <ParticipantTile
                 key={`${trackRef.participant.identity}-${trackRef.publication?.trackSid ?? trackRef.source}`}
                 trackRef={trackRef}
+                localMaskId={localMaskId === 'none' ? '' : localMaskId}
               />
             ))}
           </div>
@@ -103,7 +108,7 @@ function LiveRoomVideo({
       </div>
       {showFilters ? (
         <div className="space-y-2 border-t border-white/10 py-2">
-          <FaceMaskBar className="px-2" />
+          <FaceMaskBar className="px-2" onMaskChange={setLocalMaskId} />
           <VideoFilterBar className="px-2" />
         </div>
       ) : null}

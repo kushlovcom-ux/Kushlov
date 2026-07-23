@@ -88,9 +88,21 @@ export default function LiveRoomPage() {
     queryKey: ['live-viewers', id],
     queryFn: () =>
       unwrap<{ viewerCount: number; viewers: LiveViewer[] }>(api.get(`/live/${id}/viewers`)),
-    enabled: Boolean(isHost && showViewers),
-    refetchInterval: showViewers ? 8_000 : false,
+    enabled: Boolean(isHost),
+    refetchInterval: isHost ? 5_000 : false,
   });
+
+  useEffect(() => {
+    if (live.data?.viewerCount != null) {
+      setViewers(Number(live.data.viewerCount) || 0);
+    }
+  }, [live.data?.viewerCount]);
+
+  useEffect(() => {
+    if (viewerList.data?.viewerCount != null) {
+      setViewers(viewerList.data.viewerCount);
+    }
+  }, [viewerList.data?.viewerCount]);
 
   useEffect(() => {
     if (!live.data) return;
@@ -125,11 +137,23 @@ export default function LiveRoomPage() {
     };
   }, [live.data, id, isHost, isCoHost]);
 
-  // Socket room events + co-live invite
+  // Socket room events + co-live invite (re-join room on every connect)
   useEffect(() => {
     if (!socket) return;
-    socket.emit(SocketEvents.LiveJoin, { liveId: id });
-    const onChat = (m: LiveChatMsg) => setChat((c) => [...c, m]);
+
+    const joinRoom = () => {
+      socket.emit(SocketEvents.LiveJoin, { liveId: id });
+    };
+    joinRoom();
+    socket.on('connect', joinRoom);
+
+    const onChat = (m: LiveChatMsg) => {
+      setChat((c) => {
+        const idKey = m._id;
+        if (idKey && c.some((x) => x._id === idKey)) return c;
+        return [...c, m];
+      });
+    };
     const onCount = (p: { viewerCount?: number }) => {
       if (p.viewerCount != null) setViewers(p.viewerCount);
     };
@@ -160,6 +184,7 @@ export default function LiveRoomPage() {
     socket.on(SocketEvents.LiveColiveAccept, onColiveAccept);
     socket.on(SocketEvents.LiveColiveLeave, onColiveLeave);
     return () => {
+      socket.off('connect', joinRoom);
       socket.emit(SocketEvents.LiveLeave, { liveId: id });
       socket.off(SocketEvents.LiveChat, onChat);
       socket.off(SocketEvents.LiveViewerCount, onCount);
@@ -187,10 +212,30 @@ export default function LiveRoomPage() {
 
   const sendChat = async () => {
     if (!text.trim()) return;
+    const message = text.trim();
+    setText('');
     try {
-      await api.post(`/live/${id}/chat`, { message: text.trim() });
-      setText('');
+      const res = await api.post(`/live/${id}/chat`, { message });
+      const payload = res.data?.data as LiveChatMsg | undefined;
+      if (payload?.message) {
+        setChat((c) => {
+          const idKey = payload._id;
+          if (idKey && c.some((x) => x._id === idKey)) return c;
+          return [
+            ...c,
+            {
+              _id: payload._id,
+              message: payload.message,
+              user: payload.user ?? {
+                displayName: me?.displayName ?? 'You',
+                avatarUrl: me?.avatarUrl,
+              },
+            },
+          ];
+        });
+      }
     } catch (e) {
+      setText(message);
       toast.error(apiError(e));
     }
   };

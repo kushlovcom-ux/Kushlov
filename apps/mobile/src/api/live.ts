@@ -22,15 +22,24 @@ export const liveApi = {
     return (data.live ?? data) as LiveRoom;
   },
   hostToken: (id: string) =>
-    apiGet<{ token: string; livekitUrl?: string; roomName?: string }>(`/live/${id}/host-token`),
+    apiGet<{ token: string; livekitUrl?: string; roomName?: string; viewerCount?: number }>(
+      `/live/${id}/host-token`,
+    ),
   previewToken: (id: string) =>
     apiGet<{ token: string; livekitUrl?: string; roomName?: string }>(`/live/${id}/preview-token`),
   end: (id: string) => apiPost<LiveRoom>(`/live/${id}/end`),
   join: (id: string) =>
-    apiPost<LiveRoom & { token?: string; livekitUrl?: string }>(`/live/${id}/join`),
-  leave: (id: string) => apiPost<{ ok: boolean }>(`/live/${id}/leave`),
+    apiPost<{ token?: string; livekitUrl?: string; roomName?: string; viewerCount?: number }>(
+      `/live/${id}/join`,
+    ),
+  leave: (id: string) => apiPost<{ ok: boolean; viewerCount?: number }>(`/live/${id}/leave`),
   chat: (id: string, message: string) =>
-    apiPost<{ ok: boolean }>(`/live/${id}/chat`, { message }),
+    apiPost<{
+      _id?: string;
+      id?: string;
+      message: string;
+      user?: { displayName?: string; avatarUrl?: string };
+    }>(`/live/${id}/chat`, { message }),
   like: (id: string) => apiPost<{ likeCount: number }>(`/live/${id}/like`),
   gift: (id: string, giftId: string) =>
     apiPost<{ ok: boolean }>(`/live/${id}/gift`, { giftId }),

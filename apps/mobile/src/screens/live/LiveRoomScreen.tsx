@@ -169,10 +169,11 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     const offChat = socket.on(SocketEvents.LiveChat, (...args: unknown[]) => {
       const m = args[0] as ChatMsg & { _id?: string; id?: string };
       if (m?.message) {
-        setMessages((prev) => [
-          ...prev,
-          { id: m.id ?? m._id, user: m.user, message: m.message },
-        ]);
+        setMessages((prev) => {
+          const id = m.id ?? m._id;
+          if (id && prev.some((x) => x.id === id)) return prev;
+          return [...prev, { id, user: m.user, message: m.message }];
+        });
       }
     });
     const offCount = socket.on(SocketEvents.LiveViewerCount, (...args: unknown[]) => {
@@ -221,10 +222,24 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   const sendChat = async () => {
     const msg = chat.trim();
     if (!msg) return;
+    setChat('');
     try {
-      await liveApi.chat(liveId, msg);
-      setChat('');
+      const created = await liveApi.chat(liveId, msg);
+      const payload = created as ChatMsg & { _id?: string; id?: string };
+      setMessages((prev) => {
+        const id = payload.id ?? payload._id;
+        if (id && prev.some((m) => m.id === id)) return prev;
+        return [
+          ...prev,
+          {
+            id,
+            user: payload.user ?? { displayName: user?.displayName },
+            message: payload.message ?? msg,
+          },
+        ];
+      });
     } catch (err) {
+      setChat(msg);
       Alert.alert('Chat', getErrorMessage(err));
     }
   };

@@ -33,6 +33,8 @@ export async function createLiveKitToken(grant: TokenGrant): Promise<string> {
     canPublish: grant.canPublish ?? true,
     canSubscribe: grant.canSubscribe ?? true,
     canPublishData: grant.canPublishData ?? true,
+    // Required for face-mask / participant attributes (setAttributes).
+    canUpdateOwnMetadata: true,
   });
 
   return at.toJwt();
