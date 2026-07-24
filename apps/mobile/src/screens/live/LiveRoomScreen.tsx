@@ -17,7 +17,6 @@ import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { LiveKitStage } from '@/components/live/LiveKitStage';
-import { VideoFilterBar, FilterOverlay, type VideoFilterId } from '@/components/calls/VideoFilterBar';
 import { FilterSelector } from '@/faceFilters/components/FilterSelector';
 import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
 import { liveApi } from '@/api/live';
@@ -78,7 +77,6 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   const [isCoHost, setIsCoHost] = useState(false);
   const [coHostName, setCoHostName] = useState<string | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
-  const [filter, setFilter] = useState<VideoFilterId>('none');
 
   const onRoom = useCallback((r: Room | null) => setRoom(r), []);
 
@@ -166,7 +164,14 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   }, [live.data, liveId, isHost, isCoHost]);
 
   useEffect(() => {
-    socket.emit(SocketEvents.LiveJoin, { liveId });
+    const joinRoom = () => {
+      socket.emit(SocketEvents.LiveJoin, { liveId });
+    };
+    joinRoom();
+
+    const s = socket.get();
+    s?.on('connect', joinRoom);
+
     const offChat = socket.on(SocketEvents.LiveChat, (...args: unknown[]) => {
       const m = args[0] as ChatMsg & { _id?: string; id?: string };
       if (m?.message) {
@@ -199,15 +204,16 @@ export function LiveRoomScreen({ navigation, route }: Props) {
       if (isCoHost && !isHost) navigation.goBack();
     });
     return () => {
+      s?.off('connect', joinRoom);
       socket.emit(SocketEvents.LiveLeave, { liveId });
       offChat();
       offCount();
       offLeave();
       offColiveAccept();
       offColiveLeave();
-      if (!isHost && !isCoHost) liveApi.leave(liveId).catch(() => undefined);
+      // Do NOT HTTP-leave here — that runs on every listener rebind and drops viewers.
     };
-  }, [liveId, socket, navigation, isHost, isCoHost, user?.id]);
+  }, [liveId, socket, navigation, isHost, isCoHost, user?.id, socket.connected]);
 
   const leave = async () => {
     try {
@@ -321,7 +327,6 @@ export function LiveRoomScreen({ navigation, route }: Props) {
               onRoom={onRoom}
               style={{ flex: 1 }}
             />
-            <FilterOverlay filter={filter} />
           </View>
         ) : (
           <View style={[styles.stageFallback, { backgroundColor: c.elevated }]}>
@@ -370,7 +375,6 @@ export function LiveRoomScreen({ navigation, route }: Props) {
         <View style={{ paddingHorizontal: spacing.md, gap: 8 }}>
           <FaceFilterPublisher room={room} />
           <FilterSelector />
-          <VideoFilterBar room={room} onFilterChange={setFilter} />
         </View>
       ) : null}
 

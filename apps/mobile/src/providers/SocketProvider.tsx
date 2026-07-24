@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
+import type { Socket } from 'socket.io-client';
 import { connectSocket, disconnectSocket, getSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/auth';
 import { useCallStore } from '@/store/call';
@@ -17,13 +18,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const updateSession = useCallStore((s) => s.updateSession);
   const clearCall = useCallStore((s) => s.clear);
   const qc = useQueryClient();
+  const [, setConnectedTick] = useState(0);
 
   useEffect(() => {
     if (!token) {
       disconnectSocket();
+      setConnectedTick((n) => n + 1);
       return;
     }
     const socket = connectSocket(token);
+
+    const bump = () => setConnectedTick((n) => n + 1);
+    socket.on('connect', bump);
+    socket.on('disconnect', bump);
 
     const onInvite = (payload: unknown) => {
       setIncoming(normalizeCallSession(payload));
@@ -99,8 +106,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.on(SocketEvents.Notification, onNotification);
     socket.on(SocketEvents.LiveColiveInvite, onColiveInvite);
 
+    bump();
+
     return () => {
       const s = getSocket();
+      s?.off('connect', bump);
+      s?.off('disconnect', bump);
       s?.off(SocketEvents.CallInvite, onInvite);
       s?.off(SocketEvents.CallWaiting, onInvite);
       s?.off(SocketEvents.CallAccept, onAccept);
@@ -116,18 +127,31 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Lightweight socket accessor for chat screens */
-export function useSocket() {
-  return {
-    on: (event: string, handler: (...args: unknown[]) => void) => {
-      const s = getSocket();
-      s?.on(event, handler);
-      return () => {
-        s?.off(event, handler);
-      };
-    },
-    emit: (event: string, payload?: unknown) => {
-      getSocket()?.emit(event, payload);
-    },
-  };
+type SocketApi = {
+  connected: boolean;
+  get: () => Socket | null;
+  on: (event: string, handler: (...args: unknown[]) => void) => () => void;
+  emit: (event: string, payload?: unknown) => void;
+};
+
+/** Stable socket accessor — identity does not change every render. */
+export function useSocket(): SocketApi {
+  const socket = getSocket();
+  const connected = !!socket?.connected;
+
+  const on = useCallback((event: string, handler: (...args: unknown[]) => void) => {
+    const s = getSocket();
+    s?.on(event, handler);
+    return () => {
+      getSocket()?.off(event, handler);
+    };
+  }, []);
+
+  const emit = useCallback((event: string, payload?: unknown) => {
+    getSocket()?.emit(event, payload);
+  }, []);
+
+  const get = useCallback(() => getSocket(), []);
+
+  return useMemo(() => ({ connected, get, on, emit }), [connected, get, on, emit]);
 }

@@ -11,11 +11,6 @@ import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
 import { LiveKitStage } from '@/components/live/LiveKitStage';
 import { AddCallParticipant } from '@/components/calls/AddCallParticipant';
-import {
-  VideoFilterBar,
-  FilterOverlay,
-  type VideoFilterId,
-} from '@/components/calls/VideoFilterBar';
 import { FilterSelector } from '@/faceFilters/components/FilterSelector';
 import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
 import { callsApi } from '@/api/calls';
@@ -44,7 +39,6 @@ export function CallOverlay() {
   const [elapsed, setElapsed] = useState(0);
   const [nativeOk, setNativeOk] = useState<boolean | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
-  const [filter, setFilter] = useState<VideoFilterId>('none');
 
   const onRoom = useCallback((r: Room | null) => {
     setRoom(r);
@@ -269,7 +263,6 @@ export function CallOverlay() {
             onRoom={onRoom}
             style={{ flex: 1, borderRadius: 0 }}
           />
-          {isVideo ? <FilterOverlay filter={filter} /> : null}
         </View>
       ) : (
         <View style={styles.centerMeta}>
@@ -344,7 +337,6 @@ export function CallOverlay() {
         <View style={styles.filterBar}>
           <FaceFilterPublisher room={room} />
           <FilterSelector />
-          <VideoFilterBar room={room} onFilterChange={setFilter} />
         </View>
       ) : null}
 
