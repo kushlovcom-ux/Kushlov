@@ -28,9 +28,11 @@ function ParticipantTile({
 }) {
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden bg-black">
+      {/* Absolute fill + object-cover so portrait phone streams crop to cover laptop width */}
       <VideoTrack
         trackRef={trackRef as never}
-        className="h-full w-full object-cover"
+        className="lk-video-cover absolute inset-0 !h-full !w-full !max-h-none !max-w-none object-cover"
+        style={{ objectFit: 'cover', width: '100%', height: '100%' }}
       />
     </div>
   );
@@ -55,7 +57,7 @@ function LiveRoomVideo({
 
   return (
     <FaceFilterProvider>
-      <div className="flex h-full flex-col">
+      <div className="relative flex h-full w-full flex-col overflow-hidden">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
           {cameraTracks.length === 0 ? (
             <div className="flex h-full items-center justify-center p-6 text-center text-sm text-white/50">
@@ -67,10 +69,10 @@ function LiveRoomVideo({
             <div
               className={
                 cameraTracks.length === 2
-                  ? 'grid h-full w-full grid-cols-2 gap-0'
+                  ? 'absolute inset-0 grid h-full w-full grid-cols-2 gap-0'
                   : cameraTracks.length > 2
-                    ? 'grid h-full w-full gap-1 p-1 sm:grid-cols-2'
-                    : 'h-full w-full'
+                    ? 'absolute inset-0 grid h-full w-full gap-1 p-1 sm:grid-cols-2'
+                    : 'absolute inset-0 h-full w-full'
               }
             >
               {cameraTracks.map((trackRef) => (
@@ -81,13 +83,14 @@ function LiveRoomVideo({
               ))}
             </div>
           )}
+          {/* Top-right — clear of bottom chat composer */}
           {showAvControls ? (
-            <div className="absolute bottom-3 right-3 z-30">
+            <div className="absolute right-3 top-16 z-30 sm:top-3">
               <PublisherAvControls audioOnly={audioOnly} />
             </div>
           ) : null}
           {showFilters ? (
-            <div className="absolute bottom-16 left-3 right-16 z-20 sm:bottom-3 sm:right-28">
+            <div className="absolute bottom-24 left-3 z-20 max-w-[min(100%,20rem)] sm:bottom-4">
               <FilterSelector />
             </div>
           ) : null}
@@ -104,7 +107,7 @@ function LiveRoomVideo({
               settings: false,
               leave: false,
             }}
-            className="!hidden !border-t !border-white/10 !bg-transparent sm:!flex"
+            className="!hidden"
           />
         ) : null}
         <RoomAudioRenderer />
@@ -171,6 +174,7 @@ export function LiveKitStage({
       data-lk-theme="default"
       style={{ height: '100%', width: '100%', overflow: 'hidden' }}
       options={{ adaptiveStream: true, dynacast: true }}
+      className="h-full w-full overflow-hidden [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
     >
       <LiveRoomVideo
         isHost={isHost}

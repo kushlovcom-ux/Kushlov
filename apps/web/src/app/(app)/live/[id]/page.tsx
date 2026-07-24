@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Gift, X, Users, Radio } from 'lucide-react';
@@ -33,11 +33,24 @@ interface LiveListItem {
   host: { _id?: string; id?: string; displayName?: string; username?: string; avatarUrl?: string };
 }
 
+function mergeChat(prev: LiveChatMsg[], incoming: LiveChatMsg[]): LiveChatMsg[] {
+  if (!incoming.length) return prev;
+  const seen = new Set(prev.map((m) => m._id).filter(Boolean) as string[]);
+  const next = [...prev];
+  for (const m of incoming) {
+    if (!m?.message) continue;
+    if (m._id && seen.has(m._id)) continue;
+    if (m._id) seen.add(m._id);
+    next.push(m);
+  }
+  return next;
+}
+
 export default function LiveRoomPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const me = useAuthStore((s) => s.user);
-  const { socket } = useSocket();
+  const { socket, connected } = useSocket();
   const [token, setToken] = useState<string>();
   const [livekitUrl, setLivekitUrl] = useState<string>();
   const [chat, setChat] = useState<LiveChatMsg[]>([]);
@@ -53,6 +66,7 @@ export default function LiveRoomPage() {
   } | null>(null);
   const [isCoHost, setIsCoHost] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
+  const lastChatIdRef = useRef<string | undefined>(undefined);
 
   const live = useQuery({
     queryKey: ['live', id],
@@ -137,6 +151,43 @@ export default function LiveRoomPage() {
     };
   }, [live.data, id, isHost, isCoHost]);
 
+  const appendChat = useCallback((messages: LiveChatMsg | LiveChatMsg[]) => {
+    const list = Array.isArray(messages) ? messages : [messages];
+    setChat((c) => {
+      const next = mergeChat(c, list);
+      const last = next[next.length - 1]?._id;
+      if (last) lastChatIdRef.current = last;
+      return next;
+    });
+  }, []);
+
+  // HTTP poll — reliable for everyone even when Socket.io is multi-instance / disabled.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+
+    const pull = async () => {
+      try {
+        const after = lastChatIdRef.current;
+        const q = after ? `?after=${encodeURIComponent(after)}&limit=50` : '?limit=40';
+        const res = await api.get(`/live/${id}/chat${q}`);
+        const messages = (res.data?.data?.messages ?? []) as LiveChatMsg[];
+        if (!cancelled && messages.length) appendChat(messages);
+      } catch {
+        /* ignore transient poll errors */
+      }
+    };
+
+    void pull();
+    // Faster when sockets are down; still light when connected.
+    const ms = connected ? 2500 : 1200;
+    const timer = window.setInterval(() => void pull(), ms);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [id, connected, appendChat]);
+
   // Socket room events + co-live invite (re-join room on every connect)
   useEffect(() => {
     if (!socket) return;
@@ -148,11 +199,7 @@ export default function LiveRoomPage() {
     socket.on('connect', joinRoom);
 
     const onChat = (m: LiveChatMsg) => {
-      setChat((c) => {
-        const idKey = m._id;
-        if (idKey && c.some((x) => x._id === idKey)) return c;
-        return [...c, m];
-      });
+      if (m?.message) appendChat(m);
     };
     const onCount = (p: { viewerCount?: number }) => {
       if (p.viewerCount != null) setViewers(p.viewerCount);
@@ -193,7 +240,7 @@ export default function LiveRoomPage() {
       socket.off(SocketEvents.LiveColiveAccept, onColiveAccept);
       socket.off(SocketEvents.LiveColiveLeave, onColiveLeave);
     };
-  }, [socket, id, isCoHost, me?.id, router]);
+  }, [socket, id, isCoHost, me?.id, router, appendChat]);
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
@@ -218,20 +265,13 @@ export default function LiveRoomPage() {
       const res = await api.post(`/live/${id}/chat`, { message });
       const payload = res.data?.data as LiveChatMsg | undefined;
       if (payload?.message) {
-        setChat((c) => {
-          const idKey = payload._id;
-          if (idKey && c.some((x) => x._id === idKey)) return c;
-          return [
-            ...c,
-            {
-              _id: payload._id,
-              message: payload.message,
-              user: payload.user ?? {
-                displayName: me?.displayName ?? 'You',
-                avatarUrl: me?.avatarUrl,
-              },
-            },
-          ];
+        appendChat({
+          _id: payload._id,
+          message: payload.message,
+          user: payload.user ?? {
+            displayName: me?.displayName ?? 'You',
+            avatarUrl: me?.avatarUrl,
+          },
         });
       }
     } catch (e) {
@@ -240,9 +280,9 @@ export default function LiveRoomPage() {
     }
   };
 
-  const inviteColive = async (hostId: string) => {
+  const inviteColive = async (inviteHostId: string) => {
     try {
-      await api.post(`/live/${id}/colive/invite`, { hostId });
+      await api.post(`/live/${id}/colive/invite`, { hostId: inviteHostId });
       toast.success('Co-live invite sent');
       setShowColive(false);
     } catch (e) {
@@ -253,18 +293,17 @@ export default function LiveRoomPage() {
   const acceptColive = async () => {
     if (!coliveInvite) return;
     try {
-      const res = await api.post(`/live/${coliveInvite.liveId}/colive/accept`);
+      await api.post(`/live/${coliveInvite.liveId}/colive/accept`);
       toast.success('Joined as co-host');
       setColiveInvite(null);
       router.push(`/live/${coliveInvite.liveId}`);
-      void res;
     } catch (e) {
       toast.error(apiError(e));
     }
   };
 
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-black">
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-black">
       {coliveInvite && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-card p-6 text-center">
@@ -302,13 +341,13 @@ export default function LiveRoomPage() {
 
       <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-black/80 via-transparent to-black/40" />
 
-      <div className="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-3 rounded-full bg-black/50 px-3 py-1.5 backdrop-blur">
+      <div className="absolute left-4 top-4 z-20 flex max-w-[70%] flex-wrap items-center gap-3 rounded-full bg-black/50 px-3 py-1.5 backdrop-blur">
         <UserAvatar
           name={live.data?.host?.displayName}
           src={live.data?.host?.avatarUrl}
           className="h-7 w-7"
         />
-        <span className="text-sm font-medium">{live.data?.title}</span>
+        <span className="truncate text-sm font-medium">{live.data?.title}</span>
         {coHostName ? (
           <span className="rounded-full bg-brand-pink/30 px-2 py-0.5 text-xs">+ {coHostName}</span>
         ) : null}
@@ -396,8 +435,8 @@ export default function LiveRoomPage() {
         </div>
       )}
 
-      {/* Facebook-style overlay chat — leave right side clear for AV controls on mobile */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 flex max-h-[42%] flex-col justify-end p-3 pr-20 sm:max-w-md sm:pr-3">
+      {/* Chat left; no overlap with AV (AV sits top-right under End). */}
+      <div className="absolute bottom-0 left-0 z-20 flex w-full max-w-lg flex-col justify-end p-3 sm:max-w-md">
         <div
           ref={chatRef}
           className="mb-2 max-h-48 space-y-1.5 overflow-y-auto pr-1 [mask-image:linear-gradient(to_bottom,transparent,black_12%)]"

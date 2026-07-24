@@ -166,6 +166,16 @@ export const hostToken = asyncHandler(async (req: Request, res: Response) => {
   live.viewerCount = viewerCount;
   await live.save();
 
+  // Keep host in participant set so chat fan-out always includes them.
+  await LiveParticipant.updateOne(
+    { liveStream: live._id, user: req.user!.id },
+    {
+      $set: { joinedAt: new Date(), role: 'host' },
+      $unset: { leftAt: '' },
+    },
+    { upsert: true },
+  );
+
   const token = await createLiveKitToken({
     identity: req.user!.id,
     roomName: live.roomName,
@@ -327,6 +337,33 @@ export const liveChat = asyncHandler(async (req: Request, res: Response) => {
   const payload = serializeLiveChat(populated as never);
   await emitLiveEvent(live, SocketEvents.LiveChat, payload);
   return created(res, payload);
+});
+
+/** GET /live/:id/chat — recent chat messages (polling fallback when sockets miss). */
+export const listLiveChat = asyncHandler(async (req: Request, res: Response) => {
+  const live = await LiveStream.findById(req.params.id).select('_id status');
+  if (!live) throw ApiError.notFound('Stream not found');
+
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const afterRaw = typeof req.query.after === 'string' ? req.query.after.trim() : '';
+  const after =
+    afterRaw && /^[a-fA-F0-9]{24}$/.test(afterRaw) ? afterRaw : null;
+
+  const filter: Record<string, unknown> = { liveStream: live._id };
+  if (after) {
+    filter._id = { $gt: after };
+  }
+
+  const rows = await LiveChat.find(filter)
+    .sort(after ? { _id: 1 } : { createdAt: -1 })
+    .limit(limit)
+    .populate('user', 'displayName username avatarUrl')
+    .lean();
+
+  const messages = (after ? rows : [...rows].reverse()).map((doc) =>
+    serializeLiveChat(doc as never),
+  );
+  return ok(res, { messages });
 });
 
 /** POST /live/:id/like — like the stream. */

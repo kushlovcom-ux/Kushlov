@@ -12,6 +12,7 @@ router.use(authenticate);
 router.get('/', ctrl.listLive);
 router.get('/:id/viewers', ctrl.listViewers);
 router.get('/:id/preview-token', ctrl.previewToken);
+router.get('/:id/chat', ctrl.listLiveChat);
 router.get('/:id', ctrl.getLive);
 
 // Host-only stream lifecycle
