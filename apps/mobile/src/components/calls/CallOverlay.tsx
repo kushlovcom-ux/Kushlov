@@ -16,7 +16,8 @@ import {
   FilterOverlay,
   type VideoFilterId,
 } from '@/components/calls/VideoFilterBar';
-import { FaceMaskBar } from '@/components/calls/FaceMaskBar';
+import { FilterSelector } from '@/faceFilters/components/FilterSelector';
+import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
 import { callsApi } from '@/api/calls';
 import { getErrorMessage } from '@/api/client';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -118,10 +119,24 @@ export function CallOverlay() {
     if (!incoming) return;
     haptics.success();
     try {
-      const session = await callsApi.accept(incoming.type, incoming.id);
+      const session = incoming.interrupt
+        ? await callsApi.acceptInterrupt(incoming.type, incoming.id)
+        : await callsApi.accept(incoming.type, incoming.id);
       await dismissIncomingCallNotification(incoming.id);
-      startCall(session, 'callee', incoming.caller);
-      setIncoming(null);
+      if (active && incoming.interrupt) {
+        // Stay on current room; merge brings C into the same LiveKit room.
+        useCallStore.getState().updateSession({
+          id: session.id || active.session.id,
+          token: session.token ?? active.session.token,
+          livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
+          roomName: session.roomName ?? active.session.roomName,
+          status: CallStatus.Ongoing,
+        });
+        setIncoming(null);
+      } else {
+        startCall(session, 'callee', incoming.caller);
+        setIncoming(null);
+      }
     } catch (err) {
       Alert.alert('Could not accept', getErrorMessage(err));
     }
@@ -137,6 +152,34 @@ export function CallOverlay() {
     }
     await dismissIncomingCallNotification(incoming.id);
     setIncoming(null);
+  };
+
+  const kickPeer = async (userId: string, name?: string) => {
+    if (!active) return;
+    Alert.alert('End for participant', `Remove ${name ?? 'this user'} from the call?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            try {
+              const res = await callsApi.removeParticipant(
+                active.session.type,
+                active.session.id,
+                userId,
+              );
+              if (res.ended) {
+                setRoom(null);
+                clear();
+              }
+            } catch (err) {
+              Alert.alert('Remove', getErrorMessage(err));
+            }
+          })();
+        },
+      },
+    ]);
   };
 
   const toggleMute = async () => {
@@ -249,11 +292,58 @@ export function CallOverlay() {
         <View style={{ marginTop: 12 }}>
           <AddCallParticipant callId={active.session.id} type={active.session.type} />
         </View>
+        {active.peer?.id ? (
+          <Pressable
+            onPress={() => kickPeer(active.peer!.id!, active.peer?.displayName)}
+            style={{ marginTop: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+          >
+            <Text variant="caption" color={c.danger}>
+              End call for {active.peer.displayName ?? 'peer'}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
+
+      {incoming ? (
+        <View style={[styles.waitingBanner, { backgroundColor: 'rgba(0,0,0,0.82)', borderColor: c.border }]}>
+          <Text variant="bodyBold">
+            {incoming.caller?.displayName ?? 'Someone'} is calling
+            {incoming.interrupt ? ' (waiting)' : ''}
+          </Text>
+          <Text muted variant="caption" style={{ marginBottom: 8 }}>
+            {incoming.type === CallType.Video ? 'Video' : 'Audio'} — Accept to merge into this call
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'center' }}>
+            <Pressable
+              onPress={rejectIncoming}
+              style={[styles.roundSm, { backgroundColor: c.danger }]}
+              accessibilityLabel="Decline"
+            >
+              <Ionicons name="close" size={22} color="#fff" />
+            </Pressable>
+            <Pressable
+              onPress={acceptIncoming}
+              style={[styles.roundSm, { backgroundColor: c.success }]}
+              accessibilityLabel="Accept"
+            >
+              <Ionicons name="call" size={20} color="#fff" />
+            </Pressable>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 28, marginTop: 6 }}>
+            <Text variant="tiny" color={c.danger}>
+              Decline
+            </Text>
+            <Text variant="tiny" color={c.success}>
+              Accept
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {isVideo ? (
         <View style={styles.filterBar}>
-          <FaceMaskBar room={room} />
+          <FaceFilterPublisher room={room} />
+          <FilterSelector />
           <VideoFilterBar room={room} onFilterChange={setFilter} />
         </View>
       ) : null}
@@ -350,6 +440,17 @@ const styles = StyleSheet.create({
     bottom: 120,
     left: 0,
     right: 0,
+  },
+  waitingBanner: {
+    position: 'absolute',
+    top: 120,
+    left: 16,
+    right: 16,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+    alignItems: 'center',
+    zIndex: 20,
   },
   actions: {
     flexDirection: 'row',

@@ -44,7 +44,6 @@ export function useIncomingCallWatcher() {
 
     const syncIncoming = async () => {
       const { active, incoming } = useCallStore.getState();
-      if (active) return;
       try {
         const { items } = await callsApi.incoming();
         const next = items[0] ?? null;
@@ -56,6 +55,8 @@ export function useIncomingCallWatcher() {
           }
           return;
         }
+        // Allow call-waiting while already on a call; skip only non-interrupt when active.
+        if (active && !next.interrupt) return;
         if (!incoming || incoming.id !== next.id) {
           setIncoming(next);
         }
@@ -76,7 +77,7 @@ export function useIncomingCallWatcher() {
     let prevIncomingId = useCallStore.getState().incoming?.id ?? null;
     const unsubStore = useCallStore.subscribe((state) => {
       const nextId = state.incoming?.id ?? null;
-      if (nextId && nextId !== prevIncomingId && !state.active) {
+      if (nextId && nextId !== prevIncomingId) {
         void ringIfNeeded(
           nextId,
           String(state.incoming?.type ?? 'audio'),
@@ -135,10 +136,25 @@ export function useIncomingCallWatcher() {
 
         if (action === CALL_ACTION_ACCEPT) {
           try {
-            const session = await callsApi.accept(data.callType, data.callId);
             const incoming = useCallStore.getState().incoming;
-            startCall(session, 'callee', incoming?.caller ?? session.caller);
-            setIncoming(null);
+            const isInterrupt = incoming?.interrupt || incoming?.id === data.callId;
+            const session =
+              isInterrupt && (incoming?.interrupt || data.callId)
+                ? await callsApi.acceptInterrupt(data.callType, data.callId)
+                : await callsApi.accept(data.callType, data.callId);
+            const active = useCallStore.getState().active;
+            if (active && (incoming?.interrupt || session.interrupt)) {
+              useCallStore.getState().updateSession({
+                id: session.id || active.session.id,
+                token: session.token ?? active.session.token,
+                livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
+                roomName: session.roomName ?? active.session.roomName,
+              });
+              setIncoming(null);
+            } else {
+              startCall(session, 'callee', incoming?.caller ?? session.caller);
+              setIncoming(null);
+            }
             await dismissIncomingCallNotification(data.callId);
             notifiedId.current = null;
           } catch {

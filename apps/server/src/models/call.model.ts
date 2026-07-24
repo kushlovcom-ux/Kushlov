@@ -11,6 +11,10 @@ export interface ICall extends Document {
   pendingInvites: Types.ObjectId[];
   roomName: string;
   status: CallStatus;
+  /** True when this ringing call is call-waiting against an ongoing call. */
+  isInterrupt?: boolean;
+  /** Ongoing call this interrupt should merge into when accepted. */
+  targetCallId?: Types.ObjectId;
   startedAt?: Date;
   endedAt?: Date;
   durationSec: number;
@@ -47,6 +51,8 @@ function callSchema(type: CallType) {
         default: CallStatus.Ringing,
         index: true,
       },
+      isInterrupt: { type: Boolean, default: false, index: true },
+      targetCallId: { type: Schema.Types.ObjectId, index: true },
       startedAt: Date,
       endedAt: Date,
       durationSec: { type: Number, default: 0 },

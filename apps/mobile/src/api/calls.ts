@@ -23,8 +23,14 @@ export const callsApi = {
     normalizeCallSession(await apiGet<unknown>(`/calls/${type}/${id}`)),
   accept: async (type: CallType | string, id: string) =>
     normalizeCallSession(await apiPost<unknown>(`/calls/${type}/${id}/accept`)),
+  acceptInterrupt: async (type: CallType | string, id: string) =>
+    normalizeCallSession(await apiPost<unknown>(`/calls/${type}/${id}/accept-interrupt`)),
   reject: (type: CallType | string, id: string) =>
     apiPost<CallSession>(`/calls/${type}/${id}/reject`),
+  removeParticipant: (type: CallType | string, id: string, userId: string) =>
+    apiPost<{ call?: CallSession; ended?: boolean }>(
+      `/calls/${type}/${id}/participants/${userId}/remove`,
+    ),
   end: (type: CallType | string, id: string) =>
     apiPost<CallSession>(`/calls/${type}/${id}/end`),
 };

@@ -264,7 +264,7 @@ export default function LiveRoomPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col lg:flex-row">
+    <div className="relative h-screen w-full overflow-hidden bg-black">
       {coliveInvite && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-card p-6 text-center">
@@ -284,165 +284,153 @@ export default function LiveRoomPage() {
         </div>
       )}
 
-      <div className="relative flex-1 p-4">
-        <div className="absolute left-6 top-6 z-10 flex flex-wrap items-center gap-3 rounded-full bg-black/50 px-3 py-1.5 backdrop-blur">
-          <UserAvatar
-            name={live.data?.host?.displayName}
-            src={live.data?.host?.avatarUrl}
-            className="h-7 w-7"
+      <div className="absolute inset-0">
+        {token ? (
+          <LiveKitStage
+            token={token}
+            serverUrl={livekitUrl}
+            isHost={canPublish}
+            publish={canPublish}
+            showFilters={canPublish}
+            onDisconnected={leave}
           />
-          <span className="text-sm font-medium">{live.data?.title}</span>
-          {coHostName ? (
-            <span className="rounded-full bg-brand-pink/30 px-2 py-0.5 text-xs">
-              + {coHostName}
-            </span>
-          ) : null}
-          {isHost ? (
-            <button
-              type="button"
-              onClick={() => setShowViewers((v) => !v)}
-              className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs hover:bg-white/20"
-            >
-              <Users className="h-3 w-3" /> {viewers}
-            </button>
-          ) : (
-            <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">👁 {viewers}</span>
-          )}
-          {isHost ? (
-            <button
-              type="button"
-              onClick={() => setShowColive((v) => !v)}
-              className="rounded-full bg-white/10 px-2 py-0.5 text-xs hover:bg-white/20"
-            >
-              Invite co-host
-            </button>
-          ) : null}
-        </div>
-        <Button
-          variant="destructive"
-          size="sm"
-          className="absolute right-6 top-6 z-10"
-          onClick={leave}
-        >
-          <X className="h-4 w-4" /> {isHost ? 'End' : isCoHost ? 'Leave co-live' : 'Leave'}
-        </Button>
-
-        {isHost && showViewers && (
-          <div className="absolute left-6 top-20 z-10 max-h-72 w-64 overflow-y-auto rounded-2xl border border-white/10 bg-black/70 p-3 backdrop-blur">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">
-              Watching now
-            </p>
-            {viewerList.isLoading ? (
-              <p className="text-sm text-white/40">Loading…</p>
-            ) : (viewerList.data?.viewers?.length ?? 0) === 0 ? (
-              <p className="text-sm text-white/40">No viewers yet</p>
-            ) : (
-              <ul className="space-y-2">
-                {viewerList.data!.viewers.map((v) => (
-                  <li key={v.id} className="flex items-center gap-2">
-                    <UserAvatar name={v.displayName} src={v.avatarUrl} className="h-7 w-7" />
-                    <span className="truncate text-sm">{v.displayName ?? v.username ?? 'Viewer'}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-white/40">Connecting…</div>
         )}
-
-        {isHost && showColive && (
-          <div className="absolute right-6 top-20 z-10 max-h-72 w-72 overflow-y-auto rounded-2xl border border-white/10 bg-black/70 p-3 backdrop-blur">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">
-              Live hosts to invite
-            </p>
-            {coliveTargets.length === 0 ? (
-              <p className="text-sm text-white/40">No other hosts are live</p>
-            ) : (
-              <ul className="space-y-2">
-                {coliveTargets.map((l) => {
-                  const hId = l.host?._id ?? l.host?.id ?? '';
-                  return (
-                    <li key={l._id} className="flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <UserAvatar
-                          name={l.host?.displayName}
-                          src={l.host?.avatarUrl}
-                          className="h-7 w-7"
-                        />
-                        <span className="truncate text-sm">{l.host?.displayName ?? 'Host'}</span>
-                      </div>
-                      <Button size="sm" onClick={() => void inviteColive(String(hId))}>
-                        Invite
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        )}
-
-        <div className="h-full">
-          {token ? (
-            <LiveKitStage
-              token={token}
-              serverUrl={livekitUrl}
-              isHost={canPublish}
-              publish={canPublish}
-              showFilters={canPublish}
-              onDisconnected={leave}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-white/40">Connecting…</div>
-          )}
-        </div>
       </div>
 
-      <div className="flex h-64 flex-col border-t border-white/10 lg:h-auto lg:w-80 lg:border-l lg:border-t-0">
-        <div className="border-b border-white/10 px-4 py-3 font-semibold">
-          Live chat
-          {!canPublish && chatCost > 0 ? (
-            <span className="ml-2 text-xs font-normal text-white/40">{chatCost}♦ / message</span>
-          ) : null}
+      <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-black/80 via-transparent to-black/40" />
+
+      <div className="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-3 rounded-full bg-black/50 px-3 py-1.5 backdrop-blur">
+        <UserAvatar
+          name={live.data?.host?.displayName}
+          src={live.data?.host?.avatarUrl}
+          className="h-7 w-7"
+        />
+        <span className="text-sm font-medium">{live.data?.title}</span>
+        {coHostName ? (
+          <span className="rounded-full bg-brand-pink/30 px-2 py-0.5 text-xs">+ {coHostName}</span>
+        ) : null}
+        {isHost ? (
+          <button
+            type="button"
+            onClick={() => setShowViewers((v) => !v)}
+            className="pointer-events-auto inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-xs hover:bg-white/20"
+          >
+            <Users className="h-3 w-3" /> {viewers}
+          </button>
+        ) : (
+          <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">👁 {viewers}</span>
+        )}
+        {isHost ? (
+          <button
+            type="button"
+            onClick={() => setShowColive((v) => !v)}
+            className="pointer-events-auto rounded-full bg-white/10 px-2 py-0.5 text-xs hover:bg-white/20"
+          >
+            Invite co-host
+          </button>
+        ) : null}
+      </div>
+      <Button
+        variant="destructive"
+        size="sm"
+        className="absolute right-4 top-4 z-20"
+        onClick={leave}
+      >
+        <X className="h-4 w-4" /> {isHost ? 'End' : isCoHost ? 'Leave co-live' : 'Leave'}
+      </Button>
+
+      {isHost && showViewers && (
+        <div className="absolute left-4 top-20 z-20 max-h-72 w-64 overflow-y-auto rounded-2xl border border-white/10 bg-black/70 p-3 backdrop-blur">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">
+            Watching now
+          </p>
+          {viewerList.isLoading ? (
+            <p className="text-sm text-white/40">Loading…</p>
+          ) : (viewerList.data?.viewers?.length ?? 0) === 0 ? (
+            <p className="text-sm text-white/40">No viewers yet</p>
+          ) : (
+            <ul className="space-y-2">
+              {viewerList.data!.viewers.map((v) => (
+                <li key={v.id} className="flex items-center gap-2">
+                  <UserAvatar name={v.displayName} src={v.avatarUrl} className="h-7 w-7" />
+                  <span className="truncate text-sm">{v.displayName ?? v.username ?? 'Viewer'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <div ref={chatRef} className="flex-1 space-y-2 overflow-y-auto p-4">
+      )}
+
+      {isHost && showColive && (
+        <div className="absolute right-4 top-20 z-20 max-h-72 w-72 overflow-y-auto rounded-2xl border border-white/10 bg-black/70 p-3 backdrop-blur">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">
+            Live hosts to invite
+          </p>
+          {coliveTargets.length === 0 ? (
+            <p className="text-sm text-white/40">No other hosts are live</p>
+          ) : (
+            <ul className="space-y-2">
+              {coliveTargets.map((l) => {
+                const hId = l.host?._id ?? l.host?.id ?? '';
+                return (
+                  <li key={l._id} className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <UserAvatar
+                        name={l.host?.displayName}
+                        src={l.host?.avatarUrl}
+                        className="h-7 w-7"
+                      />
+                      <span className="truncate text-sm">{l.host?.displayName ?? 'Host'}</span>
+                    </div>
+                    <Button size="sm" onClick={() => void inviteColive(String(hId))}>
+                      Invite
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Facebook-style overlay chat */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 flex max-h-[42%] flex-col justify-end p-3 sm:max-w-md">
+        <div
+          ref={chatRef}
+          className="mb-2 max-h-48 space-y-1.5 overflow-y-auto pr-1 [mask-image:linear-gradient(to_bottom,transparent,black_12%)]"
+        >
           {chat.map((m, i) => (
-            <div key={m._id ?? i} className="text-sm">
+            <div key={m._id ?? i} className="rounded-lg bg-black/35 px-2.5 py-1 text-sm backdrop-blur-sm">
               <span className="font-semibold text-brand-pink">{m.user?.displayName}: </span>
-              <span className="text-white/80">{m.message}</span>
+              <span className="text-white/90">{m.message}</span>
             </div>
           ))}
-          {chat.length === 0 && <p className="text-sm text-white/30">Be the first to say hi 👋</p>}
         </div>
-        <div className="flex flex-col gap-1 border-t border-white/10 p-3">
-          <div className="flex items-center gap-2">
-            <Input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-              placeholder={
-                !canPublish && chatCost > 0
-                  ? `Say something… (${chatCost}♦)`
-                  : 'Say something…'
-              }
-            />
-            <Button size="icon" onClick={sendChat}>
-              <Send className="h-4 w-4" />
+        <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/55 p-1.5 backdrop-blur">
+          <Input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void sendChat()}
+            placeholder={
+              !canPublish && chatCost > 0 ? `Say something… (${chatCost}♦)` : 'Say something…'
+            }
+            className="h-9 border-0 bg-transparent focus-visible:ring-0"
+          />
+          <Button size="icon" className="h-9 w-9 shrink-0 rounded-full" onClick={() => void sendChat()}>
+            <Send className="h-4 w-4" />
+          </Button>
+          {!canPublish && (
+            <Button
+              size="icon"
+              variant="secondary"
+              className="h-9 w-9 shrink-0 rounded-full"
+              onClick={() => void api.post(`/live/${id}/like`).then(() => toast.success('Liked!'))}
+            >
+              <Gift className="h-4 w-4" />
             </Button>
-            {!canPublish && (
-              <Button
-                size="icon"
-                variant="secondary"
-                onClick={() => void api.post(`/live/${id}/like`).then(() => toast.success('Liked!'))}
-              >
-                <Gift className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-          {!canPublish && chatCost > 0 ? (
-            <p className="text-[11px] text-white/35">
-              Each message costs {chatCost} diamond{chatCost === 1 ? '' : 's'}
-            </p>
-          ) : null}
+          )}
         </div>
       </div>
     </div>

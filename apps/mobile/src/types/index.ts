@@ -302,6 +302,11 @@ export interface CallSession {
   createdAt: string;
   durationSec?: number;
   costDiamonds?: number;
+  /** Call-waiting against an ongoing call */
+  interrupt?: boolean;
+  targetCallId?: string;
+  busy?: boolean;
+  message?: string;
 }
 
 export interface LiveRoom {
@@ -429,10 +434,12 @@ export const SocketEvents = {
   TypingStart: 'typing:start',
   TypingStop: 'typing:stop',
   CallInvite: 'call:invite',
+  CallWaiting: 'call:waiting',
   CallAccept: 'call:accept',
   CallReject: 'call:reject',
   CallEnd: 'call:end',
   CallParticipantJoined: 'call:participant_joined',
+  CallParticipantLeft: 'call:participant_left',
   LiveJoin: 'live:join',
   LiveLeave: 'live:leave',
   LiveChat: 'live:chat',

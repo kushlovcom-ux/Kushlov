@@ -22,6 +22,8 @@ type IncomingInvite = {
   callId: string;
   type: CallType;
   roomName: string;
+  interrupt?: boolean;
+  targetCallId?: string;
   from: {
     id?: string;
     displayName?: string;
@@ -115,7 +117,7 @@ export function CallOverlay() {
     const onInvite = (payload: IncomingInvite) => {
       if (user.role === 'admin') return;
       setIncoming(payload);
-      toast('Incoming call', {
+      toast(payload.interrupt ? 'Call waiting' : 'Incoming call', {
         description: `${payload.from?.displayName ?? 'Someone'} is calling (${payload.type})`,
       });
     };
@@ -127,28 +129,33 @@ export function CallOverlay() {
       token: string;
       livekitUrl?: string;
       maxDurationSec?: number;
+      interrupt?: boolean;
     }) => {
       setOutgoing((prev) => {
-        if (!prev || prev.callId !== payload.callId) return prev;
-        setActive({
-          callId: payload.callId,
-          type: payload.type ?? prev.type,
-          roomName: payload.roomName ?? prev.roomName,
-          token: payload.token,
-          livekitUrl: payload.livekitUrl ?? prev.livekitUrl,
-          maxDurationSec: payload.maxDurationSec ?? prev.maxDurationSec,
-          peerName: prev.peerName,
-          peerId: prev.peerId,
-          peerIsHost: prev.peerIsHost,
-          role: 'caller',
-        });
-        return null;
+        if (!prev) return prev;
+        // Interrupt merge: C was waiting; join the target ongoing room.
+        if (payload.interrupt || prev.callId === payload.callId || payload.token) {
+          setActive({
+            callId: payload.callId,
+            type: payload.type ?? prev.type,
+            roomName: payload.roomName ?? prev.roomName,
+            token: payload.token,
+            livekitUrl: payload.livekitUrl ?? prev.livekitUrl,
+            maxDurationSec: payload.maxDurationSec ?? prev.maxDurationSec,
+            peerName: prev.peerName,
+            peerId: prev.peerId,
+            peerIsHost: prev.peerIsHost,
+            role: 'caller',
+          });
+          return null;
+        }
+        return prev;
       });
     };
 
-    const onReject = () => {
+    const onReject = (payload?: { interrupt?: boolean }) => {
       setOutgoing(null);
-      toast.error('Call declined');
+      toast.error(payload?.interrupt ? 'Call waiting declined' : 'Call declined');
     };
 
     const onEnd = () => {
@@ -158,28 +165,44 @@ export function CallOverlay() {
       setIncoming(null);
       setRemainingSec(null);
       toast.message('Call ended');
-      // Prefer endActive's prompt when this client ends the call; socket path covers remote hangup.
       if (!endingRef.current) offerReviewIfEligible(ended);
     };
 
+    const onParticipantLeft = (payload: {
+      userId?: string;
+      endedForYou?: boolean;
+      callId?: string;
+    }) => {
+      if (payload.endedForYou) {
+        setActive(null);
+        setOutgoing(null);
+        toast.message('You were removed from the call');
+        return;
+      }
+      toast.message('A participant left the call');
+    };
+
     socket.on(SocketEvents.CallInvite, onInvite);
+    socket.on(SocketEvents.CallWaiting, onInvite);
     socket.on(SocketEvents.CallAccept, onAccept);
     socket.on(SocketEvents.CallReject, onReject);
     socket.on(SocketEvents.CallEnd, onEnd);
+    socket.on(SocketEvents.CallParticipantLeft, onParticipantLeft);
 
     return () => {
       socket.off(SocketEvents.CallInvite, onInvite);
+      socket.off(SocketEvents.CallWaiting, onInvite);
       socket.off(SocketEvents.CallAccept, onAccept);
       socket.off(SocketEvents.CallReject, onReject);
       socket.off(SocketEvents.CallEnd, onEnd);
+      socket.off(SocketEvents.CallParticipantLeft, onParticipantLeft);
     };
   }, [socket, user, offerReviewIfEligible]);
 
-  // HTTP poll for incoming calls when Socket.io is unavailable (e.g. Vercel serverless).
+  // HTTP poll for incoming / call-waiting (also while already on a call).
   useEffect(() => {
     if (!user || user.role === 'admin') return;
-    if (connected) return;
-    if (incoming || active) return;
+    if (connected && !active) return;
 
     let cancelled = false;
     const poll = async () => {
@@ -187,9 +210,10 @@ export function CallOverlay() {
         const data = await unwrap<{ items: IncomingInvite[] }>(api.get('/calls/incoming'));
         const next = data.items?.[0];
         if (!cancelled && next) {
+          if (active && !next.interrupt) return;
           setIncoming((prev) => {
             if (prev?.callId === next.callId) return prev;
-            toast('Incoming call', {
+            toast(next.interrupt ? 'Call waiting' : 'Incoming call', {
               description: `${next.from?.displayName ?? 'Someone'} is calling (${next.type})`,
             });
             return next;
@@ -297,11 +321,15 @@ export function CallOverlay() {
       };
       try {
         const data = await unwrap<{
-          call: { _id: string };
-          token: string;
-          roomName: string;
+          call?: { _id: string };
+          callId?: string;
+          token?: string;
+          roomName?: string;
           livekitUrl?: string;
-          maxDurationSec: number;
+          maxDurationSec?: number;
+          busy?: boolean;
+          interrupt?: boolean;
+          message?: string;
         }>(
           api.post('/calls/initiate', {
             type: detail.type,
@@ -314,16 +342,37 @@ export function CallOverlay() {
         const peerIsHost =
           detail.peerIsHost ??
           isApprovedHostPeer(detail.peerRole, detail.peerHostApproved ?? true);
+        const callId = data.call?._id ?? data.callId;
+        if (!callId) throw new Error('No call id');
+
+        if (data.busy || data.interrupt) {
+          setOutgoing({
+            callId,
+            type: detail.type,
+            peerName: detail.peerName,
+            peerId: detail.calleeId,
+            peerIsHost,
+            token: data.token ?? '',
+            roomName: data.roomName ?? '',
+            livekitUrl: data.livekitUrl,
+            maxDurationSec: data.maxDurationSec ?? 0,
+          });
+          toast.message(data.message ?? 'User is busy on another call', {
+            description: 'Waiting if they accept…',
+          });
+          return;
+        }
+
         setOutgoing({
-          callId: data.call._id,
+          callId,
           type: detail.type,
           peerName: detail.peerName,
           peerId: detail.calleeId,
           peerIsHost,
-          token: data.token,
-          roomName: data.roomName,
+          token: data.token!,
+          roomName: data.roomName!,
           livekitUrl: data.livekitUrl,
-          maxDurationSec: data.maxDurationSec,
+          maxDurationSec: data.maxDurationSec!,
         });
         toast.success('Calling…');
       } catch (e) {
@@ -337,14 +386,36 @@ export function CallOverlay() {
   const accept = async () => {
     if (!incoming) return;
     try {
+      const path = incoming.interrupt
+        ? `/calls/${incoming.type}/${incoming.callId}/accept-interrupt`
+        : `/calls/${incoming.type}/${incoming.callId}/accept`;
       const data = await unwrap<{
         token: string;
         roomName: string;
         livekitUrl?: string;
         maxDurationSec: number;
-      }>(api.post(`/calls/${incoming.type}/${incoming.callId}/accept`));
+        call?: { _id?: string };
+        type?: CallType;
+        merged?: boolean;
+      }>(api.post(path));
+
+      if (active && incoming.interrupt) {
+        setActive({
+          ...active,
+          callId: data.call?._id ?? active.callId,
+          type: data.type ?? active.type,
+          roomName: data.roomName ?? active.roomName,
+          token: data.token || active.token,
+          livekitUrl: data.livekitUrl ?? active.livekitUrl,
+          maxDurationSec: data.maxDurationSec ?? active.maxDurationSec,
+        });
+        setIncoming(null);
+        toast.success('Merged into your call');
+        return;
+      }
+
       setActive({
-        callId: incoming.callId,
+        callId: data.call?._id ?? incoming.callId,
         type: incoming.type,
         roomName: data.roomName,
         token: data.token,
@@ -372,6 +443,22 @@ export function CallOverlay() {
     setIncoming(null);
   };
 
+  const kickPeer = async () => {
+    if (!active?.peerId) return;
+    try {
+      const res = await unwrap<{ ended?: boolean }>(
+        api.post(`/calls/${active.type}/${active.callId}/participants/${active.peerId}/remove`),
+      );
+      toast.success(`Removed ${active.peerName}`);
+      if (res.ended) {
+        setActive(null);
+        setOutgoing(null);
+      }
+    } catch (e) {
+      toast.error(apiError(e));
+    }
+  };
+
   return (
     <>
       {(incoming || outgoing || active) && (
@@ -393,25 +480,32 @@ export function CallOverlay() {
                   <Phone className="h-4 w-4" />
                 )}
                 Incoming {incoming.type} call
+                {incoming.interrupt ? ' (waiting)' : ''}
               </p>
-              <div className="mt-6 flex justify-center gap-4">
-                <Button
-                  size="lg"
-                  variant="destructive"
-                  className="h-14 w-14 rounded-full"
-                  onClick={() => void reject()}
-                  aria-label="Reject"
-                >
-                  <PhoneOff className="h-6 w-6" />
-                </Button>
-                <Button
-                  size="lg"
-                  className="h-14 w-14 rounded-full bg-emerald-500 hover:bg-emerald-600"
-                  onClick={() => void accept()}
-                  aria-label="Accept"
-                >
-                  <Phone className="h-6 w-6" />
-                </Button>
+              <div className="mt-6 flex justify-center gap-8">
+                <div className="flex flex-col items-center gap-2">
+                  <Button
+                    size="lg"
+                    variant="destructive"
+                    className="h-14 w-14 rounded-full"
+                    onClick={() => void reject()}
+                    aria-label="Decline"
+                  >
+                    <PhoneOff className="h-6 w-6" />
+                  </Button>
+                  <span className="text-xs text-red-400">Decline</span>
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <Button
+                    size="lg"
+                    className="h-14 w-14 rounded-full bg-emerald-500 hover:bg-emerald-600"
+                    onClick={() => void accept()}
+                    aria-label="Accept"
+                  >
+                    <Phone className="h-6 w-6" />
+                  </Button>
+                  <span className="text-xs text-emerald-400">Accept</span>
+                </div>
               </div>
             </div>
           )}
@@ -440,7 +534,34 @@ export function CallOverlay() {
           )}
 
           {active && (
-            <div className="flex h-[min(90vh,720px)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-card shadow-2xl">
+            <div className="relative flex h-[min(90vh,720px)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-card shadow-2xl">
+              {incoming ? (
+                <div className="absolute left-4 right-4 top-16 z-20 rounded-2xl border border-white/15 bg-black/85 p-4 text-center backdrop-blur">
+                  <p className="font-semibold">
+                    {incoming.from?.displayName ?? 'Someone'} is calling
+                    {incoming.interrupt ? ' (waiting)' : ''}
+                  </p>
+                  <p className="mt-1 text-xs text-white/50">
+                    Accept to merge into this call
+                  </p>
+                  <div className="mt-3 flex justify-center gap-6">
+                    <div className="flex flex-col items-center gap-1">
+                      <Button size="sm" variant="destructive" onClick={() => void reject()}>
+                        Decline
+                      </Button>
+                    </div>
+                    <div className="flex flex-col items-center gap-1">
+                      <Button
+                        size="sm"
+                        className="bg-emerald-500 hover:bg-emerald-600"
+                        onClick={() => void accept()}
+                      >
+                        Accept
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                 <div>
                   <p className="font-semibold">{active.peerName}</p>
@@ -469,7 +590,7 @@ export function CallOverlay() {
                   </Button>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 p-3">
+              <div className="min-h-0 flex-1 p-0">
                 <LiveKitStage
                   token={active.token}
                   serverUrl={active.livekitUrl}
@@ -481,10 +602,12 @@ export function CallOverlay() {
                 />
               </div>
               <div className="flex flex-col items-center gap-2 border-t border-white/10 p-4">
-                <AddCallParticipant
-                  callId={active.callId}
-                  type={active.type}
-                />
+                <AddCallParticipant callId={active.callId} type={active.type} />
+                {active.peerId ? (
+                  <Button size="sm" variant="secondary" onClick={() => void kickPeer()}>
+                    End call for {active.peerName}
+                  </Button>
+                ) : null}
                 <Button variant="destructive" onClick={() => void endActive()}>
                   <PhoneOff className="h-4 w-4" /> End call
                 </Button>

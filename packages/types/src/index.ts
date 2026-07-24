@@ -284,10 +284,12 @@ export const SocketEvents = {
   TypingStop: 'typing:stop',
   // calls
   CallInvite: 'call:invite',
+  CallWaiting: 'call:waiting',
   CallAccept: 'call:accept',
   CallReject: 'call:reject',
   CallEnd: 'call:end',
   CallParticipantJoined: 'call:participant_joined',
+  CallParticipantLeft: 'call:participant_left',
   // live
   LiveJoin: 'live:join',
   LiveLeave: 'live:leave',

@@ -30,10 +30,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     };
     const onAccept = (payload: unknown) => {
       const session = normalizeCallSession(payload);
-      updateSession({ ...session, status: CallStatus.Ongoing });
+      const active = useCallStore.getState().active;
+      if (active && (session.interrupt || !active.session.token)) {
+        useCallStore.getState().updateSession({
+          ...session,
+          status: CallStatus.Ongoing,
+          token: session.token ?? active.session.token,
+          livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
+        });
+      } else {
+        updateSession({ ...session, status: CallStatus.Ongoing });
+      }
     };
     const onEnd = () => {
       clearCall();
+    };
+    const onParticipantLeft = (payload: { endedForYou?: boolean }) => {
+      if (payload?.endedForYou) clearCall();
     };
     const onMessage = () => {
       qc.invalidateQueries({ queryKey: queryKeys.conversations });
@@ -77,9 +90,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     };
 
     socket.on(SocketEvents.CallInvite, onInvite);
+    socket.on(SocketEvents.CallWaiting, onInvite);
     socket.on(SocketEvents.CallAccept, onAccept);
     socket.on(SocketEvents.CallReject, onEnd);
     socket.on(SocketEvents.CallEnd, onEnd);
+    socket.on(SocketEvents.CallParticipantLeft, onParticipantLeft);
     socket.on(SocketEvents.MessageNew, onMessage);
     socket.on(SocketEvents.Notification, onNotification);
     socket.on(SocketEvents.LiveColiveInvite, onColiveInvite);
@@ -87,9 +102,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     return () => {
       const s = getSocket();
       s?.off(SocketEvents.CallInvite, onInvite);
+      s?.off(SocketEvents.CallWaiting, onInvite);
       s?.off(SocketEvents.CallAccept, onAccept);
       s?.off(SocketEvents.CallReject, onEnd);
       s?.off(SocketEvents.CallEnd, onEnd);
+      s?.off(SocketEvents.CallParticipantLeft, onParticipantLeft);
       s?.off(SocketEvents.MessageNew, onMessage);
       s?.off(SocketEvents.Notification, onNotification);
       s?.off(SocketEvents.LiveColiveInvite, onColiveInvite);

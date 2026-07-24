@@ -18,7 +18,8 @@ import { Screen } from '@/components/common/Screen';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { LiveKitStage } from '@/components/live/LiveKitStage';
 import { VideoFilterBar, FilterOverlay, type VideoFilterId } from '@/components/calls/VideoFilterBar';
-import { FaceMaskBar } from '@/components/calls/FaceMaskBar';
+import { FilterSelector } from '@/faceFilters/components/FilterSelector';
+import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
 import { liveApi } from '@/api/live';
 import { getErrorMessage } from '@/api/client';
 import { queryKeys } from '@/constants/queryKeys';
@@ -264,7 +265,8 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   }
 
   return (
-    <Screen>
+    <Screen padded={false}>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
       <Header
         title={live.data?.title ?? 'Live'}
         onBack={() => navigation.goBack()}
@@ -293,7 +295,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
           {isHost ? (
             <Pressable onPress={() => setShowViewers(true)}>
               <Text variant="caption" color={c.pink}>
-                Who's watching
+                Who&apos;s watching
               </Text>
             </Pressable>
           ) : null}
@@ -309,7 +311,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
             <Button title="Retry" size="sm" onPress={() => live.refetch()} style={{ marginTop: 12 }} />
           </View>
         ) : token && livekitUrl ? (
-          <View style={{ flex: 1 }}>
+          <View style={StyleSheet.absoluteFill}>
             <LiveKitStage
               token={token}
               serverUrl={livekitUrl}
@@ -326,50 +328,50 @@ export function LiveRoomScreen({ navigation, route }: Props) {
             <Text muted>{connecting ? 'Connecting…' : 'No media token'}</Text>
           </View>
         )}
+
+        <View style={styles.chatOverlay} pointerEvents="box-none">
+          <FlatList
+            data={messages}
+            keyExtractor={(item, i) => item.id ?? String(i)}
+            style={{ maxHeight: 150 }}
+            renderItem={({ item }) => (
+              <View style={styles.chatBubble}>
+                <Text>
+                  <Text color={c.pink} variant="bodyBold">
+                    {item.user?.displayName ?? 'User'}:{' '}
+                  </Text>
+                  <Text color="#fff">{item.message}</Text>
+                </Text>
+              </View>
+            )}
+          />
+          <View style={styles.chatRow}>
+            <View style={{ flex: 1 }}>
+              <Input
+                value={chat}
+                onChangeText={setChat}
+                placeholder={
+                  !canPublish && chatCost > 0 ? `Say something… (${chatCost}♦/msg)` : 'Say something…'
+                }
+              />
+            </View>
+            <Button title="Send" size="sm" onPress={sendChat} />
+            <Button
+              title="Like"
+              size="sm"
+              variant="secondary"
+              onPress={() => liveApi.like(liveId).catch(() => undefined)}
+            />
+          </View>
+        </View>
       </View>
 
       {canPublish ? (
-        <View>
-          <FaceMaskBar room={room} />
+        <View style={{ paddingHorizontal: spacing.md, gap: 8 }}>
+          <FaceFilterPublisher room={room} />
+          <FilterSelector />
           <VideoFilterBar room={room} onFilterChange={setFilter} />
         </View>
-      ) : null}
-
-      <View style={styles.row}>
-        <Button title="Like" size="sm" onPress={() => liveApi.like(liveId).catch(() => undefined)} />
-      </View>
-
-      <FlatList
-        data={messages}
-        keyExtractor={(item, i) => item.id ?? String(i)}
-        style={{ flex: 1, marginTop: spacing.md }}
-        renderItem={({ item }) => (
-          <Text style={{ marginBottom: 6 }}>
-            <Text color={c.pink} variant="bodyBold">
-              {item.user?.displayName ?? 'User'}:{' '}
-            </Text>
-            {item.message}
-          </Text>
-        )}
-        ListEmptyComponent={<Text muted>No chat yet</Text>}
-      />
-
-      <View style={styles.chatRow}>
-        <View style={{ flex: 1 }}>
-          <Input
-            value={chat}
-            onChangeText={setChat}
-            placeholder={
-              !canPublish && chatCost > 0 ? `Say something… (${chatCost}♦/msg)` : 'Say something…'
-            }
-          />
-        </View>
-        <Button title="Send" size="sm" onPress={sendChat} />
-      </View>
-      {!canPublish && chatCost > 0 ? (
-        <Text variant="tiny" muted style={{ marginBottom: 4 }}>
-          Live chat costs {chatCost} diamond{chatCost === 1 ? '' : 's'} per message
-        </Text>
       ) : null}
 
       <Modal visible={showViewers} transparent animationType="fade" onRequestClose={() => setShowViewers(false)}>
@@ -429,6 +431,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
+      </View>
     </Screen>
   );
 }
@@ -440,17 +443,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.sm,
     gap: 8,
+    paddingHorizontal: spacing.md,
   },
-  stageWrap: { height: 260, borderRadius: 16, overflow: 'hidden' },
+  stageWrap: { flex: 1, overflow: 'hidden', position: 'relative', backgroundColor: '#000' },
   stageFallback: {
-    flex: 1,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
     padding: spacing.lg,
   },
-  row: { flexDirection: 'row', marginTop: spacing.md },
-  chatRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  chatOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: spacing.md,
+    maxHeight: '48%',
+    justifyContent: 'flex-end',
+  },
+  chatBubble: {
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 4,
+    alignSelf: 'flex-start',
+    maxWidth: '92%',
+  },
+  chatRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',

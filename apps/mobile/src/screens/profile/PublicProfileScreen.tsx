@@ -112,6 +112,15 @@ export function PublicProfileScreen({ navigation, route }: Props) {
         }
       }
       const session = await callsApi.initiate({ type, calleeId: userId });
+      if (session.busy || session.interrupt) {
+        Alert.alert(
+          'User is busy',
+          session.message ??
+            'One of the invited users is busy on another call. Waiting if they accept…',
+        );
+        startCall(session, 'caller', userQ.data ?? undefined);
+        return;
+      }
       startCall(session, 'caller', userQ.data ?? undefined);
     } catch (err) {
       Alert.alert('Call failed', getErrorMessage(err));

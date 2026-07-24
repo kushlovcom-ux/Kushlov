@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import { FaceMaskOverlay, useParticipantFaceMask } from '@/components/calls/FaceMaskBar';
+import {
+  FaceFilterOverlay,
+  useLocalOrRemoteFaceFilter,
+} from '@/faceFilters/components/FaceFilterOverlay';
 import { ensureLiveKitNative } from '@/services/livekit';
-import { useFaceMaskStore } from '@/store/faceMask';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { Room } from 'livekit-client';
 import type { Participant } from 'livekit-client';
@@ -222,12 +224,10 @@ function ParticipantVideoTile({
   multi: boolean;
 }) {
   const participant = (trackRef as { participant: Participant }).participant;
-  const attrMask = useParticipantFaceMask(participant);
-  const localMask = useFaceMaskStore((s) => s.localMaskId);
-  const maskId = participant.isLocal ? localMask || attrMask : attrMask;
+  const filterId = useLocalOrRemoteFaceFilter(participant);
 
   return (
-    <View style={[multi ? styles.tileMulti : styles.tile, { backgroundColor: elevated }]}>
+    <View style={[multi ? styles.tileMulti : styles.tile]}>
       <lk.VideoTrack
         trackRef={trackRef}
         style={StyleSheet.absoluteFill}
@@ -235,7 +235,7 @@ function ParticipantVideoTile({
         mirror={isLocal}
         zOrder={isLocal ? 1 : 0}
       />
-      <FaceMaskOverlay maskId={maskId} mirrored={isLocal} />
+      <FaceFilterOverlay filterId={filterId} mirrored={isLocal} />
     </View>
   );
 }
@@ -254,15 +254,19 @@ const styles = StyleSheet.create({
   },
   gridMulti: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
+    height: '100%',
   },
   tile: {
     flex: 1,
     overflow: 'hidden',
+    backgroundColor: '#000',
   },
   tileMulti: {
     width: '50%',
-    minHeight: 160,
+    height: '100%',
+    minHeight: '100%',
     overflow: 'hidden',
+    backgroundColor: '#000',
   },
 });

@@ -13,7 +13,7 @@ import { AudioCall, ICall, User, VideoCall } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
-import { createLiveKitToken } from '../../services/livekit.service';
+import { createLiveKitToken, removeParticipant } from '../../services/livekit.service';
 import { spendDiamonds, ensureWallet } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
 import { emitToUser } from '../../socket/io';
@@ -48,6 +48,28 @@ function isCallMember(call: ICall, userId: string): boolean {
 
 function isPendingInvitee(call: ICall, userId: string): boolean {
   return (call.pendingInvites ?? []).some((p) => p.toString() === userId);
+}
+
+/** Find an Ongoing call (audio or video) that includes this user. Prefer matching type. */
+async function findOngoingCallForUser(
+  userId: string,
+  preferType?: CallType,
+): Promise<{ call: ICall; type: CallType } | null> {
+  const filter = {
+    status: CallStatus.Ongoing,
+    $or: [{ caller: userId }, { callee: userId }, { participants: userId }],
+  };
+  if (preferType) {
+    const preferred = await modelFor(preferType).findOne(filter);
+    if (preferred) return { call: preferred, type: preferType };
+  }
+  const [audio, video] = await Promise.all([
+    AudioCall.findOne(filter),
+    VideoCall.findOne(filter),
+  ]);
+  if (audio) return { call: audio, type: CallType.Audio };
+  if (video) return { call: video, type: CallType.Video };
+  return null;
 }
 
 
@@ -88,6 +110,117 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   if (busy.has(req.user!.id)) {
     throw ApiError.badRequest('You are already on another call');
   }
+
+  // Soft-busy / call-waiting: 1:1 only — callee is on another Ongoing call.
+  const calleeBusy = busy.has(primaryCalleeId);
+  if (calleeBusy && groupIds.length === 1) {
+    const ongoing = await findOngoingCallForUser(primaryCalleeId, type);
+    if (!ongoing) {
+      throw ApiError.badRequest('One of the invited users is busy on another call');
+    }
+    if (participantIdsOf(ongoing.call).length >= MAX_CALL_PARTICIPANTS) {
+      throw ApiError.badRequest('That call is full');
+    }
+
+    const callee = await User.findById(primaryCalleeId).select(
+      'displayName role isHostApproved isOnline videoPrice audioPrice',
+    );
+    if (!callee) throw ApiError.notFound('Callee not found');
+
+    const peerKind = peerKindForRoles(callerRole, callee.role);
+    if (!peerKind) throw ApiError.forbidden('You cannot call this account');
+    if ((peerKind === 'host' || peerKind === 'hostHost') && !isApprovedHost(callee)) {
+      throw ApiError.forbidden('You can only call approved hosts');
+    }
+
+    const settings = await getSettings();
+    if (!settings.features.callsEnabled) throw ApiError.forbidden('Calls are currently disabled');
+
+    const ratePerMinute = resolveCallRatePerMinute(settings, callee, type, peerKind);
+    const secondsPerDiamond = resolveSecondsPerDiamond(settings, type, peerKind);
+    const wallet = await ensureWallet(req.user!.id);
+    const maxDurationSec = maxAffordableCallSeconds({
+      diamonds: wallet.diamonds,
+      ratePerMinute,
+      secondsPerDiamond,
+    });
+    const minNeeded = ratePerMinute > 0 ? ratePerMinute : secondsPerDiamond > 0 ? 1 : 0;
+    if (wallet.diamonds <= 0 || wallet.diamonds < minNeeded || maxDurationSec < 1) {
+      throw ApiError.badRequest(
+        `Not enough diamonds to start this ${type} call. Need at least ${Math.max(1, minNeeded)} diamond(s).`,
+      );
+    }
+
+    const Model = modelFor(type);
+    const interrupt = await Model.create({
+      type,
+      caller: req.user!.id,
+      callee: primaryCalleeId,
+      participants: [req.user!.id],
+      pendingInvites: [primaryCalleeId],
+      roomName: `interrupt_${req.user!.id}_${primaryCalleeId}_${Date.now()}`,
+      status: CallStatus.Ringing,
+      isInterrupt: true,
+      targetCallId: ongoing.call._id,
+      ratePerMinute,
+      secondsPerDiamond,
+      maxDurationSec,
+    });
+
+    const caller = await User.findById(req.user!.id).select(
+      'displayName avatarUrl role isHostApproved',
+    );
+    const waitingPayload = {
+      callId: interrupt._id.toString(),
+      type,
+      interrupt: true,
+      targetCallId: ongoing.call._id.toString(),
+      targetType: ongoing.type,
+      from: {
+        id: caller?._id.toString(),
+        displayName: caller?.displayName,
+        avatarUrl: caller?.avatarUrl,
+        role: caller?.role,
+        isHostApproved: caller?.isHostApproved,
+      },
+      ratePerMinute,
+      maxDurationSec,
+    };
+    emitToUser(primaryCalleeId, SocketEvents.CallWaiting, waitingPayload);
+    emitToUser(primaryCalleeId, SocketEvents.CallInvite, waitingPayload);
+    void notify({
+      userId: primaryCalleeId,
+      type: NotificationType.Call,
+      title: type === CallType.Video ? 'Incoming video call' : 'Incoming audio call',
+      body: `${caller?.displayName ?? 'Someone'} is calling (call waiting)`,
+      actor: req.user!.id,
+      data: {
+        kind: 'incoming_call',
+        interrupt: true,
+        callId: interrupt._id.toString(),
+        callType: type,
+        targetCallId: ongoing.call._id.toString(),
+      },
+    });
+
+    return created(
+      res,
+      {
+        busy: true,
+        interrupt: true,
+        message: 'One of the invited users is busy on another call',
+        call: interrupt,
+        callId: interrupt._id.toString(),
+        type,
+        targetCallId: ongoing.call._id.toString(),
+        ratePerMinute,
+        secondsPerDiamond,
+        maxDurationSec,
+      },
+      'User is busy — call waiting…',
+    );
+  }
+
   for (const id of groupIds) {
     if (busy.has(id)) {
       throw ApiError.badRequest('One of the invited users is busy on another call');
@@ -230,6 +363,9 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
   const call = await modelFor(type).findById(req.params.id);
   if (!call) throw ApiError.notFound('Call not found');
+  if (call.isInterrupt) {
+    throw ApiError.badRequest('Use accept-interrupt for call-waiting invites');
+  }
   const uid = req.user!.id;
   const isPrimaryCallee = call.callee.toString() === uid;
   const isInvitee = isPendingInvitee(call, uid);
@@ -328,7 +464,7 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
   );
 });
 
-/** POST /calls/:type/:id/reject — callee / invitee rejects. */
+/** POST /calls/:type/:id/reject — callee / invitee rejects (including call-waiting interrupt). */
 export const rejectCall = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
   const call = await modelFor(type).findById(req.params.id);
@@ -337,6 +473,20 @@ export const rejectCall = asyncHandler(async (req: Request, res: Response) => {
   const isPrimary = call.callee.toString() === uid;
   const isInvitee = isPendingInvitee(call, uid);
   if (!isPrimary && !isInvitee) throw ApiError.forbidden('Not your call');
+
+  // Interrupt / call-waiting: decline without ending the ongoing A–B call.
+  if (call.isInterrupt && call.status === CallStatus.Ringing) {
+    call.status = CallStatus.Rejected;
+    call.endedAt = new Date();
+    call.pendingInvites = [];
+    await call.save();
+    emitToUser(call.caller.toString(), SocketEvents.CallReject, {
+      callId: call._id.toString(),
+      interrupt: true,
+      reason: 'busy_declined',
+    });
+    return ok(res, call, 'Call waiting declined');
+  }
 
   // Secondary invitee declining: just remove from pending.
   if (!isPrimary || call.status === CallStatus.Ongoing) {
@@ -354,6 +504,187 @@ export const rejectCall = asyncHandler(async (req: Request, res: Response) => {
   await call.save();
   emitToUser(call.caller.toString(), SocketEvents.CallReject, { callId: call._id.toString() });
   return ok(res, call, 'Call rejected');
+});
+
+/**
+ * POST /calls/:type/:id/accept-interrupt
+ * Busy user A accepts C's call-waiting invite → merge C into A's ongoing room.
+ */
+export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) => {
+  const type = req.params.type as CallType;
+  const interrupt = await modelFor(type).findById(req.params.id);
+  if (!interrupt) throw ApiError.notFound('Call not found');
+  if (!interrupt.isInterrupt) throw ApiError.badRequest('Not a call-waiting invite');
+  if (interrupt.status !== CallStatus.Ringing) {
+    throw ApiError.badRequest('Call waiting is no longer active');
+  }
+  const uid = req.user!.id;
+  if (interrupt.callee.toString() !== uid && !isPendingInvitee(interrupt, uid)) {
+    throw ApiError.forbidden('Not your call');
+  }
+  if (!interrupt.targetCallId) throw ApiError.badRequest('Missing target call');
+
+  // Prefer same type as interrupt; fall back to any ongoing for this user.
+  let target =
+    (await modelFor(type).findById(interrupt.targetCallId)) ||
+    (await AudioCall.findById(interrupt.targetCallId)) ||
+    (await VideoCall.findById(interrupt.targetCallId));
+  let targetType = type;
+  if (target && target.type) targetType = target.type as CallType;
+
+  if (!target || target.status !== CallStatus.Ongoing) {
+    const fallback = await findOngoingCallForUser(uid);
+    if (!fallback) {
+      interrupt.status = CallStatus.Failed;
+      interrupt.endedAt = new Date();
+      await interrupt.save();
+      throw ApiError.badRequest('Your current call ended — cannot merge');
+    }
+    target = fallback.call;
+    targetType = fallback.type;
+  }
+
+  if (!isCallMember(target, uid)) throw ApiError.forbidden('Not on the ongoing call');
+  if (participantIdsOf(target).length >= MAX_CALL_PARTICIPANTS) {
+    throw ApiError.badRequest('Call is full');
+  }
+
+  const joinerId = interrupt.caller.toString();
+  if (isCallMember(target, joinerId)) {
+    interrupt.status = CallStatus.Ended;
+    interrupt.endedAt = new Date();
+    await interrupt.save();
+    throw ApiError.badRequest('Caller is already on this call');
+  }
+
+  target.pendingInvites = (target.pendingInvites ?? []).filter((p) => p.toString() !== joinerId);
+  const parts = new Set(participantIdsOf(target));
+  parts.add(joinerId);
+  target.participants = [...parts] as unknown as typeof target.participants;
+  await target.save();
+
+  interrupt.status = CallStatus.Ended;
+  interrupt.endedAt = new Date();
+  interrupt.pendingInvites = [];
+  await interrupt.save();
+
+  const livekitUrl = getLiveKitPublicUrl();
+  const joinerToken = await createLiveKitToken({
+    identity: joinerId,
+    roomName: target.roomName,
+    canPublish: true,
+  });
+  const acceptorToken = await createLiveKitToken({
+    identity: uid,
+    roomName: target.roomName,
+    canPublish: true,
+  });
+
+  const joiner = await User.findById(joinerId).select('displayName avatarUrl');
+  const joinPayload = {
+    callId: target._id.toString(),
+    type: targetType,
+    roomName: target.roomName,
+    livekitUrl,
+    maxDurationSec: target.maxDurationSec,
+    mergedFromInterrupt: interrupt._id.toString(),
+    participant: {
+      id: joinerId,
+      displayName: joiner?.displayName,
+      avatarUrl: joiner?.avatarUrl,
+    },
+  };
+
+  emitToUser(joinerId, SocketEvents.CallAccept, {
+    ...joinPayload,
+    token: joinerToken,
+    interrupt: true,
+    call: target,
+  });
+  for (const memberId of participantIdsOf(target)) {
+    if (memberId === joinerId) continue;
+    emitToUser(memberId, SocketEvents.CallParticipantJoined, joinPayload);
+  }
+
+  return ok(
+    res,
+    {
+      call: target,
+      type: targetType,
+      token: acceptorToken,
+      roomName: target.roomName,
+      livekitUrl,
+      maxDurationSec: target.maxDurationSec,
+      merged: true,
+    },
+    'Merged into call',
+  );
+});
+
+/**
+ * POST /calls/:type/:id/participants/:userId/remove
+ * Remove one participant without ending the whole call (unless fewer than 2 remain).
+ */
+export const removeCallParticipant = asyncHandler(async (req: Request, res: Response) => {
+  const type = req.params.type as CallType;
+  const targetUserId = req.params.userId;
+  const call = await modelFor(type).findById(req.params.id);
+  if (!call) throw ApiError.notFound('Call not found');
+  if (call.status !== CallStatus.Ongoing) throw ApiError.badRequest('Call is not ongoing');
+  if (!isCallMember(call, req.user!.id)) throw ApiError.forbidden('Not your call');
+  if (targetUserId === req.user!.id) {
+    throw ApiError.badRequest('Use end call to leave yourself');
+  }
+  if (!isCallMember(call, targetUserId)) {
+    throw ApiError.badRequest('User is not on this call');
+  }
+
+  // Prefer caller authority; also allow any member to remove peers (UI gates).
+  const members = participantIdsOf(call).filter((id) => id !== targetUserId);
+  call.participants = members as unknown as typeof call.participants;
+  call.pendingInvites = (call.pendingInvites ?? []).filter((p) => p.toString() !== targetUserId);
+  await call.save();
+
+  try {
+    await removeParticipant(call.roomName, targetUserId);
+  } catch {
+    // room may already be gone
+  }
+
+  emitToUser(targetUserId, SocketEvents.CallParticipantLeft, {
+    callId: call._id.toString(),
+    type,
+    userId: targetUserId,
+    removedBy: req.user!.id,
+    endedForYou: true,
+  });
+  for (const memberId of members) {
+    emitToUser(memberId, SocketEvents.CallParticipantLeft, {
+      callId: call._id.toString(),
+      type,
+      userId: targetUserId,
+      removedBy: req.user!.id,
+    });
+  }
+
+  if (members.length < 2) {
+    // Tear down remaining 1:1 remnant.
+    req.params.id = call._id.toString();
+    // Inline minimal end for leftover participant
+    call.status = CallStatus.Ended;
+    call.endedAt = new Date();
+    call.pendingInvites = [];
+    await call.save();
+    for (const memberId of members) {
+      emitToUser(memberId, SocketEvents.CallEnd, {
+        callId: call._id.toString(),
+        reason: 'last_peer_removed',
+      });
+    }
+    return ok(res, { call, ended: true }, 'Participant removed; call ended');
+  }
+
+  return ok(res, { call, ended: false }, 'Participant removed');
 });
 
 /** POST /calls/:type/:id/invite — add a user to an ongoing conference (1A). */
@@ -540,6 +871,8 @@ export const listIncomingCalls = asyncHandler(async (req: Request, res: Response
         roomName: call.roomName,
         maxDurationSec: call.maxDurationSec,
         conference: (call.participants?.length ?? 0) > 1 || (call.pendingInvites?.length ?? 0) > 1,
+        interrupt: Boolean(call.isInterrupt),
+        targetCallId: call.targetCallId?.toString?.(),
         from: {
           id: caller?._id?.toString?.() ?? caller?.id,
           displayName: caller?.displayName,

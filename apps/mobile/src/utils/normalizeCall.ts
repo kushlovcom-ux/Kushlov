@@ -26,6 +26,10 @@ type RawCallPayload = {
   callerId?: string;
   calleeId?: string;
   createdAt?: string;
+  interrupt?: boolean;
+  targetCallId?: string;
+  busy?: boolean;
+  message?: string;
 };
 
 function idOf(value: unknown): string {
@@ -73,5 +77,12 @@ export function normalizeCallSession(raw: unknown): CallSession {
     token: data.token,
     livekitUrl: data.livekitUrl,
     createdAt: (call.createdAt as string | undefined) ?? data.createdAt ?? new Date().toISOString(),
+    interrupt: Boolean(data.interrupt ?? (call as { isInterrupt?: boolean }).isInterrupt),
+    targetCallId:
+      (data.targetCallId as string | undefined) ||
+      idOf((call as { targetCallId?: unknown }).targetCallId) ||
+      undefined,
+    busy: Boolean(data.busy),
+    message: data.message,
   };
 }

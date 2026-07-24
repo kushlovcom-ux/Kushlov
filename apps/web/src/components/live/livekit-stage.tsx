@@ -1,7 +1,6 @@
 'use client';
 
 import '@livekit/components-styles';
-import { useEffect, useRef, useState } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -10,57 +9,29 @@ import {
   useTracks,
   isTrackReference,
 } from '@livekit/components-react';
-import { ParticipantEvent, Track, type Participant } from 'livekit-client';
-import { FACE_MASK_ATTR, type FaceMaskId } from '@kushlov/types';
+import { Track, type Participant } from 'livekit-client';
 import { clientEnv } from '@/lib/env';
 import { useLiveKitUrl } from '@/hooks/use-livekit-url';
 import { VideoFilterBar } from '@/components/calls/video-filter-bar';
-import { FaceMaskBar } from '@/components/calls/face-mask-bar';
-import { FaceMaskOverlay } from '@/components/calls/face-mask-overlay';
-
-function useParticipantFaceMask(participant: Participant, localOverride?: string) {
-  const [maskId, setMaskId] = useState(
-    () => participant.attributes?.[FACE_MASK_ATTR] || '',
-  );
-
-  useEffect(() => {
-    const sync = () => setMaskId(participant.attributes?.[FACE_MASK_ATTR] || '');
-    sync();
-    participant.on(ParticipantEvent.AttributesChanged, sync);
-    return () => {
-      participant.off(ParticipantEvent.AttributesChanged, sync);
-    };
-  }, [participant]);
-
-  if (participant.isLocal && localOverride) return localOverride;
-  return maskId;
-}
+import { FaceFilterProvider } from '@/faceFilters/hooks/useFaceFilter';
+import { FilterSelector } from '@/faceFilters/components/FilterSelector';
+import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
 
 function ParticipantTile({
   trackRef,
-  localMaskId,
 }: {
   trackRef: {
     participant: Participant;
     publication?: { trackSid?: string };
     source?: Track.Source;
   };
-  localMaskId?: FaceMaskId | string;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const maskId = useParticipantFaceMask(trackRef.participant, localMaskId);
-  const isLocal = trackRef.participant.isLocal;
-
   return (
-    <div
-      ref={containerRef}
-      className="relative h-full min-h-[200px] overflow-hidden rounded-xl bg-zinc-900"
-    >
+    <div className="relative h-full min-h-0 w-full overflow-hidden bg-black">
       <VideoTrack
         trackRef={trackRef as never}
         className="h-full w-full object-cover"
       />
-      <FaceMaskOverlay containerRef={containerRef} maskId={maskId} mirrored={isLocal} />
     </div>
   );
 }
@@ -73,54 +44,61 @@ function LiveRoomVideo({
   isHost?: boolean;
   showFilters?: boolean;
 }) {
-  const [localMaskId, setLocalMaskId] = useState<FaceMaskId>('none');
   const cameraTracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: false }],
     { onlySubscribed: false },
   ).filter(isTrackReference);
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="relative min-h-[240px] flex-1 overflow-hidden rounded-2xl bg-black">
-        {cameraTracks.length === 0 ? (
-          <div className="flex h-full items-center justify-center p-6 text-center text-sm text-white/50">
-            {isHost
-              ? 'Starting camera… allow access when your browser prompts.'
-              : 'Waiting for the host to start video…'}
-          </div>
-        ) : (
-          <div
-            className={
-              cameraTracks.length > 1
-                ? 'grid h-full w-full gap-2 p-2 sm:grid-cols-2'
-                : 'h-full w-full p-2'
-            }
-          >
-            {cameraTracks.map((trackRef) => (
-              <ParticipantTile
-                key={`${trackRef.participant.identity}-${trackRef.publication?.trackSid ?? trackRef.source}`}
-                trackRef={trackRef}
-                localMaskId={localMaskId === 'none' ? '' : localMaskId}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-      {showFilters ? (
-        <div className="space-y-2 border-t border-white/10 py-2">
-          <FaceMaskBar className="px-2" onMaskChange={setLocalMaskId} />
-          <VideoFilterBar className="px-2" />
+    <FaceFilterProvider>
+      <div className="flex h-full flex-col">
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+          {cameraTracks.length === 0 ? (
+            <div className="flex h-full items-center justify-center p-6 text-center text-sm text-white/50">
+              {isHost
+                ? 'Starting camera… allow access when your browser prompts.'
+                : 'Waiting for the host to start video…'}
+            </div>
+          ) : (
+            <div
+              className={
+                cameraTracks.length === 2
+                  ? 'grid h-full w-full grid-cols-2 gap-0'
+                  : cameraTracks.length > 2
+                    ? 'grid h-full w-full gap-1 p-1 sm:grid-cols-2'
+                    : 'h-full w-full'
+              }
+            >
+              {cameraTracks.map((trackRef) => (
+                <ParticipantTile
+                  key={`${trackRef.participant.identity}-${trackRef.publication?.trackSid ?? trackRef.source}`}
+                  trackRef={trackRef}
+                />
+              ))}
+            </div>
+          )}
+          {showFilters ? (
+            <div className="absolute bottom-3 left-3 right-3 z-20">
+              <FilterSelector />
+            </div>
+          ) : null}
         </div>
-      ) : null}
-      {isHost && (
-        <ControlBar
-          variation="minimal"
-          controls={{ chat: false, screenShare: false, settings: false, leave: false }}
-          className="!border-t !border-white/10 !bg-transparent"
-        />
-      )}
-      <RoomAudioRenderer />
-    </div>
+        {showFilters ? (
+          <div className="border-t border-white/10 py-2">
+            <VideoFilterBar className="px-2" />
+          </div>
+        ) : null}
+        {showFilters ? <FaceFilterPublisher /> : null}
+        {isHost && (
+          <ControlBar
+            variation="minimal"
+            controls={{ chat: false, screenShare: false, settings: false, leave: false }}
+            className="!border-t !border-white/10 !bg-transparent"
+          />
+        )}
+        <RoomAudioRenderer />
+      </div>
+    </FaceFilterProvider>
   );
 }
 
@@ -176,7 +154,7 @@ export function LiveKitStage({
       audio={shouldPublish}
       onDisconnected={onDisconnected}
       data-lk-theme="default"
-      style={{ height: '100%', borderRadius: '1rem', overflow: 'hidden' }}
+      style={{ height: '100%', width: '100%', overflow: 'hidden' }}
       options={{ adaptiveStream: true, dynacast: true }}
     >
       <LiveRoomVideo isHost={isHost} showFilters={showFilters && !audioOnly && shouldPublish} />
