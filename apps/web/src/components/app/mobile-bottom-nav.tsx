@@ -17,12 +17,24 @@ const items = [
 ];
 
 /** Mobile bottom navigation — Wallet + notification badges always visible. */
-export function MobileBottomNav() {
+export function MobileBottomNav({
+  mobileVisible = true,
+  forceHidden = false,
+}: {
+  mobileVisible?: boolean;
+  forceHidden?: boolean;
+}) {
   const pathname = usePathname();
   const badges = useNavBadges();
+  const show = !forceHidden && mobileVisible;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-card/95 backdrop-blur-xl md:hidden">
+    <nav
+      className={cn(
+        'fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-card/95 backdrop-blur-xl transition-transform duration-300 md:hidden',
+        show ? 'translate-y-0' : 'translate-y-full',
+      )}
+    >
       <ul className="flex items-stretch justify-around px-0.5 py-1">
         {items.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);

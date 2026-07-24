@@ -8,6 +8,7 @@ import { AppNav } from '@/components/app/app-nav';
 import { AppTopBar } from '@/components/app/app-top-bar';
 import { MobileBottomNav } from '@/components/app/mobile-bottom-nav';
 import { SocketProvider } from '@/components/socket-provider';
+import { useScrollNavVisibility } from '@/hooks/use-scroll-nav-visibility';
 import { cn } from '@/lib/utils';
 
 const CallOverlay = dynamic(
@@ -20,6 +21,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const isMessages = pathname.startsWith('/messages');
+  const isLiveRoom = /^\/live\/[^/]+$/.test(pathname);
+  const navVisible = useScrollNavVisibility({ forceHidden: isLiveRoom });
 
   useEffect(() => {
     if (hydrated && sessionChecked && !accessToken) router.replace('/login');
@@ -38,17 +41,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen">
         <AppNav />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {!isMessages && <AppTopBar />}
+          {!isMessages && <AppTopBar mobileVisible={navVisible} />}
           <main
             className={cn(
               'min-h-0 flex-1 overflow-x-hidden',
-              isMessages ? 'flex flex-col p-0 pb-0' : 'pb-20 md:pb-0',
+              isMessages || isLiveRoom
+                ? 'flex flex-col p-0 pb-0'
+                : cn(
+                    'md:pb-0',
+                    // Mobile fixed top bar spacer when visible
+                    navVisible ? 'pb-20 pt-14' : 'pb-2 pt-0',
+                    'md:pt-0',
+                  ),
             )}
           >
             {children}
           </main>
         </div>
-        <MobileBottomNav />
+        <MobileBottomNav mobileVisible={navVisible} forceHidden={isLiveRoom} />
       </div>
       <CallOverlay />
     </SocketProvider>

@@ -12,10 +12,10 @@ import {
 import { Track, type Participant } from 'livekit-client';
 import { clientEnv } from '@/lib/env';
 import { useLiveKitUrl } from '@/hooks/use-livekit-url';
-import { VideoFilterBar } from '@/components/calls/video-filter-bar';
 import { FaceFilterProvider } from '@/faceFilters/hooks/useFaceFilter';
 import { FilterSelector } from '@/faceFilters/components/FilterSelector';
 import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
+import { PublisherAvControls } from '@/components/live/publisher-av-controls';
 
 function ParticipantTile({
   trackRef,
@@ -40,9 +40,13 @@ function ParticipantTile({
 function LiveRoomVideo({
   isHost,
   showFilters,
+  showAvControls,
+  audioOnly,
 }: {
   isHost?: boolean;
   showFilters?: boolean;
+  showAvControls?: boolean;
+  audioOnly?: boolean;
 }) {
   const cameraTracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: false }],
@@ -77,25 +81,32 @@ function LiveRoomVideo({
               ))}
             </div>
           )}
+          {showAvControls ? (
+            <div className="absolute bottom-3 right-3 z-30">
+              <PublisherAvControls audioOnly={audioOnly} />
+            </div>
+          ) : null}
           {showFilters ? (
-            <div className="absolute bottom-3 left-3 right-3 z-20">
+            <div className="absolute bottom-16 left-3 right-16 z-20 sm:bottom-3 sm:right-28">
               <FilterSelector />
             </div>
           ) : null}
         </div>
-        {showFilters ? (
-          <div className="border-t border-white/10 py-2">
-            <VideoFilterBar className="px-2" />
-          </div>
-        ) : null}
         {showFilters ? <FaceFilterPublisher /> : null}
-        {isHost && (
+        {showAvControls ? (
           <ControlBar
             variation="minimal"
-            controls={{ chat: false, screenShare: false, settings: false, leave: false }}
-            className="!border-t !border-white/10 !bg-transparent"
+            controls={{
+              microphone: true,
+              camera: !audioOnly,
+              chat: false,
+              screenShare: false,
+              settings: false,
+              leave: false,
+            }}
+            className="!hidden !border-t !border-white/10 !bg-transparent sm:!flex"
           />
-        )}
+        ) : null}
         <RoomAudioRenderer />
       </div>
     </FaceFilterProvider>
@@ -114,6 +125,8 @@ export function LiveKitStage({
   /** Publish local A/V. Defaults to true for calls; live viewers should pass false. */
   publish,
   showFilters = false,
+  /** Mic/camera toggles for local publisher. Defaults to publish. */
+  showAvControls,
 }: {
   token: string;
   serverUrl?: string;
@@ -122,10 +135,12 @@ export function LiveKitStage({
   isHost?: boolean;
   publish?: boolean;
   showFilters?: boolean;
+  showAvControls?: boolean;
 }) {
   const { url: settingsUrl, isLoading } = useLiveKitUrl();
   const url = serverUrl || clientEnv.livekitUrl || settingsUrl;
   const shouldPublish = publish ?? true;
+  const avControls = showAvControls ?? shouldPublish;
 
   if (isLoading && !url) {
     return (
@@ -157,7 +172,12 @@ export function LiveKitStage({
       style={{ height: '100%', width: '100%', overflow: 'hidden' }}
       options={{ adaptiveStream: true, dynacast: true }}
     >
-      <LiveRoomVideo isHost={isHost} showFilters={showFilters && !audioOnly && shouldPublish} />
+      <LiveRoomVideo
+        isHost={isHost}
+        showFilters={showFilters && !audioOnly && shouldPublish}
+        showAvControls={avControls && shouldPublish}
+        audioOnly={audioOnly}
+      />
     </LiveKitRoom>
   );
 }

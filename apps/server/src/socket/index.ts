@@ -82,11 +82,13 @@ export function initSocket(httpServer: HttpServer): IOServer {
       }
     });
 
-    socket.on(SocketEvents.LiveJoin, ({ liveId }) => {
-      socket.join(`live:${liveId}`);
+    socket.on(SocketEvents.LiveJoin, async ({ liveId }) => {
+      if (!liveId) return;
+      await socket.join(`live:${liveId}`);
     });
-    socket.on(SocketEvents.LiveLeave, ({ liveId }) => {
-      socket.leave(`live:${liveId}`);
+    socket.on(SocketEvents.LiveLeave, async ({ liveId }) => {
+      if (!liveId) return;
+      await socket.leave(`live:${liveId}`);
     });
 
     socket.on('disconnect', async () => {

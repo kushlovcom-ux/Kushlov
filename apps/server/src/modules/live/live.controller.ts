@@ -66,15 +66,42 @@ function serializeLiveChat(doc: {
   };
 }
 
-/** Broadcast to the live socket room and always to the host (and co-host). */
-function emitLiveEvent(
-  live: { _id: { toString(): string }; host: { toString(): string }; coHost?: { toString(): string } | null },
+/** Broadcast to the live socket room, host/co-host, and active participants (user rooms). */
+async function emitLiveEvent(
+  live: {
+    _id: { toString(): string };
+    host: Parameters<typeof refId>[0];
+    coHost?: Parameters<typeof refId>[0] | null;
+  },
   event: string,
   payload: unknown,
 ) {
-  emitToRoom(roomOf(live._id.toString()), event, payload);
-  emitToUser(live.host.toString(), event, payload);
-  if (live.coHost) emitToUser(live.coHost.toString(), event, payload);
+  const liveId = live._id.toString();
+  emitToRoom(roomOf(liveId), event, payload);
+
+  const targets = new Set<string>();
+  targets.add(refId(live.host));
+  if (live.coHost) targets.add(refId(live.coHost));
+
+  // Fan out to every active participant so chat works even if a client
+  // missed `live:join` / dropped out of the socket room briefly.
+  try {
+    const participants = await LiveParticipant.find({
+      liveStream: live._id,
+      leftAt: { $exists: false },
+    })
+      .select('user')
+      .lean();
+    for (const p of participants) {
+      targets.add(refId(p.user as Parameters<typeof refId>[0]));
+    }
+  } catch {
+    /* room + host emit already attempted */
+  }
+
+  for (const userId of targets) {
+    emitToUser(userId, event, payload);
+  }
 }
 
 /** POST /live/start — approved host goes live. */
@@ -251,7 +278,7 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
     canPublishData: true,
   });
 
-  emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
+  await emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
   return ok(res, { token, roomName: live.roomName, viewerCount, livekitUrl: getLiveKitPublicUrl() });
 });
 
@@ -266,7 +293,7 @@ export const leaveLive = asyncHandler(async (req: Request, res: Response) => {
   const viewerCount = await countActiveViewers(live._id);
   live.viewerCount = viewerCount;
   await live.save();
-  emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
+  await emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
   return ok(res, { viewerCount });
 });
 
@@ -298,7 +325,7 @@ export const liveChat = asyncHandler(async (req: Request, res: Response) => {
   });
   const populated = await chat.populate('user', 'displayName username avatarUrl');
   const payload = serializeLiveChat(populated as never);
-  emitLiveEvent(live, SocketEvents.LiveChat, payload);
+  await emitLiveEvent(live, SocketEvents.LiveChat, payload);
   return created(res, payload);
 });
 

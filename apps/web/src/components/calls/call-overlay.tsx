@@ -595,8 +595,9 @@ export function CallOverlay() {
                   token={active.token}
                   serverUrl={active.livekitUrl}
                   audioOnly={active.type === CallType.Audio}
-                  isHost={active.role === 'callee'}
+                  isHost
                   publish
+                  showAvControls
                   showFilters={active.type === CallType.Video}
                   onDisconnected={() => void endActive()}
                 />

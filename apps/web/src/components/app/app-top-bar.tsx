@@ -11,16 +11,23 @@ import { AuthUserMenu } from '@/components/layout/auth-user-menu';
 import { AppSearchBar } from '@/components/app/app-search-bar';
 
 /** Sticky top bar with Contact, alerts, profile and logout. */
-export function AppTopBar() {
+export function AppTopBar({ mobileVisible = true }: { mobileVisible?: boolean }) {
   const pathname = usePathname();
   const badges = useNavBadges();
   const contactActive = pathname === '/contact' || pathname.startsWith('/contact/');
 
   return (
-    <header className="sticky top-0 z-40 flex items-center justify-between gap-4 border-b border-white/10 bg-card/80 px-4 py-3 backdrop-blur-xl md:px-6">
+    <header
+      className={cn(
+        'z-40 flex items-center justify-between gap-3 border-b border-white/10 bg-card/80 px-4 py-3 backdrop-blur-xl transition-transform duration-300 md:sticky md:top-0 md:translate-y-0 md:px-6',
+        // Mobile: fixed so hide/show does not leave a sticky gap
+        'fixed inset-x-0 top-0 md:relative',
+        mobileVisible ? 'translate-y-0' : '-translate-y-full md:translate-y-0',
+      )}
+    >
       <div className="md:hidden">
-        <Link href="/" aria-label="Kushlov home" className="inline-flex">
-          <Logo withWordmark={false} size={28} />
+        <Link href="/" aria-label="Kushlov home" className="inline-flex min-w-0">
+          <Logo size={28} withWordmark />
         </Link>
       </div>
       <p className="hidden text-sm text-white/45 md:block">

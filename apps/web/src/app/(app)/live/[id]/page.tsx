@@ -291,6 +291,7 @@ export default function LiveRoomPage() {
             serverUrl={livekitUrl}
             isHost={canPublish}
             publish={canPublish}
+            showAvControls={canPublish}
             showFilters={canPublish}
             onDisconnected={leave}
           />
@@ -395,8 +396,8 @@ export default function LiveRoomPage() {
         </div>
       )}
 
-      {/* Facebook-style overlay chat */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 flex max-h-[42%] flex-col justify-end p-3 sm:max-w-md">
+      {/* Facebook-style overlay chat — leave right side clear for AV controls on mobile */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 flex max-h-[42%] flex-col justify-end p-3 pr-20 sm:max-w-md sm:pr-3">
         <div
           ref={chatRef}
           className="mb-2 max-h-48 space-y-1.5 overflow-y-auto pr-1 [mask-image:linear-gradient(to_bottom,transparent,black_12%)]"
@@ -408,7 +409,7 @@ export default function LiveRoomPage() {
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/55 p-1.5 backdrop-blur">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/15 bg-black/55 p-1.5 backdrop-blur">
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
