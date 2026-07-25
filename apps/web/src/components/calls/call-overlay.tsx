@@ -1,8 +1,26 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Phone, PhoneOff, Video, X } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import {
+  Ban,
+  GripHorizontal,
+  Maximize2,
+  Minimize2,
+  Phone,
+  PhoneOff,
+  UserMinus,
+  Video,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { CallType, Role, SocketEvents } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
@@ -12,6 +30,9 @@ import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { PostCallReviewDialog } from '@/components/calls/post-call-review-dialog';
 import { AddCallParticipant } from '@/components/calls/add-call-participant';
+import { cn } from '@/lib/utils';
+
+const INCOMING_RINGTONE_SRC = '/sounds/incoming-call.wav';
 
 const LiveKitStage = dynamic(
   () => import('@/components/live/livekit-stage').then((m) => m.LiveKitStage),
@@ -53,6 +74,142 @@ function isApprovedHostPeer(role?: string, isHostApproved?: boolean) {
   return role === Role.Host && isHostApproved !== false;
 }
 
+/** Loop a real ringtone asset while an incoming/waiting invite is open. */
+function useCallRingtone(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined') return;
+
+    const audio = new Audio(INCOMING_RINGTONE_SRC);
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.volume = 0.55;
+
+    const play = () => {
+      void audio.play().catch(() => {
+        /* autoplay may be blocked until a user gesture */
+      });
+    };
+
+    play();
+    const onGesture = () => play();
+    window.addEventListener('pointerdown', onGesture, { once: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', onGesture);
+      audio.pause();
+      audio.src = '';
+      audio.load();
+    };
+  }, [enabled]);
+}
+
+/** Draggable floating card for in-call waiting invites. */
+function DraggableWaitingCard({
+  callId,
+  boundsRef,
+  children,
+}: {
+  callId: string;
+  boundsRef: RefObject<HTMLElement | null>;
+  children: ReactNode;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originLeft: number;
+    originTop: number;
+  } | null>(null);
+
+  useEffect(() => {
+    setPos(null);
+  }, [callId]);
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, select')) return;
+
+    const card = cardRef.current;
+    const bounds = boundsRef.current;
+    if (!card || !bounds) return;
+
+    const cardRect = card.getBoundingClientRect();
+    const boundsRect = bounds.getBoundingClientRect();
+    const originLeft = pos?.left ?? cardRect.left - boundsRect.left;
+    const originTop = pos?.top ?? cardRect.top - boundsRect.top;
+
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originLeft,
+      originTop,
+    };
+    if (!pos) setPos({ left: originLeft, top: originTop });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: ReactPointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+
+    const card = cardRef.current;
+    const bounds = boundsRef.current;
+    if (!card || !bounds) return;
+
+    const pad = 8;
+    const boundsRect = bounds.getBoundingClientRect();
+    const { width, height } = card.getBoundingClientRect();
+    const maxLeft = Math.max(pad, boundsRect.width - width - pad);
+    const maxTop = Math.max(pad, boundsRect.height - height - pad);
+    const left = Math.min(
+      maxLeft,
+      Math.max(pad, drag.originLeft + (e.clientX - drag.startX)),
+    );
+    const top = Math.min(
+      maxTop,
+      Math.max(pad, drag.originTop + (e.clientY - drag.startY)),
+    );
+    setPos({ left, top });
+  };
+
+  const onPointerUp = (e: ReactPointerEvent) => {
+    if (dragRef.current?.pointerId === e.pointerId) {
+      dragRef.current = null;
+    }
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      className={cn(
+        'absolute z-40 w-[min(100%,20rem)] touch-none',
+        pos ? 'left-0 top-0' : 'right-3 top-16 sm:right-4 sm:top-20',
+      )}
+      style={pos ? { left: pos.left, top: pos.top } : undefined}
+    >
+      <div
+        className="rounded-2xl border border-white/15 bg-zinc-900/95 shadow-2xl backdrop-blur"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <div
+          className="flex cursor-grab items-center justify-center gap-1 border-b border-white/10 py-1.5 active:cursor-grabbing"
+          aria-label="Drag to move"
+        >
+          <GripHorizontal className="h-4 w-4 text-white/35" />
+        </div>
+        <div className="p-3">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Global incoming/outgoing call UI, plus optional post-call host review for normal users.
  */
@@ -74,13 +231,66 @@ export function CallOverlay() {
   const [active, setActive] = useState<ActiveCall | null>(null);
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
   const [reviewPrompt, setReviewPrompt] = useState<ReviewPrompt | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [browserFs, setBrowserFs] = useState(false);
   const warnedRef = useRef(false);
   const activeRef = useRef<ActiveCall | null>(null);
+  const incomingRef = useRef<IncomingInvite | null>(null);
+  const outgoingRef = useRef<{ callId: string } | null>(null);
   const endingRef = useRef(false);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const waitingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useCallRingtone(Boolean(incoming));
 
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
+  useEffect(() => {
+    incomingRef.current = incoming;
+  }, [incoming]);
+  useEffect(() => {
+    outgoingRef.current = outgoing;
+  }, [outgoing]);
+
+  useEffect(() => {
+    if (!active) {
+      setExpanded(false);
+      if (document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => undefined);
+      }
+    }
+  }, [active]);
+
+  useEffect(() => {
+    const onFs = () => setBrowserFs(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  // Auto-dismiss waiting popup after 45s if ignored.
+  useEffect(() => {
+    if (!active || !incoming) {
+      if (waitingTimeoutRef.current) clearTimeout(waitingTimeoutRef.current);
+      return;
+    }
+    waitingTimeoutRef.current = setTimeout(() => {
+      void (async () => {
+        const inv = incomingRef.current;
+        if (!inv) return;
+        try {
+          await api.post(`/calls/${inv.type}/${inv.callId}/reject`);
+        } catch {
+          /* ignore */
+        }
+        setIncoming(null);
+        toast.message('Missed call waiting');
+      })();
+    }, 45_000);
+    return () => {
+      if (waitingTimeoutRef.current) clearTimeout(waitingTimeoutRef.current);
+    };
+  }, [active, incoming?.callId]);
 
   const offerReviewIfEligible = useCallback(
     (call: ActiveCall | null | undefined) => {
@@ -111,6 +321,25 @@ export function CallOverlay() {
     [offerReviewIfEligible],
   );
 
+  const toggleFullscreen = useCallback(async () => {
+    const el = shellRef.current;
+    if (!el) {
+      setExpanded((v) => !v);
+      return;
+    }
+    try {
+      if (!document.fullscreenElement) {
+        setExpanded(true);
+        await el.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+        setExpanded(false);
+      }
+    } catch {
+      setExpanded((v) => !v);
+    }
+  }, []);
+
   useEffect(() => {
     if (!socket || !user) return;
 
@@ -133,7 +362,6 @@ export function CallOverlay() {
     }) => {
       setOutgoing((prev) => {
         if (!prev) return prev;
-        // Interrupt merge: C was waiting; join the target ongoing room.
         if (payload.interrupt || prev.callId === payload.callId || payload.token) {
           setActive({
             callId: payload.callId,
@@ -153,13 +381,43 @@ export function CallOverlay() {
       });
     };
 
-    const onReject = (payload?: { interrupt?: boolean }) => {
-      setOutgoing(null);
-      toast.error(payload?.interrupt ? 'Call waiting declined' : 'Call declined');
+    const onReject = (payload?: { callId?: string; interrupt?: boolean }) => {
+      const id = payload?.callId;
+      setOutgoing((o) => {
+        if (!o) return o;
+        if (id && o.callId !== id) return o;
+        return null;
+      });
+      setIncoming((i) => {
+        if (!i) return i;
+        if (id && i.callId !== id) return i;
+        return null;
+      });
+      if (!id || outgoingRef.current?.callId === id || incomingRef.current?.callId === id) {
+        toast.error(payload?.interrupt ? 'Call waiting declined' : 'Call declined');
+      }
     };
 
-    const onEnd = () => {
-      const ended = activeRef.current;
+    const onEnd = (payload?: { callId?: string; interrupt?: boolean }) => {
+      const id = payload?.callId;
+      const activeCall = activeRef.current;
+      const out = outgoingRef.current;
+      const inc = incomingRef.current;
+
+      if (id && activeCall && id !== activeCall.callId) {
+        setOutgoing((o) => (o?.callId === id ? null : o));
+        setIncoming((i) => (i?.callId === id ? null : i));
+        if (out?.callId === id) {
+          toast.message(payload?.interrupt ? 'Call waiting ended' : 'Call ended');
+        }
+        return;
+      }
+
+      if (id && !activeCall && out && out.callId !== id && inc?.callId !== id) {
+        return;
+      }
+
+      const ended = activeCall;
       setActive(null);
       setOutgoing(null);
       setIncoming(null);
@@ -199,7 +457,6 @@ export function CallOverlay() {
     };
   }, [socket, user, offerReviewIfEligible]);
 
-  // HTTP poll for incoming / call-waiting (also while already on a call).
   useEffect(() => {
     if (!user || user.role === 'admin') return;
     if (connected && !active) return;
@@ -232,7 +489,6 @@ export function CallOverlay() {
     };
   }, [user, connected, incoming, active]);
 
-  // Poll outgoing call until accepted/rejected when sockets are unavailable.
   useEffect(() => {
     if (!outgoing || connected) return;
     let cancelled = false;
@@ -281,7 +537,6 @@ export function CallOverlay() {
     };
   }, [outgoing, connected]);
 
-  // Countdown for diamond-limited calls.
   useEffect(() => {
     if (!active?.maxDurationSec) {
       setRemainingSec(null);
@@ -307,7 +562,6 @@ export function CallOverlay() {
     return () => window.clearInterval(timer);
   }, [active, endActive]);
 
-  // Expose a small imperative helper via custom event for discover/profile.
   useEffect(() => {
     const handler = async (ev: Event) => {
       const detail = (ev as CustomEvent).detail as {
@@ -443,6 +697,26 @@ export function CallOverlay() {
     setIncoming(null);
   };
 
+  const blockIncoming = async () => {
+    if (!incoming?.from?.id) {
+      await reject();
+      return;
+    }
+    const userId = incoming.from.id;
+    try {
+      await api.post(`/calls/${incoming.type}/${incoming.callId}/reject`);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await api.post(`/moderation/block/${userId}`);
+      toast.success('User blocked');
+    } catch (e) {
+      toast.error(apiError(e));
+    }
+    setIncoming(null);
+  };
+
   const kickPeer = async () => {
     if (!active?.peerId) return;
     try {
@@ -459,10 +733,17 @@ export function CallOverlay() {
     }
   };
 
+  const isFullscreen = expanded || browserFs;
+
   return (
     <>
       {(incoming || outgoing || active) && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+        <div
+          className={cn(
+            'fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm',
+            isFullscreen && active ? 'p-0' : 'p-3 sm:p-4',
+          )}
+        >
           {incoming && !active && (
             <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-card p-6 text-center shadow-2xl">
               <UserAvatar
@@ -534,47 +815,84 @@ export function CallOverlay() {
           )}
 
           {active && (
-            <div className="relative flex h-[min(90vh,720px)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-card shadow-2xl">
+            <div
+              ref={shellRef}
+              className={cn(
+                'relative flex flex-col overflow-hidden border border-white/10 bg-zinc-950 shadow-2xl',
+                isFullscreen
+                  ? 'h-[100dvh] w-screen rounded-none'
+                  : 'h-[min(92dvh,820px)] w-full max-w-5xl rounded-3xl',
+              )}
+            >
+              {/* In-call waiting card */}
               {incoming ? (
-                <div className="absolute left-4 right-4 top-16 z-20 rounded-2xl border border-white/15 bg-black/85 p-4 text-center backdrop-blur">
-                  <p className="font-semibold">
-                    {incoming.from?.displayName ?? 'Someone'} is calling
-                    {incoming.interrupt ? ' (waiting)' : ''}
-                  </p>
-                  <p className="mt-1 text-xs text-white/50">
-                    Accept to merge into this call
-                  </p>
-                  <div className="mt-3 flex justify-center gap-6">
-                    <div className="flex flex-col items-center gap-1">
-                      <Button size="sm" variant="destructive" onClick={() => void reject()}>
-                        Decline
-                      </Button>
-                    </div>
-                    <div className="flex flex-col items-center gap-1">
-                      <Button
-                        size="sm"
-                        className="bg-emerald-500 hover:bg-emerald-600"
-                        onClick={() => void accept()}
-                      >
-                        Accept
-                      </Button>
+                <DraggableWaitingCard callId={incoming.callId} boundsRef={shellRef}>
+                  <div className="flex items-start gap-3">
+                    <UserAvatar
+                      name={incoming.from?.displayName}
+                      src={incoming.from?.avatarUrl}
+                      className="h-12 w-12 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">
+                        {incoming.from?.displayName ?? 'Someone'}
+                      </p>
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-white/55">
+                        {incoming.type === CallType.Video ? (
+                          <Video className="h-3 w-3" />
+                        ) : (
+                          <Phone className="h-3 w-3" />
+                        )}
+                        Incoming {incoming.type} call
+                        {incoming.interrupt ? ' · waiting' : ''}
+                      </p>
                     </div>
                   </div>
-                </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <Button
+                      size="sm"
+                      className="h-9 bg-emerald-500 text-xs hover:bg-emerald-600"
+                      onClick={() => void accept()}
+                    >
+                      Accept
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-9 text-xs"
+                      onClick={() => void reject()}
+                    >
+                      Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-9 gap-1 text-xs"
+                      onClick={() => void blockIncoming()}
+                      disabled={!incoming.from?.id}
+                    >
+                      <Ban className="h-3 w-3" />
+                      Block
+                    </Button>
+                  </div>
+                </DraggableWaitingCard>
               ) : null}
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                <div>
-                  <p className="font-semibold">{active.peerName}</p>
+
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2.5 sm:px-4">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{active.peerName}</p>
                   <p className="text-xs capitalize text-white/50">{active.type} call</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                   {remainingSec != null && (
                     <span
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${
+                      className={cn(
+                        'rounded-full px-2.5 py-1 text-[11px] font-medium sm:text-xs',
                         remainingSec <= 30
                           ? 'bg-amber-500/20 text-amber-300'
-                          : 'bg-white/10 text-white/70'
-                      }`}
+                          : 'bg-white/10 text-white/70',
+                      )}
                     >
                       {Math.floor(remainingSec / 60)}:{String(remainingSec % 60).padStart(2, '0')}{' '}
                       left
@@ -583,6 +901,21 @@ export function CallOverlay() {
                   <Button
                     size="icon"
                     variant="ghost"
+                    className="h-9 w-9"
+                    onClick={() => void toggleFullscreen()}
+                    aria-label={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                    title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="h-4 w-4" />
+                    ) : (
+                      <Maximize2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-9 w-9"
                     onClick={() => void endActive()}
                     aria-label="Close"
                   >
@@ -590,7 +923,9 @@ export function CallOverlay() {
                   </Button>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 p-0">
+
+              {/* Stage */}
+              <div className="min-h-0 flex-1 bg-black">
                 <LiveKitStage
                   token={active.token}
                   serverUrl={active.livekitUrl}
@@ -599,19 +934,58 @@ export function CallOverlay() {
                   publish
                   showAvControls
                   showFilters={active.type === CallType.Video}
+                  videoFit="contain"
+                  layout="speaker"
                   onDisconnected={() => void endActive()}
                 />
               </div>
-              <div className="flex flex-col items-center gap-2 border-t border-white/10 p-4">
-                <AddCallParticipant callId={active.callId} type={active.type} />
-                {active.peerId ? (
-                  <Button size="sm" variant="secondary" onClick={() => void kickPeer()}>
-                    End call for {active.peerName}
+
+              {/* Compact horizontal toolbar */}
+              <div className="border-t border-white/10 bg-zinc-950/95 px-2 py-2 sm:px-4">
+                <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-2">
+                  <AddCallParticipant
+                    callId={active.callId}
+                    type={active.type}
+                    compact
+                  />
+                  {active.peerId ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-9 gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 text-xs hover:bg-white/15"
+                      onClick={() => void kickPeer()}
+                    >
+                      <UserMinus className="h-3.5 w-3.5" />
+                      <span className="max-w-[9rem] truncate">
+                        End for {active.peerName}
+                      </span>
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-9 gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 text-xs hover:bg-white/15"
+                    onClick={() => void toggleFullscreen()}
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="h-3.5 w-3.5" />
+                    ) : (
+                      <Maximize2 className="h-3.5 w-3.5" />
+                    )}
+                    <span className="hidden sm:inline">
+                      {isFullscreen ? 'Exit full' : 'Full screen'}
+                    </span>
                   </Button>
-                ) : null}
-                <Button variant="destructive" onClick={() => void endActive()}>
-                  <PhoneOff className="h-4 w-4" /> End call
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-9 gap-1.5 rounded-full px-4 text-xs"
+                    onClick={() => void endActive()}
+                  >
+                    <PhoneOff className="h-3.5 w-3.5" />
+                    End call
+                  </Button>
+                </div>
               </div>
             </div>
           )}

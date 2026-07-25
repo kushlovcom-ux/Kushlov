@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Heart, MessageCircle, PhoneCall, Video, Flag, Ban, BadgeCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { CallType, Role, type HostReview, type Paginated } from '@kushlov/types';
+import { formatDistanceKm } from '@kushlov/utils';
 import { api, apiError, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { UserAvatar } from '@/components/common/user-avatar';
@@ -79,10 +80,14 @@ export default function PublicProfilePage() {
   if (isLoading) return <Skeleton className="m-6 h-64 rounded-2xl" />;
   const u = data?.user;
   const profile = data?.profile;
+  const distanceKm = data?.distanceKm as number | null | undefined;
+  const withinLocalRadius = distanceKm != null && distanceKm <= 10;
+  const canConnect = distanceKm != null;
   const isHostProfile = u?.role === Role.Host && u?.isHostApproved;
   const isUserProfile = u?.role === Role.User;
   const canCall =
     me?.id !== id &&
+    canConnect &&
     ((me?.role === Role.User && (isHostProfile || isUserProfile)) ||
       (me?.role === Role.Host && (isHostProfile || isUserProfile)));
   const canReview = me?.role === Role.User && isHostProfile && me.id !== id;
@@ -106,6 +111,12 @@ export default function PublicProfilePage() {
             <h2 className="mt-4 text-2xl font-bold">{u?.displayName}</h2>
             <p className="text-white/40">@{u?.username}</p>
             <OnlineStatus online={u?.isOnline} size="md" className="mt-2" />
+            {distanceKm != null ? (
+              <p className="mt-2 text-sm text-brand-pink">
+                {formatDistanceKm(distanceKm)}
+                {withinLocalRadius ? ' · nearby (within 10 km)' : ''}
+              </p>
+            ) : null}
 
             {isHostProfile && (
               <div className="mt-3">
@@ -129,10 +140,17 @@ export default function PublicProfilePage() {
             )}
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button onClick={act(() => api.post(`/social/like/${id}`), 'Liked 💖')}>
+              <Button
+                disabled={!canConnect}
+                onClick={act(() => api.post(`/social/like/${id}`), 'Liked 💖')}
+              >
                 <Heart className="h-4 w-4" /> Like
               </Button>
-              <Button variant="secondary" onClick={() => router.push(`/messages?to=${id}`)}>
+              <Button
+                variant="secondary"
+                disabled={!canConnect}
+                onClick={() => router.push(`/messages?to=${id}`)}
+              >
                 <MessageCircle className="h-4 w-4" /> Message
               </Button>
               {canCall && (

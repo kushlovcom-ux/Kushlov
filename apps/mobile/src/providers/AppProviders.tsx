@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CallOverlay } from '@/components/calls/CallOverlay';
+import { ColiveInviteModal } from '@/components/live/ColiveInviteModal';
 import { SocketProvider } from './SocketProvider';
 import { useThemeStore } from '@/store/theme';
 import { useIsDark } from '@/hooks/useThemeColors';
@@ -50,6 +51,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
             <SocketProvider>
               {children}
               <CallOverlay />
+              <ColiveInviteModal />
             </SocketProvider>
           </ThemeBridge>
         </QueryClientProvider>

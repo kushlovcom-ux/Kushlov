@@ -16,6 +16,12 @@ const CallOverlay = dynamic(
   { ssr: false },
 );
 
+const ColiveInviteOverlay = dynamic(
+  () =>
+    import('@/components/live/colive-invite-overlay').then((m) => m.ColiveInviteOverlay),
+  { ssr: false },
+);
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { accessToken, hydrated, sessionChecked } = useAuthStore();
   const router = useRouter();
@@ -61,6 +67,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <MobileBottomNav mobileVisible={navVisible} forceHidden={isLiveRoom} />
       </div>
       <CallOverlay />
+      <ColiveInviteOverlay />
     </SocketProvider>
   );
 }

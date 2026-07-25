@@ -75,6 +75,31 @@ export async function getDiscoverableUserIds(
   return candidates.map((p) => p.user as Types.ObjectId);
 }
 
+/**
+ * Users WITHIN the local radius (~10 km) — used for name search so locals
+ * can message / like / call after finding each other by name.
+ */
+export async function getUsersWithinRadiusKm(
+  userId: string,
+  radiusKm: number = EXCLUSION_RADIUS_KM,
+  excludeIds: (string | Types.ObjectId)[] = [],
+): Promise<Types.ObjectId[]> {
+  const [lng, lat] = await requireUserCoordinates(userId);
+  const exclude = [userId, ...excludeIds.map(String)];
+  const radiusRadians = radiusKm / 6378.1;
+
+  const ids = await Profile.find({
+    user: { $nin: exclude },
+    location: {
+      $geoWithin: {
+        $centerSphere: [[lng, lat], radiusRadians],
+      },
+    },
+  }).distinct('user');
+
+  return ids as Types.ObjectId[];
+}
+
 /** @deprecated Use getDiscoverableUserIds */
 export const getNearbyUserIds = getDiscoverableUserIds;
 
@@ -94,8 +119,7 @@ export async function distanceBetweenUsers(
 }
 
 /**
- * Require both users to have shared location. Distance does not block connect/call
- * (search can surface nearby people by name).
+ * Require both users to have shared location so they can message / like / call.
  * Admins bypass this check.
  */
 export async function assertUsersCanConnect(

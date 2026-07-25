@@ -31,7 +31,12 @@ export function useIncomingCallWatcher() {
   useEffect(() => {
     if (!token) return;
 
-    const ringIfNeeded = async (callId: string, callType: string, callerName?: string) => {
+    const ringIfNeeded = async (
+      callId: string,
+      callType: string,
+      callerName?: string,
+      interrupt?: boolean,
+    ) => {
       if (notifiedId.current === callId) return;
       notifiedId.current = callId;
       haptics.medium();
@@ -39,6 +44,7 @@ export function useIncomingCallWatcher() {
         callId,
         callType,
         callerName,
+        interrupt,
       });
     };
 
@@ -60,7 +66,12 @@ export function useIncomingCallWatcher() {
         if (!incoming || incoming.id !== next.id) {
           setIncoming(next);
         }
-        await ringIfNeeded(next.id, String(next.type), next.caller?.displayName);
+        await ringIfNeeded(
+          next.id,
+          String(next.type),
+          next.caller?.displayName,
+          Boolean(next.interrupt),
+        );
       } catch {
         // soft fail
       }
@@ -82,6 +93,7 @@ export function useIncomingCallWatcher() {
           nextId,
           String(state.incoming?.type ?? 'audio'),
           state.incoming?.caller?.displayName,
+          Boolean(state.incoming?.interrupt),
         );
       }
       if (!nextId && prevIncomingId) {
@@ -106,6 +118,7 @@ export function useIncomingCallWatcher() {
         kind?: string;
         callId?: string;
         callType?: string;
+        interrupt?: boolean | string;
       };
       if (data?.kind !== 'incoming_call' || !data.callId || !data.callType) return;
 
@@ -137,11 +150,13 @@ export function useIncomingCallWatcher() {
         if (action === CALL_ACTION_ACCEPT) {
           try {
             const incoming = useCallStore.getState().incoming;
-            const isInterrupt = incoming?.interrupt || incoming?.id === data.callId;
-            const session =
-              isInterrupt && (incoming?.interrupt || data.callId)
-                ? await callsApi.acceptInterrupt(data.callType, data.callId)
-                : await callsApi.accept(data.callType, data.callId);
+            const isInterrupt =
+              data.interrupt === true ||
+              data.interrupt === 'true' ||
+              Boolean(incoming?.interrupt);
+            const session = isInterrupt
+              ? await callsApi.acceptInterrupt(data.callType, data.callId)
+              : await callsApi.accept(data.callType, data.callId);
             const active = useCallStore.getState().active;
             if (active && (incoming?.interrupt || session.interrupt)) {
               useCallStore.getState().updateSession({

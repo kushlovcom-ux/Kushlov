@@ -109,6 +109,7 @@ export type IncomingCallNotifyPayload = {
   callType: string;
   callerName?: string;
   callerAvatar?: string;
+  interrupt?: boolean;
 };
 
 /** Local ringing notification with Accept / Decline actions. */
@@ -124,13 +125,18 @@ export async function presentIncomingCallNotification(
     const id = await Notifications.scheduleNotificationAsync({
       identifier: `call-${payload.callId}`,
       content: {
-        title: `Incoming ${kind.toLowerCase()} call`,
-        body: `${payload.callerName ?? 'Someone'} is calling you`,
+        title: payload.interrupt
+          ? `Call waiting · ${kind.toLowerCase()}`
+          : `Incoming ${kind.toLowerCase()} call`,
+        body: payload.interrupt
+          ? `${payload.callerName ?? 'Someone'} is calling (waiting)`
+          : `${payload.callerName ?? 'Someone'} is calling you`,
         data: {
           kind: 'incoming_call',
           callId: payload.callId,
           callType: payload.callType,
           callerName: payload.callerName,
+          interrupt: payload.interrupt === true,
         },
         categoryIdentifier: CALL_NOTIFICATION_CATEGORY,
         sound: true,

@@ -9,6 +9,7 @@ import { api, apiError, unwrap } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/common/user-avatar';
+import { cn } from '@/lib/utils';
 
 type DiscoverUser = {
   _id?: string;
@@ -23,9 +24,13 @@ type DiscoverUser = {
 export function AddCallParticipant({
   callId,
   type,
+  compact = false,
+  className,
 }: {
   callId: string;
   type: CallType;
+  compact?: boolean;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -34,7 +39,7 @@ export function AddCallParticipant({
     queryKey: ['call-invite-users', q],
     queryFn: () =>
       unwrap<{ items: DiscoverUser[] }>(
-          api.get('/users', { params: { q: q || undefined, limit: 8, online: true } }),
+        api.get('/users', { params: { q: q || undefined, limit: 8, online: true } }),
       ),
     enabled: open,
     staleTime: 15_000,
@@ -51,18 +56,30 @@ export function AddCallParticipant({
   };
 
   return (
-    <div className="w-full">
+    <div className={cn('relative', compact ? '' : 'w-full', className)}>
       <Button
         type="button"
         size="sm"
         variant="secondary"
-        className="mx-auto flex"
+        className={cn(
+          compact
+            ? 'h-9 gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 text-xs hover:bg-white/15'
+            : 'mx-auto flex',
+        )}
         onClick={() => setOpen((v) => !v)}
       >
-        <UserPlus className="h-4 w-4" /> Add person
+        <UserPlus className="h-3.5 w-3.5" />
+        <span className={compact ? 'hidden sm:inline' : undefined}>Add person</span>
       </Button>
       {open ? (
-        <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-black/40 p-2">
+        <div
+          className={cn(
+            'z-40 max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-zinc-900/95 p-2 shadow-xl backdrop-blur',
+            compact
+              ? 'absolute bottom-full left-0 mb-2 w-64'
+              : 'mt-2',
+          )}
+        >
           <Input
             placeholder="Search online users…"
             value={q}

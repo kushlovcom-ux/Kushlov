@@ -49,7 +49,7 @@ export function DiscoverScreen() {
 
   const hasLocation = Boolean(location.data?.hasLocation);
 
-  // Server enforces ~10km exclusion on browse; name search (q) ignores distance.
+  // Browse: outside ~10km. Search: within ~10km by name (locals can message/like/call).
   const params = useMemo(
     () => ({
       q: debounced || undefined,
@@ -142,7 +142,7 @@ export function DiscoverScreen() {
             <SearchBar
               value={q}
               onChangeText={setQ}
-              placeholder="Search by name (any distance)…"
+              placeholder="Search locals within 10 km…"
             />
             {discover.isLoading ? (
               <>
@@ -163,8 +163,8 @@ export function DiscoverScreen() {
                     title={debounced ? 'No matches' : 'No one online nearby'}
                     description={
                       debounced
-                        ? 'Try a different name.'
-                        : 'People within 10 km are hidden on browse — search by name to find them.'
+                        ? 'No one within 10 km matches that name.'
+                        : 'People within 10 km are hidden on browse — search by name to find and message them.'
                     }
                   />
                 }

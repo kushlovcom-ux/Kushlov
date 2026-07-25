@@ -809,6 +809,21 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
   }
 
   await call.save();
+
+  // Call-waiting interrupt: only notify the waiting caller. Never emit CallEnd
+  // to the busy callee — they are still on their Ongoing A↔B call.
+  if (call.isInterrupt) {
+    const callerId = call.caller.toString();
+    if (callerId !== req.user!.id) {
+      emitToUser(callerId, SocketEvents.CallEnd, {
+        callId: call._id.toString(),
+        interrupt: true,
+        durationSec,
+      });
+    }
+    return ok(res, call, 'Call waiting ended');
+  }
+
   for (const memberId of participantIdsOf(call)) {
     if (memberId === req.user!.id) continue;
     emitToUser(memberId, SocketEvents.CallEnd, {

@@ -10,8 +10,8 @@ import {
   EXCLUSION_RADIUS_KM,
   assertUsersCanConnect,
   distanceBetweenUsers,
-  getAllLocatedUserIds,
   getDiscoverableUserIds,
+  getUsersWithinRadiusKm,
   requireUserCoordinates,
 } from '../../services/location.service';
 import { haversineKm } from '@kushlov/utils';
@@ -255,7 +255,7 @@ export const removeGalleryItem = asyncHandler(async (req: Request, res: Response
 /**
  * GET /users — Discover browse + name search.
  * Browse: outside ~10 km exclusion zone, online only.
- * Search (q): any distance, name/username match (nearby included).
+ * Search (q): within ~10 km by name/username — locals can message / like / call.
  */
 export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
@@ -270,9 +270,9 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
 
   await sweepStalePresence();
 
-  // Browse hides people within exclusion radius; name search ignores distance.
+  // Browse: outside exclusion radius. Search: only people within ~10 km.
   const candidateIds = isSearch
-    ? await getAllLocatedUserIds(exclude)
+    ? await getUsersWithinRadiusKm(req.user!.id, EXCLUSION_RADIUS_KM, exclude)
     : await getDiscoverableUserIds(req.user!.id, exclude);
 
   if (candidateIds.length === 0) {
@@ -376,6 +376,9 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
       pub.distanceKm = Math.round(haversineKm(myLat, myLng, lat, lng) * 10) / 10;
     }
     pub.isBusy = busyIds.has(u._id.toString());
+    // Locals (≤10 km) and browse results with location can message / like / call.
+    pub.canInteract =
+      pub.distanceKm != null && (isSearch ? pub.distanceKm <= EXCLUSION_RADIUS_KM : true);
     return pub;
   });
 

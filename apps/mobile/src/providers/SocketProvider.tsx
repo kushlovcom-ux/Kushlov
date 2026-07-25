@@ -4,19 +4,18 @@ import type { Socket } from 'socket.io-client';
 import { connectSocket, disconnectSocket, getSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/auth';
 import { useCallStore } from '@/store/call';
+import { useColiveStore } from '@/store/colive';
 import { CallStatus, SocketEvents } from '@/types';
 import { normalizeCallSession } from '@/utils/normalizeCall';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/constants/queryKeys';
-import { liveApi } from '@/api/live';
-import { navigationRef } from '@/navigation/navigationRef';
-import { getErrorMessage } from '@/api/client';
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.accessToken);
   const setIncoming = useCallStore((s) => s.setIncoming);
   const updateSession = useCallStore((s) => s.updateSession);
   const clearCall = useCallStore((s) => s.clear);
+  const setColiveInvite = useColiveStore((s) => s.setInvite);
   const qc = useQueryClient();
   const [, setConnectedTick] = useState(0);
 
@@ -49,8 +48,31 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         updateSession({ ...session, status: CallStatus.Ongoing });
       }
     };
-    const onEnd = () => {
-      clearCall();
+    const onRejectOrEnd = (payload?: { callId?: string; interrupt?: boolean }) => {
+      const id = payload?.callId;
+      const active = useCallStore.getState().active;
+      const incoming = useCallStore.getState().incoming;
+
+      // Ending/rejecting a call-waiting interrupt must not wipe A↔B.
+      if (id && active?.session?.id && id !== active.session.id) {
+        if (incoming?.id === id) setIncoming(null);
+        return;
+      }
+      if (payload?.interrupt && active) {
+        if (incoming?.id === id || !id) setIncoming(null);
+        return;
+      }
+
+      if (incoming && (!id || incoming.id === id) && !active) {
+        setIncoming(null);
+        return;
+      }
+
+      if (!active || !id || active.session.id === id) {
+        clearCall();
+      } else if (incoming?.id === id) {
+        setIncoming(null);
+      }
     };
     const onParticipantLeft = (payload: { endedForYou?: boolean }) => {
       if (payload?.endedForYou) clearCall();
@@ -67,40 +89,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     const onColiveInvite = (payload: {
       liveId: string;
       title?: string;
-      from?: { displayName?: string };
+      from?: { displayName?: string; id?: string; avatarUrl?: string };
     }) => {
-      Alert.alert(
-        'Co-live invite',
-        `${payload.from?.displayName ?? 'A host'} invited you to join “${payload.title ?? 'their stream'}”`,
-        [
-          { text: 'Decline', style: 'cancel' },
-          {
-            text: 'Join',
-            onPress: () => {
-              void (async () => {
-                try {
-                  await liveApi.coliveAccept(payload.liveId);
-                  if (navigationRef.isReady()) {
-                    navigationRef.navigate('App', {
-                      screen: 'LiveRoom',
-                      params: { liveId: payload.liveId },
-                    } as never);
-                  }
-                } catch (err) {
-                  Alert.alert('Co-live', getErrorMessage(err));
-                }
-              })();
-            },
-          },
-        ],
-      );
+      if (!payload?.liveId) return;
+      setColiveInvite(payload);
     };
 
     socket.on(SocketEvents.CallInvite, onInvite);
     socket.on(SocketEvents.CallWaiting, onInvite);
     socket.on(SocketEvents.CallAccept, onAccept);
-    socket.on(SocketEvents.CallReject, onEnd);
-    socket.on(SocketEvents.CallEnd, onEnd);
+    socket.on(SocketEvents.CallReject, onRejectOrEnd);
+    socket.on(SocketEvents.CallEnd, onRejectOrEnd);
     socket.on(SocketEvents.CallParticipantLeft, onParticipantLeft);
     socket.on(SocketEvents.MessageNew, onMessage);
     socket.on(SocketEvents.Notification, onNotification);
@@ -115,14 +114,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       s?.off(SocketEvents.CallInvite, onInvite);
       s?.off(SocketEvents.CallWaiting, onInvite);
       s?.off(SocketEvents.CallAccept, onAccept);
-      s?.off(SocketEvents.CallReject, onEnd);
-      s?.off(SocketEvents.CallEnd, onEnd);
+      s?.off(SocketEvents.CallReject, onRejectOrEnd);
+      s?.off(SocketEvents.CallEnd, onRejectOrEnd);
       s?.off(SocketEvents.CallParticipantLeft, onParticipantLeft);
       s?.off(SocketEvents.MessageNew, onMessage);
       s?.off(SocketEvents.Notification, onNotification);
       s?.off(SocketEvents.LiveColiveInvite, onColiveInvite);
     };
-  }, [token, setIncoming, updateSession, clearCall, qc]);
+  }, [token, setIncoming, updateSession, clearCall, setColiveInvite, qc]);
 
   return <>{children}</>;
 }

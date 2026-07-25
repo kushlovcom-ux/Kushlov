@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Send, Gift, X, Users, Radio } from 'lucide-react';
+import { Send, Gift, X, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { SocketEvents } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
@@ -59,11 +59,6 @@ export default function LiveRoomPage() {
   const [showViewers, setShowViewers] = useState(false);
   const [showColive, setShowColive] = useState(false);
   const [coHostName, setCoHostName] = useState<string | null>(null);
-  const [coliveInvite, setColiveInvite] = useState<{
-    liveId: string;
-    title?: string;
-    from?: { displayName?: string };
-  } | null>(null);
   const [isCoHost, setIsCoHost] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const lastChatIdRef = useRef<string | undefined>(undefined);
@@ -205,13 +200,7 @@ export default function LiveRoomPage() {
       if (p.viewerCount != null) setViewers(p.viewerCount);
     };
     const onGift = (p: { gift: { name: string } }) => toast(`🎁 ${p.gift.name} sent!`);
-    const onColiveInvite = (p: {
-      liveId: string;
-      title?: string;
-      from?: { displayName?: string };
-    }) => {
-      if (p.liveId !== id) setColiveInvite(p);
-    };
+    // Invite Accept/Decline is handled globally by ColiveInviteOverlay.
     const onColiveAccept = (p: { coHost?: { displayName?: string; id?: string } }) => {
       setCoHostName(p.coHost?.displayName ?? 'Co-host');
       if (p.coHost?.id === me?.id) setIsCoHost(true);
@@ -227,7 +216,6 @@ export default function LiveRoomPage() {
     socket.on(SocketEvents.LiveChat, onChat);
     socket.on(SocketEvents.LiveViewerCount, onCount);
     socket.on(SocketEvents.LiveGift, onGift);
-    socket.on(SocketEvents.LiveColiveInvite, onColiveInvite);
     socket.on(SocketEvents.LiveColiveAccept, onColiveAccept);
     socket.on(SocketEvents.LiveColiveLeave, onColiveLeave);
     return () => {
@@ -236,7 +224,6 @@ export default function LiveRoomPage() {
       socket.off(SocketEvents.LiveChat, onChat);
       socket.off(SocketEvents.LiveViewerCount, onCount);
       socket.off(SocketEvents.LiveGift, onGift);
-      socket.off(SocketEvents.LiveColiveInvite, onColiveInvite);
       socket.off(SocketEvents.LiveColiveAccept, onColiveAccept);
       socket.off(SocketEvents.LiveColiveLeave, onColiveLeave);
     };
@@ -290,39 +277,8 @@ export default function LiveRoomPage() {
     }
   };
 
-  const acceptColive = async () => {
-    if (!coliveInvite) return;
-    try {
-      await api.post(`/live/${coliveInvite.liveId}/colive/accept`);
-      toast.success('Joined as co-host');
-      setColiveInvite(null);
-      router.push(`/live/${coliveInvite.liveId}`);
-    } catch (e) {
-      toast.error(apiError(e));
-    }
-  };
-
   return (
     <div className="relative h-[100dvh] w-full overflow-hidden bg-black">
-      {coliveInvite && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-card p-6 text-center">
-            <Radio className="mx-auto h-8 w-8 text-brand-pink" />
-            <p className="mt-3 font-semibold">Co-live invite</p>
-            <p className="mt-1 text-sm text-white/60">
-              {coliveInvite.from?.displayName ?? 'A host'} invited you to join “
-              {coliveInvite.title ?? 'their stream'}”
-            </p>
-            <div className="mt-4 flex justify-center gap-2">
-              <Button variant="secondary" onClick={() => setColiveInvite(null)}>
-                Decline
-              </Button>
-              <Button onClick={() => void acceptColive()}>Join</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="absolute inset-0">
         {token ? (
           <LiveKitStage

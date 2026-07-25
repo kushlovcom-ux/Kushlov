@@ -23,7 +23,11 @@ import { GroupCallDialog } from '@/components/calls/group-call-dialog';
 import { useAuthStore } from '@/store/auth';
 import { cn } from '@/lib/utils';
 
-type DiscoverUser = PublicUser & { distanceKm?: number; isBusy?: boolean };
+type DiscoverUser = PublicUser & {
+  distanceKm?: number;
+  isBusy?: boolean;
+  canInteract?: boolean;
+};
 
 export default function DiscoverPage() {
   const searchParams = useSearchParams();
@@ -84,7 +88,7 @@ export default function DiscoverPage() {
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by name…"
+                placeholder="Search locals within 10 km…"
                 className="pl-9"
                 disabled={needsLocation}
               />
@@ -208,13 +212,12 @@ export default function DiscoverPage() {
                               variant="secondary"
                               className="h-8 w-full touch-manipulation"
                               aria-label="Video call"
-                              disabled={!!u.isBusy}
-                              title={u.isBusy ? 'User is busy on a call' : 'Video call'}
+                              title={
+                                u.isBusy
+                                  ? 'User is busy — they will get call waiting'
+                                  : 'Video call'
+                              }
                               onClick={() => {
-                                if (u.isBusy) {
-                                  toast.error('This user is busy on another call');
-                                  return;
-                                }
                                 startCall(CallType.Video, u.id, u.displayName, {
                                   peerIsHost: u.role === Role.Host && !!u.isHostApproved,
                                   peerRole: u.role,
@@ -229,13 +232,12 @@ export default function DiscoverPage() {
                               variant="secondary"
                               className="h-8 w-full touch-manipulation"
                               aria-label="Audio call"
-                              disabled={!!u.isBusy}
-                              title={u.isBusy ? 'User is busy on a call' : 'Audio call'}
+                              title={
+                                u.isBusy
+                                  ? 'User is busy — they will get call waiting'
+                                  : 'Audio call'
+                              }
                               onClick={() => {
-                                if (u.isBusy) {
-                                  toast.error('This user is busy on another call');
-                                  return;
-                                }
                                 startCall(CallType.Audio, u.id, u.displayName, {
                                   peerIsHost: u.role === Role.Host && !!u.isHostApproved,
                                   peerRole: u.role,
@@ -256,7 +258,9 @@ export default function DiscoverPage() {
 
             {!isLoading && !error && data?.items.length === 0 && (
               <p className="py-12 text-center text-white/40">
-                No matches right now. Try updating your location or check back soon.
+                {deferredQ.trim()
+                  ? 'No one within 10 km matches that name. Try another search.'
+                  : 'No matches right now. People within 10 km are hidden on browse — search by name to find them.'}
               </p>
             )}
 
