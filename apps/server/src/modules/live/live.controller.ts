@@ -479,6 +479,58 @@ export const listViewers = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+const COLIVE_INVITE_TTL_MS = 60_000;
+
+/** GET /live/colive/incoming — pending co-live invites for this host (HTTP fallback). */
+export const listColiveIncoming = asyncHandler(async (req: Request, res: Response) => {
+  const uid = req.user!.id;
+  const cutoff = new Date(Date.now() - COLIVE_INVITE_TTL_MS);
+
+  // Drop expired invites aimed at this user.
+  await LiveStream.updateMany(
+    {
+      status: LiveStatus.Live,
+      'pendingColiveInvite.inviteeId': uid,
+      'pendingColiveInvite.invitedAt': { $lt: cutoff },
+    },
+    { $unset: { pendingColiveInvite: 1 } },
+  );
+
+  const lives = await LiveStream.find({
+    status: LiveStatus.Live,
+    coHost: { $exists: false },
+    'pendingColiveInvite.inviteeId': uid,
+    'pendingColiveInvite.invitedAt': { $gte: cutoff },
+  })
+    .select('title roomName host pendingColiveInvite')
+    .populate('host', 'displayName avatarUrl username')
+    .limit(5)
+    .lean();
+
+  const items = lives.map((live) => {
+    const host = live.host as unknown as {
+      _id?: { toString(): string };
+      displayName?: string;
+      avatarUrl?: string;
+      username?: string;
+    };
+    return {
+      liveId: live._id.toString(),
+      roomName: live.roomName,
+      title: live.title,
+      invitedAt: live.pendingColiveInvite?.invitedAt,
+      from: {
+        id: host?._id?.toString?.(),
+        displayName: host?.displayName,
+        avatarUrl: host?.avatarUrl,
+        username: host?.username,
+      },
+    };
+  });
+
+  return ok(res, { items });
+});
+
 /** POST /live/:id/colive/invite — host A invites another live host B into A's room (2A). */
 export const coliveInvite = asyncHandler(async (req: Request, res: Response) => {
   const live = await LiveStream.findById(req.params.id);
@@ -498,8 +550,14 @@ export const coliveInvite = asyncHandler(async (req: Request, res: Response) => 
   const otherHost = await User.findById(hostId).select('displayName isHostApproved role');
   if (!otherHost?.isHostApproved) throw ApiError.forbidden('Only approved hosts can co-live');
 
+  live.pendingColiveInvite = {
+    inviteeId: hostId as unknown as typeof live.host,
+    invitedAt: new Date(),
+  };
+  await live.save();
+
   const from = await User.findById(req.user!.id).select('displayName avatarUrl');
-  emitToUser(hostId, SocketEvents.LiveColiveInvite, {
+  const payload = {
     liveId: live._id.toString(),
     roomName: live.roomName,
     title: live.title,
@@ -508,7 +566,8 @@ export const coliveInvite = asyncHandler(async (req: Request, res: Response) => 
       displayName: from?.displayName,
       avatarUrl: from?.avatarUrl,
     },
-  });
+  };
+  emitToUser(String(hostId), SocketEvents.LiveColiveInvite, payload);
 
   return ok(res, { invited: true }, 'Co-live invite sent');
 });
@@ -527,6 +586,11 @@ export const coliveAccept = asyncHandler(async (req: Request, res: Response) => 
   const rejoining = live.coHost?.toString() === req.user!.id;
 
   if (!rejoining) {
+    const pendingInvitee = live.pendingColiveInvite?.inviteeId?.toString();
+    if (pendingInvitee && pendingInvitee !== req.user!.id) {
+      throw ApiError.forbidden('This co-live invite is not for you');
+    }
+
     // End invitee's own live stream if any.
     const own = await LiveStream.findOne({ host: req.user!.id, status: LiveStatus.Live });
     if (own) {
@@ -535,12 +599,15 @@ export const coliveAccept = asyncHandler(async (req: Request, res: Response) => 
 
     live.coHost = req.user!.id as unknown as typeof live.coHost;
     await live.save();
+    await LiveStream.updateOne({ _id: live._id }, { $unset: { pendingColiveInvite: 1 } });
 
     await LiveParticipant.updateOne(
       { liveStream: live._id, user: req.user!.id },
       { $set: { joinedAt: new Date(), leftAt: undefined, role: 'cohost' } },
       { upsert: true },
     );
+  } else {
+    await LiveStream.updateOne({ _id: live._id }, { $unset: { pendingColiveInvite: 1 } });
   }
 
   const token = await createLiveKitToken({
@@ -581,6 +648,26 @@ export const coliveAccept = asyncHandler(async (req: Request, res: Response) => 
     },
     rejoining ? 'Rejoined as co-host' : 'Joined as co-host',
   );
+});
+
+/** POST /live/:id/colive/reject — invitee declines a pending co-live invite. */
+export const coliveReject = asyncHandler(async (req: Request, res: Response) => {
+  const live = await LiveStream.findById(req.params.id);
+  if (!live || live.status !== LiveStatus.Live) throw ApiError.notFound('Stream is not live');
+
+  const pending = live.pendingColiveInvite?.inviteeId?.toString();
+  if (!pending || pending !== req.user!.id) {
+    return ok(res, { rejected: true }, 'No pending invite');
+  }
+
+  await LiveStream.updateOne({ _id: live._id }, { $unset: { pendingColiveInvite: 1 } });
+
+  emitToUser(live.host.toString(), SocketEvents.Notification, {
+    title: 'Co-live declined',
+    body: 'Your co-live invite was declined',
+  });
+
+  return ok(res, { rejected: true }, 'Co-live invite declined');
 });
 
 /** POST /live/:id/colive/leave — co-host leaves (or host removes co-host). */

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -17,11 +17,39 @@ export function ColiveInviteModal() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // HTTP fallback when socket event is missed while already live.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const data = await liveApi.coliveIncoming();
+        if (cancelled) return;
+        const next = data.items?.[0];
+        const current = useColiveStore.getState().invite;
+        if (next?.liveId) {
+          if (current?.liveId !== next.liveId) setInvite(next);
+        } else if (current) {
+          setInvite(null);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void poll();
+    const id = setInterval(() => void poll(), 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [setInvite]);
+
   if (!invite) return null;
 
   const decline = () => {
     setError(null);
+    const liveId = invite.liveId;
     setInvite(null);
+    if (liveId) void liveApi.coliveReject(liveId).catch(() => undefined);
   };
 
   const accept = async () => {

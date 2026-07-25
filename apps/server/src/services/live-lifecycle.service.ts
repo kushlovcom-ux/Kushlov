@@ -14,6 +14,10 @@ export async function markLiveEnded(live: ILiveStream): Promise<void> {
   live.status = LiveStatus.Ended;
   live.endedAt = new Date();
   await live.save();
+  await LiveStream.updateOne(
+    { _id: live._id },
+    { $unset: { pendingColiveInvite: 1, coHost: 1 } },
+  );
   try {
     await closeRoom(live.roomName);
   } catch {

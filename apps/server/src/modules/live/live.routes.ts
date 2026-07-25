@@ -10,6 +10,8 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', ctrl.listLive);
+/** Must be registered before `/:id` so "colive" is not parsed as an id. */
+router.get('/colive/incoming', requireApprovedHost, ctrl.listColiveIncoming);
 router.get('/:id/viewers', ctrl.listViewers);
 router.get('/:id/preview-token', ctrl.previewToken);
 router.get('/:id/chat', ctrl.listLiveChat);
@@ -27,6 +29,7 @@ router.post(
   ctrl.coliveInvite,
 );
 router.post('/:id/colive/accept', requireApprovedHost, ctrl.coliveAccept);
+router.post('/:id/colive/reject', requireApprovedHost, ctrl.coliveReject);
 router.post('/:id/colive/leave', requireApprovedHost, ctrl.coliveLeave);
 
 // Viewer interactions

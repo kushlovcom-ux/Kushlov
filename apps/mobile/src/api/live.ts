@@ -61,6 +61,15 @@ export const liveApi = {
     }>(`/live/${id}/viewers`),
   coliveInvite: (id: string, hostId: string) =>
     apiPost<{ invited: boolean }>(`/live/${id}/colive/invite`, { hostId }),
+  coliveIncoming: () =>
+    apiGet<{
+      items: Array<{
+        liveId: string;
+        title?: string;
+        roomName?: string;
+        from?: { id?: string; displayName?: string; avatarUrl?: string };
+      }>;
+    }>('/live/colive/incoming'),
   coliveAccept: (id: string) =>
     apiPost<{
       token: string;
@@ -68,5 +77,6 @@ export const liveApi = {
       roomName?: string;
       live?: LiveRoom;
     }>(`/live/${id}/colive/accept`),
+  coliveReject: (id: string) => apiPost<{ rejected: boolean }>(`/live/${id}/colive/reject`),
   coliveLeave: (id: string) => apiPost<{ ok: boolean }>(`/live/${id}/colive/leave`),
 };

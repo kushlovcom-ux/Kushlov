@@ -391,8 +391,8 @@ export default function LiveRoomPage() {
         </div>
       )}
 
-      {/* Chat left; no overlap with AV (AV sits top-right under End). */}
-      <div className="absolute bottom-0 left-0 z-20 flex w-full max-w-lg flex-col justify-end p-3 sm:max-w-md">
+      {/* Chat/gift composer — above filters (filters sit higher in LiveKitStage). */}
+      <div className="absolute bottom-0 left-0 z-30 flex w-full max-w-lg flex-col justify-end p-3 sm:max-w-md">
         <div
           ref={chatRef}
           className="mb-2 max-h-48 space-y-1.5 overflow-y-auto pr-1 [mask-image:linear-gradient(to_bottom,transparent,black_12%)]"

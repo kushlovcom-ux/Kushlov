@@ -163,8 +163,10 @@ function LiveRoomVideo({
           {showFilters ? (
             <div
               className={cn(
-                'absolute z-20 max-w-[min(100%,20rem)]',
-                speakerMode ? 'bottom-3 left-3' : 'bottom-24 left-3 sm:bottom-4',
+                'absolute z-10 max-w-[min(100%,20rem)]',
+                // Live room keeps a bottom chat/gift composer — sit filters above it on all breakpoints.
+                // Calls (speaker) have no composer, so filters can sit lower.
+                speakerMode ? 'bottom-3 left-3' : 'bottom-[7.25rem] left-3 sm:bottom-[7.5rem]',
               )}
             >
               <FilterSelector />

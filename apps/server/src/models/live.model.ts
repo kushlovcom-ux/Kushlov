@@ -1,10 +1,17 @@
 import { Schema, model, Document, Types } from 'mongoose';
 import { LiveStatus } from '@kushlov/types';
 
+export interface IPendingColiveInvite {
+  inviteeId: Types.ObjectId;
+  invitedAt: Date;
+}
+
 export interface ILiveStream extends Document {
   host: Types.ObjectId;
   /** Optional co-host publishing into this room (2A). */
   coHost?: Types.ObjectId;
+  /** Outstanding co-live invite (HTTP fallback when sockets miss the event). */
+  pendingColiveInvite?: IPendingColiveInvite | null;
   title: string;
   thumbnailUrl?: string;
   thumbnailPublicId?: string;
@@ -26,6 +33,13 @@ const liveStreamSchema = new Schema<ILiveStream>(
   {
     host: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     coHost: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    pendingColiveInvite: {
+      type: {
+        inviteeId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        invitedAt: { type: Date, default: Date.now },
+      },
+      default: undefined,
+    },
     title: { type: String, required: true, maxlength: 120 },
     thumbnailUrl: String,
     thumbnailPublicId: String,
@@ -47,6 +61,7 @@ const liveStreamSchema = new Schema<ILiveStream>(
   },
   { timestamps: true },
 );
+liveStreamSchema.index({ 'pendingColiveInvite.inviteeId': 1, status: 1 });
 export const LiveStream = model<ILiveStream>('LiveStream', liveStreamSchema, 'liveStreams');
 
 export interface ILiveParticipant extends Document {
