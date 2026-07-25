@@ -24,10 +24,10 @@ const supportLinks = [
 ];
 
 const legalLinks = [
-  { label: 'Privacy Policy', href: '/contact' },
-  { label: 'Terms of Service', href: '/contact' },
-  { label: 'Cookie Policy', href: '/contact' },
-  { label: 'Host Agreement', href: '/contact' },
+  { label: 'Privacy Policy', href: '/privacy' },
+  { label: 'Terms of Service', href: '/terms' },
+  { label: 'Cookie Policy', href: '/cookies' },
+  { label: 'Host Agreement', href: '/host-agreement' },
 ];
 
 const social = [
@@ -77,7 +77,7 @@ export function SiteFooter() {
               </p>
               <p className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 shrink-0 text-brand-pink" />
-                San Francisco, CA
+                Delhi NCR, India
               </p>
             </div>
             <div className="mt-6 flex gap-3">

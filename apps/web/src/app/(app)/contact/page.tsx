@@ -146,7 +146,7 @@ export default function ContactPage() {
                 </a>
               </li>
               <li>
-                <span className="text-white/35">Hours:</span> Mon–Fri, 9am–6pm PST
+                <span className="text-white/35">Hours:</span> Mon–Fri, 9am–6pm IST
               </li>
             </ul>
           </div>
