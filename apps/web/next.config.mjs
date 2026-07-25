@@ -54,7 +54,8 @@ const publicEnv = {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@kushlov/ui', '@kushlov/types', '@kushlov/utils'],
+  // UI stays source-transpiled. types/utils ship compiled ESM from dist/.
+  transpilePackages: ['@kushlov/ui'],
   env: publicEnv,
   experimental: {
     optimizePackageImports: ['lucide-react', '@livekit/components-react'],

@@ -315,4 +315,4 @@ export {
   isFaceMaskId,
   type FaceMaskDef,
   type FaceMaskId,
-} from './face-masks';
+} from './face-masks.js';

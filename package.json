@@ -8,9 +8,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
-    "dev:web": "pnpm --filter @kushlov/web dev",
-    "dev:server": "pnpm --filter @kushlov/server dev",
+    "build:packages": "pnpm --filter @kushlov/types --filter @kushlov/utils run build",
+    "dev": "pnpm build:packages && pnpm --parallel --filter \"./apps/*\" dev",
+    "dev:web": "pnpm build:packages && pnpm --filter @kushlov/web dev",
+    "dev:server": "pnpm build:packages && pnpm --filter @kushlov/server dev",
     "dev:mobile": "npm --prefix apps/mobile start",
     "build": "pnpm -r build",
     "start": "pnpm --parallel --filter \"./apps/*\" start",
