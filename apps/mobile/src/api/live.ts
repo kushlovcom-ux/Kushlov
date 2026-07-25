@@ -76,7 +76,16 @@ export const liveApi = {
       livekitUrl?: string;
       roomName?: string;
       live?: LiveRoom;
+      role?: string;
     }>(`/live/${id}/colive/accept`),
+  coliveToken: (id: string) =>
+    apiGet<{
+      token: string;
+      livekitUrl?: string;
+      roomName?: string;
+      viewerCount?: number;
+      role?: string;
+    }>(`/live/${id}/colive/token`),
   coliveReject: (id: string) => apiPost<{ rejected: boolean }>(`/live/${id}/colive/reject`),
   coliveLeave: (id: string) => apiPost<{ ok: boolean }>(`/live/${id}/colive/leave`),
 };

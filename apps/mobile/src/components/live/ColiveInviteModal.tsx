@@ -56,13 +56,17 @@ export function ColiveInviteModal() {
     setBusy(true);
     setError(null);
     try {
-      await liveApi.coliveAccept(invite.liveId);
+      const data = await liveApi.coliveAccept(invite.liveId);
       const liveId = invite.liveId;
       setInvite(null);
       if (navigationRef.isReady()) {
         navigationRef.navigate('App', {
           screen: 'LiveRoom',
-          params: { liveId },
+          params: {
+            liveId,
+            coliveToken: data.token,
+            livekitUrl: data.livekitUrl,
+          },
         } as never);
       }
     } catch (err) {

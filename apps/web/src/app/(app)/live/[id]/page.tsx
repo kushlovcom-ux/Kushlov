@@ -7,12 +7,31 @@ import { Send, Gift, X, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { SocketEvents } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
+import { takeColiveHandoff } from '@/lib/colive-handoff';
 import { useAuthStore } from '@/store/auth';
 import { useSocket } from '@/components/socket-provider';
 import { LiveKitStage } from '@/components/live/livekit-stage';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+
+function coHostIdOf(coHost: unknown): string | undefined {
+  if (!coHost) return undefined;
+  if (typeof coHost === 'string') return coHost;
+  if (typeof coHost === 'object') {
+    const c = coHost as { _id?: string; id?: string };
+    return c._id ?? c.id;
+  }
+  return undefined;
+}
+
+function coHostNameOf(coHost: unknown): string | null {
+  if (!coHost) return null;
+  if (typeof coHost === 'object' && coHost && 'displayName' in coHost) {
+    return (coHost as { displayName?: string }).displayName ?? 'Co-host';
+  }
+  return 'Co-host';
+}
 
 interface LiveChatMsg {
   _id?: string;
@@ -59,9 +78,11 @@ export default function LiveRoomPage() {
   const [showViewers, setShowViewers] = useState(false);
   const [showColive, setShowColive] = useState(false);
   const [coHostName, setCoHostName] = useState<string | null>(null);
-  const [isCoHost, setIsCoHost] = useState(false);
+  const [isCoHostOverride, setIsCoHostOverride] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const lastChatIdRef = useRef<string | undefined>(undefined);
+  const handoffAppliedRef = useRef(false);
+  const tokenRoleRef = useRef<'host' | 'cohost' | 'viewer' | null>(null);
 
   const live = useQuery({
     queryKey: ['live', id],
@@ -82,6 +103,11 @@ export default function LiveRoomPage() {
 
   const hostId = live.data?.host?._id ?? live.data?.host?.id ?? live.data?.host;
   const isHost = Boolean(live.data && hostId === me?.id);
+  const isCoHost = useMemo(() => {
+    if (isCoHostOverride) return true;
+    if (!live.data || !me?.id) return false;
+    return coHostIdOf(live.data.coHost) === me.id;
+  }, [live.data, me?.id, isCoHostOverride]);
   const canPublish = isHost || isCoHost;
   const chatCost = Number(settings.data?.rates?.liveChatPerMessage ?? 0);
 
@@ -116,27 +142,54 @@ export default function LiveRoomPage() {
   useEffect(() => {
     if (!live.data) return;
     if (live.data.coHost) {
-      const c = live.data.coHost;
-      setCoHostName(typeof c === 'object' ? c.displayName : 'Co-host');
-      if ((c?._id ?? c?.id ?? c) === me?.id) setIsCoHost(true);
+      setCoHostName(coHostNameOf(live.data.coHost));
+    } else if (!isCoHostOverride) {
+      setCoHostName(null);
     }
-  }, [live.data, me?.id]);
+  }, [live.data, isCoHostOverride]);
+
+  // Apply Accept handoff once (publish token from overlay → group live room).
+  useEffect(() => {
+    handoffAppliedRef.current = false;
+    tokenRoleRef.current = null;
+    setIsCoHostOverride(false);
+    setToken(undefined);
+
+    const handoff = takeColiveHandoff(id);
+    if (!handoff?.token) return;
+    handoffAppliedRef.current = true;
+    tokenRoleRef.current = 'cohost';
+    setIsCoHostOverride(true);
+    setToken(handoff.token);
+    if (handoff.livekitUrl) setLivekitUrl(handoff.livekitUrl);
+  }, [id]);
 
   // Get a LiveKit token (publish for host/cohost, subscribe for viewer).
   useEffect(() => {
     if (!live.data) return;
+    const role = isHost ? 'host' : isCoHost ? 'cohost' : 'viewer';
+
+    // Accept handoff already seeded a publish token for group live.
+    if (handoffAppliedRef.current && role === 'cohost') {
+      tokenRoleRef.current = 'cohost';
+      return;
+    }
+    if (tokenRoleRef.current === role) return;
+
     let cancelled = false;
     (async () => {
       try {
         const res = await (isHost
           ? api.get(`/live/${id}/host-token`)
           : isCoHost
-            ? api.post(`/live/${id}/colive/accept`)
+            ? api.get(`/live/${id}/colive/token`)
             : api.post(`/live/${id}/join`));
         if (cancelled) return;
+        tokenRoleRef.current = res.data.data.role === 'cohost' ? 'cohost' : role;
         setToken(res.data.data.token);
         if (res.data.data.livekitUrl) setLivekitUrl(res.data.data.livekitUrl);
         if (res.data.data.viewerCount != null) setViewers(res.data.data.viewerCount);
+        if (res.data.data.role === 'cohost') setIsCoHostOverride(true);
       } catch (e) {
         if (!cancelled) toast.error(apiError(e));
       }
@@ -203,14 +256,18 @@ export default function LiveRoomPage() {
     // Invite Accept/Decline is handled globally by ColiveInviteOverlay.
     const onColiveAccept = (p: { coHost?: { displayName?: string; id?: string } }) => {
       setCoHostName(p.coHost?.displayName ?? 'Co-host');
-      if (p.coHost?.id === me?.id) setIsCoHost(true);
-      toast.success(`${p.coHost?.displayName ?? 'Host'} joined as co-host`);
+      if (p.coHost?.id === me?.id) setIsCoHostOverride(true);
+      void live.refetch();
+      toast.success(`${p.coHost?.displayName ?? 'Host'} joined group live`);
     };
     const onColiveLeave = () => {
       setCoHostName(null);
       if (isCoHost) {
-        setIsCoHost(false);
+        setIsCoHostOverride(false);
+        tokenRoleRef.current = null;
         router.push('/live');
+      } else {
+        void live.refetch();
       }
     };
     socket.on(SocketEvents.LiveChat, onChat);
@@ -227,7 +284,7 @@ export default function LiveRoomPage() {
       socket.off(SocketEvents.LiveColiveAccept, onColiveAccept);
       socket.off(SocketEvents.LiveColiveLeave, onColiveLeave);
     };
-  }, [socket, id, isCoHost, me?.id, router, appendChat]);
+  }, [socket, id, isCoHost, me?.id, router, appendChat, live.refetch]);
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
@@ -288,6 +345,8 @@ export default function LiveRoomPage() {
             publish={canPublish}
             showAvControls={canPublish}
             showFilters={canPublish}
+            layout="grid"
+            videoFit="cover"
             onDisconnected={leave}
           />
         ) : (

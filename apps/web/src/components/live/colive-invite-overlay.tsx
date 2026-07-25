@@ -6,6 +6,7 @@ import { Radio } from 'lucide-react';
 import { toast } from 'sonner';
 import { SocketEvents } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
+import { storeColiveHandoff } from '@/lib/colive-handoff';
 import { useSocket } from '@/components/socket-provider';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
@@ -106,9 +107,16 @@ export function ColiveInviteOverlay() {
     if (!invite) return;
     setBusy(true);
     try {
-      await api.post(`/live/${invite.liveId}/colive/accept`);
-      toast.success('Joined as co-host');
+      const res = await api.post(`/live/${invite.liveId}/colive/accept`);
+      const data = res.data?.data as {
+        token?: string;
+        livekitUrl?: string;
+      };
       const liveId = invite.liveId;
+      if (data?.token) {
+        storeColiveHandoff(liveId, { token: data.token, livekitUrl: data.livekitUrl });
+      }
+      toast.success('Joined group live as co-host');
       setInvite(null);
       seenToastRef.current = null;
       router.push(`/live/${liveId}`);

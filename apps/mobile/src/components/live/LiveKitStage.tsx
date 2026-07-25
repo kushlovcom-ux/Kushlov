@@ -175,9 +175,16 @@ function makeVideoGrid(
     }
 
     const multi = tracks.length > 1;
+    const dual = tracks.length === 2;
 
     return (
-      <View style={[styles.grid, multi && styles.gridMulti, { backgroundColor: '#000' }]}>
+      <View
+        style={[
+          styles.grid,
+          multi && (dual ? styles.gridDual : styles.gridMulti),
+          { backgroundColor: '#000' },
+        ]}
+      >
         {tracks.map((trackRef, index) => {
           const ref = trackRef as {
             participant: Participant;
@@ -194,6 +201,7 @@ function makeVideoGrid(
               isLocal={isLocal}
               elevated={c.elevated}
               multi={multi}
+              dual={dual}
             />
           );
         })}
@@ -208,6 +216,7 @@ function ParticipantVideoTile({
   isLocal,
   elevated,
   multi,
+  dual,
 }: {
   lk: {
     VideoTrack: React.ComponentType<{
@@ -222,12 +231,23 @@ function ParticipantVideoTile({
   isLocal: boolean;
   elevated: string;
   multi: boolean;
+  dual?: boolean;
 }) {
   const participant = (trackRef as { participant: Participant }).participant;
   const filterId = useLocalOrRemoteFaceFilter(participant);
+  let role: string | undefined;
+  try {
+    role = participant.metadata
+      ? (JSON.parse(participant.metadata) as { role?: string }).role
+      : undefined;
+  } catch {
+    role = undefined;
+  }
+  const roleBadge = role === 'cohost' ? 'Co-host' : role === 'host' ? 'Host' : null;
+  const name = isLocal ? 'You' : participant.name || roleBadge || 'Guest';
 
   return (
-    <View style={[multi ? styles.tileMulti : styles.tile]}>
+    <View style={[dual ? styles.tileDual : multi ? styles.tileMulti : styles.tile]}>
       <lk.VideoTrack
         trackRef={trackRef}
         style={StyleSheet.absoluteFill}
@@ -236,6 +256,18 @@ function ParticipantVideoTile({
         zOrder={isLocal ? 1 : 0}
       />
       <FaceFilterOverlay filterId={filterId} mirrored={isLocal} />
+      {multi ? (
+        <View style={styles.labelRow}>
+          {roleBadge ? (
+            <Text style={styles.roleBadge} numberOfLines={1}>
+              {roleBadge}
+            </Text>
+          ) : null}
+          <Text style={[styles.nameBadge, { backgroundColor: elevated + 'CC' }]} numberOfLines={1}>
+            {name}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -257,6 +289,13 @@ const styles = StyleSheet.create({
     flexWrap: 'nowrap',
     height: '100%',
   },
+  /** Group live (2 hosts): stacked dual frame like Instagram/FB live. */
+  gridDual: {
+    flexDirection: 'column',
+    flexWrap: 'nowrap',
+    height: '100%',
+    gap: 2,
+  },
   tile: {
     flex: 1,
     overflow: 'hidden',
@@ -268,5 +307,39 @@ const styles = StyleSheet.create({
     minHeight: '100%',
     overflow: 'hidden',
     backgroundColor: '#000',
+  },
+  tileDual: {
+    flex: 1,
+    width: '100%',
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  labelRow: {
+    position: 'absolute',
+    left: 8,
+    bottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: '90%',
+  },
+  roleBadge: {
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: 'rgba(236, 72, 153, 0.92)',
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  nameBadge: {
+    overflow: 'hidden',
+    borderRadius: 999,
+    color: '#fff',
+    fontSize: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    maxWidth: 140,
   },
 });

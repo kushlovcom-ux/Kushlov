@@ -33,7 +33,7 @@ export type AppStackParamList = {
   GroupCall: undefined;
   History: undefined;
   Transactions: undefined;
-  LiveRoom: { liveId: string };
+  LiveRoom: { liveId: string; coliveToken?: string; livekitUrl?: string };
   GoLive: undefined;
   BecomeHost: undefined;
   Contact: undefined;

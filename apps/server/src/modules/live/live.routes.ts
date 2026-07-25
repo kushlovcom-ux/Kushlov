@@ -29,6 +29,7 @@ router.post(
   ctrl.coliveInvite,
 );
 router.post('/:id/colive/accept', requireApprovedHost, ctrl.coliveAccept);
+router.get('/:id/colive/token', requireApprovedHost, ctrl.coliveToken);
 router.post('/:id/colive/reject', requireApprovedHost, ctrl.coliveReject);
 router.post('/:id/colive/leave', requireApprovedHost, ctrl.coliveLeave);
 

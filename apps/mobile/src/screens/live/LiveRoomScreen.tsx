@@ -60,7 +60,7 @@ function coHostIdOf(live: {
 }
 
 export function LiveRoomScreen({ navigation, route }: Props) {
-  const { liveId } = route.params;
+  const { liveId, coliveToken, livekitUrl: handoffUrl } = route.params;
   const c = useThemeColors();
   const { user } = useAuth();
   const socket = useSocket();
@@ -74,7 +74,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   const [livekitUrl, setLivekitUrl] = useState<string>();
   const [connecting, setConnecting] = useState(true);
   const [connectError, setConnectError] = useState<string | null>(null);
-  const [isCoHost, setIsCoHost] = useState(false);
+  const [isCoHostOverride, setIsCoHostOverride] = useState(false);
   const [coHostName, setCoHostName] = useState<string | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
 
@@ -89,6 +89,12 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     if (!live.data || !user?.id) return false;
     return hostIdOf(live.data) === user.id;
   }, [live.data, user?.id]);
+
+  const isCoHost = useMemo(() => {
+    if (isCoHostOverride) return true;
+    if (!live.data || !user?.id) return false;
+    return coHostIdOf(live.data) === user.id;
+  }, [live.data, user?.id, isCoHostOverride]);
 
   const canPublish = isHost || isCoHost;
 
@@ -125,12 +131,23 @@ export function LiveRoomScreen({ navigation, route }: Props) {
           ? (live.data.coHost as { displayName?: string }).displayName ?? 'Co-host'
           : 'Co-host',
       );
-      if (cid === user.id) setIsCoHost(true);
+    } else if (!isCoHostOverride) {
+      setCoHostName(null);
     }
-  }, [live.data, user?.id]);
+  }, [live.data, user?.id, isCoHostOverride]);
+
+  // Accept handoff → publish into group live immediately.
+  useEffect(() => {
+    if (!coliveToken) return;
+    setIsCoHostOverride(true);
+    setToken(coliveToken);
+    if (handoffUrl) setLivekitUrl(handoffUrl);
+    setConnecting(false);
+  }, [coliveToken, handoffUrl]);
 
   useEffect(() => {
     if (!live.data) return;
+    if (coliveToken && isCoHost) return;
     let cancelled = false;
     setConnecting(true);
     setConnectError(null);
@@ -139,11 +156,12 @@ export function LiveRoomScreen({ navigation, route }: Props) {
         const data = isHost
           ? await liveApi.hostToken(liveId)
           : isCoHost
-            ? await liveApi.coliveAccept(liveId)
+            ? await liveApi.coliveToken(liveId)
             : await liveApi.join(liveId);
         if (cancelled) return;
         if (data.token) setToken(data.token);
         if (data.livekitUrl) setLivekitUrl(data.livekitUrl);
+        if ('role' in data && data.role === 'cohost') setIsCoHostOverride(true);
         if (
           'viewerCount' in data &&
           typeof (data as { viewerCount?: number }).viewerCount === 'number'
@@ -161,7 +179,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [live.data, liveId, isHost, isCoHost]);
+  }, [live.data, liveId, isHost, isCoHost, coliveToken]);
 
   useEffect(() => {
     const joinRoom = () => {
@@ -197,7 +215,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     const offColiveAccept = socket.on(SocketEvents.LiveColiveAccept, (...args: unknown[]) => {
       const p = args[0] as { coHost?: { displayName?: string; id?: string } };
       setCoHostName(p.coHost?.displayName ?? 'Co-host');
-      if (p.coHost?.id === user?.id) setIsCoHost(true);
+      if (p.coHost?.id === user?.id) setIsCoHostOverride(true);
     });
     const offColiveLeave = socket.on(SocketEvents.LiveColiveLeave, () => {
       setCoHostName(null);

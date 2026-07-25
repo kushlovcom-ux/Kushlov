@@ -176,11 +176,14 @@ export const hostToken = asyncHandler(async (req: Request, res: Response) => {
     { upsert: true },
   );
 
+  const hostUser = await User.findById(req.user!.id).select('displayName');
   const token = await createLiveKitToken({
     identity: req.user!.id,
+    name: hostUser?.displayName ?? 'Host',
     roomName: live.roomName,
     canPublish: true,
     canPublishData: true,
+    metadata: { role: 'host' },
   });
   return ok(res, {
     token,
@@ -244,10 +247,9 @@ export const listLive = asyncHandler(async (req: Request, res: Response) => {
 
 /** GET /live/:id — stream details. */
 export const getLive = asyncHandler(async (req: Request, res: Response) => {
-  const live = await LiveStream.findById(req.params.id).populate(
-    'host',
-    'displayName username avatarUrl isHostApproved',
-  );
+  const live = await LiveStream.findById(req.params.id)
+    .populate('host', 'displayName username avatarUrl isHostApproved')
+    .populate('coHost', 'displayName username avatarUrl isHostApproved');
   if (!live) throw ApiError.notFound('Stream not found');
   const hostId = refId(live.host as Parameters<typeof refId>[0]);
   if (hostId !== req.user!.id) {
@@ -267,6 +269,32 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
     throw ApiError.forbidden('You are banned from this stream');
   }
 
+  // Safety: co-host who races into /join still gets a publish token (group live).
+  if (live.coHost?.toString() === req.user!.id) {
+    const coHostUser = await User.findById(req.user!.id).select('displayName');
+    await LiveParticipant.updateOne(
+      { liveStream: live._id, user: req.user!.id },
+      { $set: { joinedAt: new Date(), leftAt: undefined, role: 'cohost' } },
+      { upsert: true },
+    );
+    const token = await createLiveKitToken({
+      identity: req.user!.id,
+      name: coHostUser?.displayName ?? 'Co-host',
+      roomName: live.roomName,
+      canPublish: true,
+      canPublishData: true,
+      metadata: { role: 'cohost' },
+    });
+    const viewerCount = await countActiveViewers(live._id);
+    return ok(res, {
+      token,
+      roomName: live.roomName,
+      viewerCount,
+      livekitUrl: getLiveKitPublicUrl(),
+      role: 'cohost',
+    });
+  }
+
   await LiveParticipant.updateOne(
     { liveStream: live._id, user: req.user!.id },
     {
@@ -280,12 +308,15 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
   live.peakViewers = Math.max(live.peakViewers, viewerCount);
   await live.save();
 
+  const viewer = await User.findById(req.user!.id).select('displayName');
   const token = await createLiveKitToken({
     identity: req.user!.id,
+    name: viewer?.displayName,
     roomName: live.roomName,
     canPublish: false,
     canSubscribe: true,
     canPublishData: true,
+    metadata: { role: 'viewer' },
   });
 
   await emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
@@ -610,14 +641,16 @@ export const coliveAccept = asyncHandler(async (req: Request, res: Response) => 
     await LiveStream.updateOne({ _id: live._id }, { $unset: { pendingColiveInvite: 1 } });
   }
 
+  const coHost = await User.findById(req.user!.id).select('displayName avatarUrl username');
   const token = await createLiveKitToken({
     identity: req.user!.id,
+    name: coHost?.displayName ?? 'Co-host',
     roomName: live.roomName,
     canPublish: true,
     canPublishData: true,
+    metadata: { role: 'cohost' },
   });
 
-  const coHost = await User.findById(req.user!.id).select('displayName avatarUrl username');
   if (!rejoining) {
     emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveColiveAccept, {
       liveId: live._id.toString(),
@@ -645,9 +678,43 @@ export const coliveAccept = asyncHandler(async (req: Request, res: Response) => 
       roomName: live.roomName,
       livekitUrl: getLiveKitPublicUrl(),
       live,
+      role: 'cohost',
     },
     rejoining ? 'Rejoined as co-host' : 'Joined as co-host',
   );
+});
+
+/** GET /live/:id/colive/token — co-host (re)joins the group live room to publish. */
+export const coliveToken = asyncHandler(async (req: Request, res: Response) => {
+  const live = await LiveStream.findById(req.params.id);
+  if (!live || live.status !== LiveStatus.Live) throw ApiError.notFound('Stream is not live');
+  if (live.coHost?.toString() !== req.user!.id) {
+    throw ApiError.forbidden('You are not the co-host of this stream');
+  }
+
+  const coHost = await User.findById(req.user!.id).select('displayName');
+  await LiveParticipant.updateOne(
+    { liveStream: live._id, user: req.user!.id },
+    { $set: { joinedAt: new Date(), leftAt: undefined, role: 'cohost' } },
+    { upsert: true },
+  );
+
+  const token = await createLiveKitToken({
+    identity: req.user!.id,
+    name: coHost?.displayName ?? 'Co-host',
+    roomName: live.roomName,
+    canPublish: true,
+    canPublishData: true,
+    metadata: { role: 'cohost' },
+  });
+
+  return ok(res, {
+    token,
+    roomName: live.roomName,
+    livekitUrl: getLiveKitPublicUrl(),
+    viewerCount: await countActiveViewers(live._id),
+    role: 'cohost',
+  });
 });
 
 /** POST /live/:id/colive/reject — invitee declines a pending co-live invite. */

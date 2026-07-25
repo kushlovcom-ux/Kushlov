@@ -21,11 +21,21 @@ import { cn } from '@/lib/utils';
 type VideoFit = 'cover' | 'contain';
 type StageLayout = 'grid' | 'speaker';
 
+function participantRole(p: Participant): string | undefined {
+  try {
+    const meta = p.metadata ? (JSON.parse(p.metadata) as { role?: string }) : null;
+    return meta?.role;
+  } catch {
+    return undefined;
+  }
+}
+
 function ParticipantTile({
   trackRef,
   videoFit,
   className,
   mirror,
+  showLabel,
 }: {
   trackRef: {
     participant: Participant;
@@ -35,7 +45,15 @@ function ParticipantTile({
   videoFit: VideoFit;
   className?: string;
   mirror?: boolean;
+  /** Show name + Host/Co-host badge (group live). */
+  showLabel?: boolean;
 }) {
+  const role = participantRole(trackRef.participant);
+  const label =
+    trackRef.participant.name ||
+    (role === 'cohost' ? 'Co-host' : role === 'host' ? 'Host' : trackRef.participant.identity);
+  const roleBadge = role === 'cohost' ? 'Co-host' : role === 'host' ? 'Host' : null;
+
   return (
     <div className={cn('relative h-full min-h-0 w-full overflow-hidden bg-black', className)}>
       <VideoTrack
@@ -51,6 +69,18 @@ function ParticipantTile({
           height: '100%',
         }}
       />
+      {showLabel ? (
+        <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex max-w-[90%] items-center gap-1.5">
+          {roleBadge ? (
+            <span className="shrink-0 rounded-full bg-brand-pink/90 px-2 py-0.5 text-[10px] font-semibold text-white">
+              {roleBadge}
+            </span>
+          ) : null}
+          <span className="truncate rounded-full bg-black/65 px-2 py-0.5 text-[11px] text-white/90 backdrop-blur-sm">
+            {trackRef.participant.isLocal ? 'You' : label}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -133,7 +163,8 @@ function LiveRoomVideo({
             <div
               className={
                 cameraTracks.length === 2
-                  ? 'absolute inset-0 grid h-full w-full grid-cols-2 gap-0'
+                  ? // Group live: stacked on phone, side-by-side on larger screens
+                    'absolute inset-0 grid h-full w-full grid-cols-1 grid-rows-2 gap-0.5 sm:grid-cols-2 sm:grid-rows-1'
                   : cameraTracks.length > 2
                     ? 'absolute inset-0 grid h-full w-full gap-1 p-1 sm:grid-cols-2'
                     : 'absolute inset-0 h-full w-full'
@@ -145,6 +176,7 @@ function LiveRoomVideo({
                   trackRef={trackRef}
                   videoFit={videoFit}
                   mirror={trackRef.participant.isLocal}
+                  showLabel={cameraTracks.length > 1}
                 />
               ))}
             </div>
