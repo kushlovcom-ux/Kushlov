@@ -1,7 +1,6 @@
 import Link from 'next/link';
-import { Facebook, Instagram, Twitter, Youtube, Mail, MapPin, Phone } from 'lucide-react';
+import { Facebook, Instagram, Youtube, Mail, MapPin, Phone } from 'lucide-react';
 import { Logo } from '@kushlov/ui';
-import { Button } from '@/components/ui/button';
 
 const productLinks = [
   { label: 'Discover', href: '/discover' },
@@ -14,13 +13,13 @@ const companyLinks = [
   { label: 'About Kushlov', href: '/#features' },
   { label: 'Become a Host', href: '/register' },
   { label: 'Safety Center', href: '/contact' },
-  { label: 'Careers', href: '/contact' },
+  { label: 'Careers', href: '/careers' },
 ];
 
 const supportLinks = [
   { label: 'Contact Us', href: '/contact' },
   { label: 'Help Center', href: '/contact' },
-  { label: 'Community Guidelines', href: '/contact' },
+  { label: 'Community Guidelines', href: '/community-guidelines' },
   { label: 'Report an Issue', href: '/contact' },
 ];
 
@@ -32,10 +31,21 @@ const legalLinks = [
 ];
 
 const social = [
-  { label: 'Instagram', href: 'https://instagram.com', icon: Instagram },
-  { label: 'Twitter', href: 'https://twitter.com', icon: Twitter },
-  { label: 'Facebook', href: 'https://facebook.com', icon: Facebook },
-  { label: 'YouTube', href: 'https://youtube.com', icon: Youtube },
+  {
+    label: 'Instagram',
+    href: 'https://www.instagram.com/khus655940?igsh=MWk0ZWs2NTc5ZHpzdQ==&utm_source=ig_contact_invite',
+    icon: Instagram,
+  },
+  {
+    label: 'Facebook',
+    href: 'https://www.facebook.com/share/19QLco38K6/',
+    icon: Facebook,
+  },
+  {
+    label: 'YouTube',
+    href: 'https://youtube.com/@kushlov-x7o?si=kK5H3PELQrLuFZp8',
+    icon: Youtube,
+  },
 ];
 
 export function SiteFooter() {
@@ -55,11 +65,15 @@ export function SiteFooter() {
             <div className="mt-6 space-y-2 text-sm text-white/45">
               <p className="flex items-center gap-2">
                 <Mail className="h-4 w-4 shrink-0 text-brand-pink" />
-                support@kushlov.app
+                <a href="mailto:kushlov.com@gmail.com" className="hover:text-brand-pink">
+                  kushlov.com@gmail.com
+                </a>
               </p>
               <p className="flex items-center gap-2">
                 <Phone className="h-4 w-4 shrink-0 text-brand-pink" />
-                +1 (800) 555-KUSH
+                <a href="tel:+918708554437" className="hover:text-brand-pink">
+                  +91 8708554437
+                </a>
               </p>
               <p className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 shrink-0 text-brand-pink" />
@@ -83,7 +97,7 @@ export function SiteFooter() {
           </div>
 
           {/* Link columns */}
-          <div className="grid gap-8 sm:grid-cols-2 lg:col-span-5 lg:grid-cols-3">
+          <div className="grid gap-8 sm:grid-cols-2 lg:col-span-8 lg:grid-cols-3">
             <div>
               <h3 className="text-sm font-semibold uppercase tracking-wider text-white/80">Product</h3>
               <ul className="mt-4 space-y-3">
@@ -120,24 +134,6 @@ export function SiteFooter() {
                 ))}
               </ul>
             </div>
-          </div>
-
-          {/* Newsletter */}
-          <div className="lg:col-span-3">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-white/80">Stay in the loop</h3>
-            <p className="mt-4 text-sm text-white/50">
-              Get updates on new features, host programs, and exclusive offers.
-            </p>
-            <form className="mt-4 flex flex-col gap-2 sm:flex-row lg:flex-col">
-              <input
-                type="email"
-                placeholder="you@example.com"
-                className="h-11 flex-1 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand-pink/60"
-              />
-              <Button type="button" className="shrink-0">
-                Subscribe
-              </Button>
-            </form>
           </div>
         </div>
       </div>

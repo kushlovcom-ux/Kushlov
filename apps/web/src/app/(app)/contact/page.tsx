@@ -134,10 +134,16 @@ export default function ContactPage() {
             <h3 className="font-semibold">Other ways to reach us</h3>
             <ul className="mt-4 space-y-3 text-white/55">
               <li>
-                <span className="text-white/35">Email:</span> support@kushlov.app
+                <span className="text-white/35">Email:</span>{' '}
+                <a href="mailto:kushlov.com@gmail.com" className="hover:text-brand-pink">
+                  kushlov.com@gmail.com
+                </a>
               </li>
               <li>
-                <span className="text-white/35">Phone:</span> +1 (800) 555-KUSH
+                <span className="text-white/35">Phone:</span>{' '}
+                <a href="tel:+918708554437" className="hover:text-brand-pink">
+                  +91 8708554437
+                </a>
               </li>
               <li>
                 <span className="text-white/35">Hours:</span> Mon–Fri, 9am–6pm PST
