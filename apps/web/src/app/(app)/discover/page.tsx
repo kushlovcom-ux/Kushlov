@@ -58,7 +58,7 @@ export default function DiscoverPage() {
       ),
     enabled: location.data?.hasLocation === true,
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
 
   const like = useMutation({

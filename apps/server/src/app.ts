@@ -43,6 +43,8 @@ function vercelDbMiddleware(req: Request, _res: Response, next: NextFunction): v
 export function createApp(): Application {
   const app = express();
 
+  // Required behind Nginx / load balancers so req.ip and rate-limit keys use
+  // X-Forwarded-For (one hop: Nginx → Node). Increase if you add another proxy.
   app.set('trust proxy', 1);
 
   // CORS must be first — especially for Vercel preflight (OPTIONS) before DB/auth.

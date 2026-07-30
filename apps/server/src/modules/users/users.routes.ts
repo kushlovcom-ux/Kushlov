@@ -2,15 +2,16 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
 import { uploadImage, uploadMedia } from '../../middleware/upload';
+import { searchLimiter } from '../../middleware/rateLimit';
 import * as ctrl from './users.controller';
 import { updateMeSchema, updateProfileSchema, updateLocationSchema } from './users.validation';
 
 const router = Router();
 router.use(authenticate);
 
-router.get('/', ctrl.searchUsers);
-router.get('/hosts/top-rated', ctrl.listTopRatedHosts);
-router.get('/hosts', ctrl.listHosts);
+router.get('/', searchLimiter, ctrl.searchUsers);
+router.get('/hosts/top-rated', searchLimiter, ctrl.listTopRatedHosts);
+router.get('/hosts', searchLimiter, ctrl.listHosts);
 
 router.patch('/me', validate({ body: updateMeSchema }), ctrl.updateMe);
 router.get('/me/badges', ctrl.getMyBadges);

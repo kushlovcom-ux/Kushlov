@@ -228,7 +228,7 @@ export default function LiveRoomPage() {
 
     void pull();
     // Faster when sockets are down; still light when connected.
-    const ms = connected ? 2500 : 1200;
+    const ms = connected ? 5_000 : 3_000;
     const timer = window.setInterval(() => void pull(), ms);
     return () => {
       cancelled = true;

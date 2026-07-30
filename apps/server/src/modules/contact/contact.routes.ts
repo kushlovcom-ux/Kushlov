@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
+import { contactLimiter } from '../../middleware/rateLimit';
 import * as ctrl from './contact.controller';
 
 const router = Router();
@@ -13,7 +14,7 @@ const submitSchema = z.object({
   message: z.string().min(10, 'Message must be at least 10 characters').max(3000),
 });
 
-router.post('/', validate({ body: submitSchema }), ctrl.submitInquiry);
+router.post('/', contactLimiter, validate({ body: submitSchema }), ctrl.submitInquiry);
 router.get('/', ctrl.listMyInquiries);
 
 export default router;

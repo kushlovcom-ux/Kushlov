@@ -152,7 +152,12 @@ export async function apiDelete<T>(url: string, config?: AxiosRequestConfig) {
 }
 
 export function getErrorMessage(err: unknown, fallback = 'Something went wrong'): string {
-  if (err instanceof ApiError) return err.message;
+  if (err instanceof ApiError) {
+    if (err.status === 429 || err.code === 'RATE_LIMITED') {
+      return "You've made several requests in a short time. Please wait a moment and try again.";
+    }
+    return err.message;
+  }
   if (err instanceof Error) return err.message;
   return fallback;
 }

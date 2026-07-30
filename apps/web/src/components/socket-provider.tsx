@@ -18,7 +18,7 @@ const SocketContext = createContext<SocketContextValue>({ socket: null, connecte
 
 export const useSocket = () => useContext(SocketContext);
 
-const PRESENCE_INTERVAL_MS = 25_000;
+const PRESENCE_INTERVAL_MS = 45_000;
 
 /** Establishes Socket.io when available, plus HTTP presence heartbeat (works on Vercel). */
 export function SocketProvider({ children }: { children: ReactNode }) {
@@ -33,10 +33,11 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false;
     const ping = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         await api.post('/users/me/presence');
+        // Do NOT invalidate discover here — that turned a heartbeat into a query storm.
         if (!cancelled) {
-          qc.invalidateQueries({ queryKey: ['discover'] });
           qc.invalidateQueries({ queryKey: ['admin-online'] });
         }
       } catch {
@@ -71,6 +72,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       transports: ['websocket', 'polling'],
       autoConnect: true,
       reconnectionAttempts: 8,
+      reconnectionDelay: 1_000,
+      reconnectionDelayMax: 8_000,
       timeout: 10000,
     });
     setSocket(next);

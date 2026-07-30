@@ -9,6 +9,7 @@ import { createMessage } from '../modules/chat/chat.service';
 import { markLiveEnded } from '../services/live-lifecycle.service';
 import { isIdentityInRoom } from '../services/livekit.service';
 import { setIO } from './io';
+import { createSocketThrottle } from './throttle';
 
 interface AuthedSocket extends Socket {
   userId?: string;
@@ -16,6 +17,11 @@ interface AuthedSocket extends Socket {
 
 /** Track open sockets per user so multi-tab disconnect doesn't flip offline early. */
 const connectionCounts = new Map<string, number>();
+
+/** Live / chat realtime throttles (HTTP live routes stay on the global API limiter only). */
+const allowTyping = createSocketThrottle(8, 2_000); // 8 / 2s
+const allowMessage = createSocketThrottle(30, 60_000); // 30 / min
+const allowLiveJoin = createSocketThrottle(20, 60_000); // 20 / min
 
 async function markOnline(userId: string) {
   await User.findByIdAndUpdate(userId, { isOnline: true, lastSeenAt: new Date() });
@@ -61,13 +67,28 @@ export function initSocket(httpServer: HttpServer): IOServer {
     logger.debug({ userId, connections: prev + 1 }, 'Socket connected');
 
     socket.on(SocketEvents.TypingStart, ({ conversationId, to }) => {
+      if (!allowTyping(userId)) return;
       if (to) io.to(`user:${to}`).emit(SocketEvents.TypingStart, { conversationId, from: userId });
     });
     socket.on(SocketEvents.TypingStop, ({ conversationId, to }) => {
+      if (!allowTyping(userId)) return;
       if (to) io.to(`user:${to}`).emit(SocketEvents.TypingStop, { conversationId, from: userId });
     });
 
     socket.on(SocketEvents.MessageSend, async (payload, ack) => {
+      if (!allowMessage(userId)) {
+        logger.warn(
+          { event: 'socket_rate_limit', kind: 'MessageSend', userId, timestamp: new Date().toISOString() },
+          'Socket message rate limit exceeded',
+        );
+        ack?.({
+          success: false,
+          code: 'RATE_LIMITED',
+          message:
+            "You've made several requests in a short time. Please wait a moment and try again.",
+        });
+        return;
+      }
       try {
         const message = await createMessage({
           conversationId: payload.conversationId,
@@ -84,6 +105,13 @@ export function initSocket(httpServer: HttpServer): IOServer {
 
     socket.on(SocketEvents.LiveJoin, async ({ liveId }) => {
       if (!liveId) return;
+      if (!allowLiveJoin(userId)) {
+        logger.warn(
+          { event: 'socket_rate_limit', kind: 'LiveJoin', userId, liveId },
+          'Socket live-join rate limit exceeded',
+        );
+        return;
+      }
       await socket.join(`live:${liveId}`);
     });
     socket.on(SocketEvents.LiveLeave, async ({ liveId }) => {

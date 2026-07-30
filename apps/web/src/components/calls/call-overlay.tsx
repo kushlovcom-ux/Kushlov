@@ -459,10 +459,12 @@ export function CallOverlay() {
 
   useEffect(() => {
     if (!user || user.role === 'admin') return;
+    // When sockets are healthy and we are not mid-call, rely on realtime invites.
     if (connected && !active) return;
 
     let cancelled = false;
     const poll = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         const data = await unwrap<{ items: IncomingInvite[] }>(api.get('/calls/incoming'));
         const next = data.items?.[0];
@@ -482,18 +484,20 @@ export function CallOverlay() {
     };
 
     void poll();
-    const id = window.setInterval(poll, 2500);
+    const id = window.setInterval(poll, connected ? 6_000 : 4_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [user, connected, incoming, active]);
+    // Intentionally omit `incoming` — including it restarted the interval every invite.
+  }, [user, connected, active]);
 
   useEffect(() => {
     if (!outgoing || connected) return;
     let cancelled = false;
 
     const poll = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         const data = await unwrap<{
           status: string;
@@ -530,7 +534,7 @@ export function CallOverlay() {
     };
 
     void poll();
-    const id = window.setInterval(poll, 2000);
+    const id = window.setInterval(poll, 4_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);

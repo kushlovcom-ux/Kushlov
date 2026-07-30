@@ -66,6 +66,7 @@ export function ColiveInviteOverlay() {
     let cancelled = false;
 
     const poll = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         const data = await unwrap<{ items: ColiveInvite[] }>(api.get('/live/colive/incoming'));
         if (cancelled) return;
@@ -83,7 +84,8 @@ export function ColiveInviteOverlay() {
     };
 
     void poll();
-    const ms = connected ? 2_500 : 1_200;
+    // Slow poll when sockets are healthy; still light enough as HTTP fallback.
+    const ms = connected ? 8_000 : 5_000;
     const id = window.setInterval(() => void poll(), ms);
     return () => {
       cancelled = true;
