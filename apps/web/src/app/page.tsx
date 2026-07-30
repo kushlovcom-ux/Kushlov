@@ -10,11 +10,11 @@ import { LandingPopularHosts } from '@/components/landing/landing-popular-hosts'
 
 export default function LandingPage() {
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative">
       <LandingHeader />
 
-      {/* Hero */}
-      <section className="container grid items-center gap-10 py-16 md:grid-cols-2 md:py-24">
+      {/* Hero — overflow clipped here so the header Open app control is never cut off */}
+      <section className="container relative overflow-hidden grid items-center gap-10 py-16 md:grid-cols-2 md:py-24">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-white/70">
             <ShieldCheck className="h-4 w-4 text-brand-pink" /> Verified hosts · Secure payments

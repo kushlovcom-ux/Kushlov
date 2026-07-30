@@ -19,10 +19,16 @@ export function AuthUserMenu({ compact = false }: { compact?: boolean }) {
   const home = user.role === 'admin' ? '/admin' : '/discover';
 
   return (
-    <div className="flex items-center gap-2 sm:gap-3">
+    <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+      {/* Open app first so it stays visible when the header is tight on mobile */}
+      <Link href={home} className="inline-flex shrink-0">
+        <Button variant="secondary" size="sm" className="px-2.5 sm:px-3">
+          Open app
+        </Button>
+      </Link>
       <Link
         href="/profile"
-        className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/5"
+        className="flex shrink-0 items-center gap-2 rounded-xl px-1.5 py-1.5 transition-colors hover:bg-white/5 sm:px-2"
       >
         <UserAvatar name={user.displayName} src={user.avatarUrl} className="h-8 w-8" />
         {!compact && (
@@ -32,18 +38,13 @@ export function AuthUserMenu({ compact = false }: { compact?: boolean }) {
           </div>
         )}
       </Link>
-      <Link href={home} className="inline-flex">
-        <Button variant="secondary" size="sm">
-          <span className="sm:hidden">App</span>
-          <span className="hidden sm:inline">Open app</span>
-        </Button>
-      </Link>
       <Button
         variant="ghost"
         size="sm"
-        className="gap-1.5 text-white/70"
+        className="shrink-0 gap-1.5 px-2 text-white/70 sm:px-3"
         onClick={() => logout.mutate()}
         loading={logout.isPending}
+        aria-label="Log out"
       >
         <LogOut className="h-4 w-4" />
         <span className="hidden sm:inline">Log out</span>

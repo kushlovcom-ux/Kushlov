@@ -36,19 +36,27 @@ export function LandingHeader() {
   const isLoggedIn = ready && Boolean(accessToken);
 
   return (
-    <header className="container flex items-center justify-between py-6" suppressHydrationWarning>
-      <Link href="/" aria-label="Kushlov home" className="inline-flex">
-        <Logo />
+    <header
+      className="container relative z-20 flex items-center justify-between gap-2 py-4 sm:py-6"
+      suppressHydrationWarning
+    >
+      <Link href="/" aria-label="Kushlov home" className="inline-flex min-w-0 shrink">
+        <span className="sm:hidden">
+          <Logo size={28} withWordmark={false} />
+        </span>
+        <span className="hidden sm:inline-flex">
+          <Logo />
+        </span>
       </Link>
-      <nav className="flex items-center gap-2 sm:gap-3" suppressHydrationWarning>
+      <nav className="flex min-w-0 shrink-0 items-center gap-1 sm:gap-3" suppressHydrationWarning>
         {!ready ? (
           <GuestNav />
         ) : isLoggedIn ? (
           <>
-            <Link href="/contact">
+            <Link href="/contact" className="hidden sm:inline-flex">
               <Button variant="ghost" className="gap-2">
                 <Mail className="h-4 w-4" />
-                <span className="hidden sm:inline">Contact Us</span>
+                Contact Us
               </Button>
             </Link>
             <AuthUserMenu />
