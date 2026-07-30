@@ -133,7 +133,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       useCallStore.getState().setParked(true);
     };
 
-    const onUnhold = (payload: { callId?: string; merged?: boolean }) => {
+    const onUnhold = (payload: {
+      callId?: string;
+      merged?: boolean;
+      token?: string;
+      roomName?: string;
+      livekitUrl?: string;
+      maxDurationSec?: number;
+    }) => {
       if (payload.merged) {
         useCallStore.getState().setParked(false);
         return;
@@ -141,10 +148,45 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const active = useCallStore.getState().active;
       if (!active || (payload.callId && payload.callId !== active.session.id)) return;
       useCallStore.getState().setParked(false);
+      if (payload.token) {
+        useCallStore.getState().updateSession({
+          token: payload.token,
+          roomName: payload.roomName ?? active.session.roomName,
+          livekitUrl: payload.livekitUrl ?? active.session.livekitUrl,
+          status: CallStatus.Ongoing,
+        });
+      }
     };
 
-    const onParticipantLeft = (payload: { endedForYou?: boolean }) => {
-      if (payload?.endedForYou) clearCall();
+    const onParticipantLeft = (payload: {
+      endedForYou?: boolean;
+      userId?: string;
+    }) => {
+      if (payload?.endedForYou) {
+        clearCall();
+        return;
+      }
+      const leftId = payload?.userId;
+      if (!leftId) return;
+      const active = useCallStore.getState().active;
+      if (!active) return;
+      useCallStore.getState().setParticipants(
+        (active.participants ?? []).filter((p) => p.id !== leftId),
+      );
+    };
+
+    const onParticipantJoined = (payload: {
+      participant?: { id?: string; displayName?: string };
+    }) => {
+      const id = payload?.participant?.id;
+      if (!id) return;
+      const active = useCallStore.getState().active;
+      if (!active) return;
+      if ((active.participants ?? []).some((p) => p.id === id)) return;
+      useCallStore.getState().setParticipants([
+        ...(active.participants ?? []),
+        { id, name: payload.participant?.displayName ?? 'Peer' },
+      ]);
     };
     const onMessage = () => {
       qc.invalidateQueries({ queryKey: queryKeys.conversations });
@@ -172,6 +214,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.on(SocketEvents.CallHold, onHold);
     socket.on(SocketEvents.CallUnhold, onUnhold);
     socket.on(SocketEvents.CallParticipantLeft, onParticipantLeft);
+    socket.on(SocketEvents.CallParticipantJoined, onParticipantJoined);
     socket.on(SocketEvents.MessageNew, onMessage);
     socket.on(SocketEvents.Notification, onNotification);
     socket.on(SocketEvents.LiveColiveInvite, onColiveInvite);
@@ -190,6 +233,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       s?.off(SocketEvents.CallHold, onHold);
       s?.off(SocketEvents.CallUnhold, onUnhold);
       s?.off(SocketEvents.CallParticipantLeft, onParticipantLeft);
+      s?.off(SocketEvents.CallParticipantJoined, onParticipantJoined);
       s?.off(SocketEvents.MessageNew, onMessage);
       s?.off(SocketEvents.Notification, onNotification);
       s?.off(SocketEvents.LiveColiveInvite, onColiveInvite);

@@ -13,7 +13,7 @@ import { AudioCall, ICall, User, VideoCall } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
-import { createLiveKitToken, removeParticipant, closeRoom } from '../../services/livekit.service';
+import { createLiveKitToken, removeParticipant, closeRoom, setParticipantMuted } from '../../services/livekit.service';
 import { spendDiamonds, ensureWallet } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
 import { emitToUser } from '../../socket/io';
@@ -355,7 +355,13 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   }
 
   // Park other members of the held call while consult rings.
+  // Real hold: kick the holder out of the held LiveKit room + mute held peers.
   if (heldCall && heldType) {
+    try {
+      await removeParticipant(heldCall.roomName, req.user!.id);
+    } catch {
+      /* already left */
+    }
     const holdPayload = {
       callId: heldCall._id.toString(),
       type: heldType,
@@ -365,6 +371,11 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     };
     for (const memberId of participantIdsOf(heldCall)) {
       if (memberId === req.user!.id) continue;
+      try {
+        await setParticipantMuted(heldCall.roomName, memberId, true);
+      } catch {
+        /* ignore */
+      }
       emitToUser(memberId, SocketEvents.CallHold, holdPayload);
     }
   }
@@ -685,6 +696,13 @@ export const holdCall = asyncHandler(async (req: Request, res: Response) => {
   if (call.status !== CallStatus.Ongoing) throw ApiError.badRequest('Call is not ongoing');
   if (!isCallMember(call, req.user!.id)) throw ApiError.forbidden('Not your call');
 
+  // Force holder out of the LiveKit room so held peers cannot hear them.
+  try {
+    await removeParticipant(call.roomName, req.user!.id);
+  } catch {
+    /* already left */
+  }
+
   const payload = {
     callId: call._id.toString(),
     type,
@@ -693,6 +711,11 @@ export const holdCall = asyncHandler(async (req: Request, res: Response) => {
   };
   for (const memberId of participantIdsOf(call)) {
     if (memberId === req.user!.id) continue;
+    try {
+      await setParticipantMuted(call.roomName, memberId, true);
+    } catch {
+      /* ignore */
+    }
     emitToUser(memberId, SocketEvents.CallHold, payload);
   }
   return ok(res, payload, 'Call on hold');
@@ -713,6 +736,31 @@ export const unholdCall = asyncHandler(async (req: Request, res: Response) => {
     canPublish: true,
   });
 
+  // Unmute held peers and give them fresh tokens so they can republish.
+  for (const memberId of participantIdsOf(call)) {
+    if (memberId === req.user!.id) continue;
+    try {
+      await setParticipantMuted(call.roomName, memberId, false);
+    } catch {
+      /* ignore */
+    }
+    const peerToken = await createLiveKitToken({
+      identity: memberId,
+      roomName: call.roomName,
+      canPublish: true,
+    });
+    emitToUser(memberId, SocketEvents.CallUnhold, {
+      callId: call._id.toString(),
+      type,
+      heldBy: req.user!.id,
+      held: false,
+      token: peerToken,
+      roomName: call.roomName,
+      livekitUrl,
+      maxDurationSec: call.maxDurationSec,
+    });
+  }
+
   const payload = {
     callId: call._id.toString(),
     type,
@@ -723,15 +771,6 @@ export const unholdCall = asyncHandler(async (req: Request, res: Response) => {
     livekitUrl,
     maxDurationSec: call.maxDurationSec,
   };
-  for (const memberId of participantIdsOf(call)) {
-    if (memberId === req.user!.id) continue;
-    emitToUser(memberId, SocketEvents.CallUnhold, {
-      callId: call._id.toString(),
-      type,
-      heldBy: req.user!.id,
-      held: false,
-    });
-  }
   return ok(res, payload, 'Call resumed');
 });
 
@@ -889,8 +928,6 @@ export const removeCallParticipant = asyncHandler(async (req: Request, res: Resp
 
   if (members.length < 2) {
     // Tear down remaining 1:1 remnant.
-    req.params.id = call._id.toString();
-    // Inline minimal end for leftover participant
     call.status = CallStatus.Ended;
     call.endedAt = new Date();
     call.pendingInvites = [];
@@ -900,6 +937,11 @@ export const removeCallParticipant = asyncHandler(async (req: Request, res: Resp
         callId: call._id.toString(),
         reason: 'last_peer_removed',
       });
+    }
+    try {
+      await closeRoom(call.roomName);
+    } catch {
+      /* ignore */
     }
     return ok(res, { call, ended: true }, 'Participant removed; call ended');
   }
@@ -1051,6 +1093,14 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
       durationSec,
     });
   }
+
+  // Force everyone out of LiveKit so nobody is left alone in the room.
+  try {
+    await closeRoom(call.roomName);
+  } catch {
+    /* ignore */
+  }
+
   return ok(res, call, 'Call ended');
 });
 

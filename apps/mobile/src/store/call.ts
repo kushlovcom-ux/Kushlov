@@ -5,6 +5,8 @@ export type ActiveCall = {
   session: CallSession;
   role: 'caller' | 'callee';
   peer?: PublicUser;
+  /** Remotes on this leg — used for End-for-X controls. */
+  participants: { id: string; name: string }[];
   muted: boolean;
   cameraOff: boolean;
   speakerOn: boolean;
@@ -27,6 +29,7 @@ type CallState = {
   setParked: (parked: boolean) => void;
   startCall: (session: CallSession, role: 'caller' | 'callee', peer?: PublicUser) => void;
   updateSession: (session: Partial<CallSession>) => void;
+  setParticipants: (participants: { id: string; name: string }[]) => void;
   setMuted: (muted: boolean) => void;
   setCameraOff: (cameraOff: boolean) => void;
   setSpeakerOn: (speakerOn: boolean) => void;
@@ -45,10 +48,14 @@ export const useCallStore = create<CallState>((set, get) => ({
   startCall: (session, role, peer) =>
     set({
       incoming: null,
+      parked: false,
       active: {
         session,
         role,
         peer,
+        participants: peer?.id
+          ? [{ id: peer.id, name: peer.displayName ?? 'Peer' }]
+          : [],
         muted: false,
         cameraOff: session.type === ('audio' as CallType),
         speakerOn: session.type === ('audio' as CallType),
@@ -59,6 +66,19 @@ export const useCallStore = create<CallState>((set, get) => ({
     const active = get().active;
     if (!active) return;
     set({ active: { ...active, session: { ...active.session, ...partial } } });
+  },
+  setParticipants: (participants: { id: string; name: string }[]) => {
+    const active = get().active;
+    if (!active) return;
+    set({
+      active: {
+        ...active,
+        participants,
+        peer: participants[0]
+          ? { ...(active.peer ?? { id: participants[0].id }), id: participants[0].id, displayName: participants[0].name }
+          : active.peer,
+      },
+    });
   },
   setMuted: (muted) => {
     const active = get().active;

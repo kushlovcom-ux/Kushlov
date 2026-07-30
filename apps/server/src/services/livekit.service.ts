@@ -56,15 +56,28 @@ export async function removeParticipant(roomName: string, identity: string): Pro
   await getRoomClient().removeParticipant(roomName, identity);
 }
 
-/** Mute a participant's published tracks (moderation). */
-export async function muteParticipant(
+/** Mute or unmute all published tracks for a participant (hold / moderation). */
+export async function setParticipantMuted(
   roomName: string,
   identity: string,
-  trackSid: string,
   muted: boolean,
 ): Promise<void> {
   if (!hasLiveKit) return;
-  await getRoomClient().mutePublishedTrack(roomName, identity, trackSid, muted);
+  try {
+    const participants = await getRoomClient().listParticipants(roomName);
+    const target = participants.find((p) => p.identity === identity);
+    if (!target) return;
+    for (const track of target.tracks) {
+      if (!track.sid) continue;
+      try {
+        await getRoomClient().mutePublishedTrack(roomName, identity, track.sid, muted);
+      } catch {
+        /* track may have ended */
+      }
+    }
+  } catch {
+    /* room missing */
+  }
 }
 
 export async function closeRoom(roomName: string): Promise<void> {

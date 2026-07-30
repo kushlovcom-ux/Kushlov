@@ -127,12 +127,18 @@ export function CallOverlay() {
 
   const endHeldOnly = async () => {
     if (!heldCall) return;
+    const held = heldCall;
     try {
-      await callsApi.end(heldCall.type, heldCall.callId);
+      await callsApi.end(held.type, held.callId);
     } catch {
       // ignore
     }
     setHeldCall(null);
+    const activeNow = useCallStore.getState().active;
+    if (activeNow && held.peer?.id) {
+      const participants = (activeNow.participants ?? []).filter((p) => p.id !== held.peer!.id);
+      useCallStore.getState().setParticipants(participants);
+    }
   };
 
   const endAllCalls = async () => {
@@ -165,6 +171,13 @@ export function CallOverlay() {
         active.session.id,
         heldCall.callId,
       );
+      const participants = [...(active.participants ?? [])];
+      if (heldCall.peer?.id && !participants.some((p) => p.id === heldCall.peer!.id)) {
+        participants.push({
+          id: heldCall.peer.id,
+          name: heldCall.peer.displayName ?? 'Peer',
+        });
+      }
       useCallStore.getState().updateSession({
         id: session.id || active.session.id,
         token: session.token ?? active.session.token,
@@ -172,6 +185,7 @@ export function CallOverlay() {
         roomName: session.roomName ?? active.session.roomName,
         status: CallStatus.Ongoing,
       });
+      useCallStore.getState().setParticipants(participants);
       setHeldCall(null);
       Alert.alert('Merged', 'Calls merged into one room');
     } catch (err) {
@@ -236,7 +250,10 @@ export function CallOverlay() {
               if (res.ended) {
                 setRoom(null);
                 clear();
+                return;
               }
+              const next = (active.participants ?? []).filter((p) => p.id !== userId);
+              useCallStore.getState().setParticipants(next);
             } catch (err) {
               Alert.alert('Remove', getErrorMessage(err));
             }
@@ -322,14 +339,27 @@ export function CallOverlay() {
 
   return (
     <View style={[styles.overlay, { backgroundColor: '#050506' }]}>
-      {token && url ? (
+      {parked ? (
+        <View style={styles.centerMeta}>
+          <Ionicons name="pause" size={48} color="#fbbf24" />
+          <Text variant="h2" color="#fbbf24">
+            On hold
+          </Text>
+          <Text muted style={{ textAlign: 'center', paddingHorizontal: 32 }}>
+            Please wait — you will be reconnected shortly.
+          </Text>
+        </View>
+      ) : token && url ? (
         <View style={StyleSheet.absoluteFill}>
           <LiveKitStage
             token={token}
             serverUrl={url}
             publish
             audioOnly={!isVideo}
-            onDisconnected={() => void endCall()}
+            onDisconnected={() => {
+              if (useCallStore.getState().parked) return;
+              void endCall();
+            }}
             onRoom={onRoom}
             style={{ flex: 1, borderRadius: 0 }}
           />
@@ -397,20 +427,28 @@ export function CallOverlay() {
           {!heldCall && !parked ? (
             <AddCallParticipant callId={active.session.id} type={active.session.type} mode="consult" />
           ) : null}
-          {!heldCall ? (
+          {!heldCall && !parked ? (
             <AddCallParticipant callId={active.session.id} type={active.session.type} mode="invite" />
           ) : null}
         </View>
-        {active.peer?.id ? (
-          <Pressable
-            onPress={() => kickPeer(active.peer!.id!, active.peer?.displayName)}
-            style={{ marginTop: 8, paddingHorizontal: 12, paddingVertical: 6 }}
-          >
-            <Text variant="caption" color={c.danger}>
-              End call for {active.peer.displayName ?? 'peer'}
-            </Text>
-          </Pressable>
-        ) : null}
+        {!parked
+          ? (active.participants?.length
+              ? active.participants
+              : active.peer?.id
+                ? [{ id: active.peer.id, name: active.peer.displayName ?? 'peer' }]
+                : []
+            ).map((p) => (
+              <Pressable
+                key={p.id}
+                onPress={() => kickPeer(p.id, p.name)}
+                style={{ marginTop: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+              >
+                <Text variant="caption" color={c.danger}>
+                  End call for {p.name}
+                </Text>
+              </Pressable>
+            ))
+          : null}
       </View>
 
       {incoming ? (
@@ -480,8 +518,8 @@ export function CallOverlay() {
         )}
         <Ctrl
           icon="call"
-          label={heldCall ? 'End & resume' : 'End'}
-          onPress={endCall}
+          label={heldCall ? 'End all' : 'End'}
+          onPress={heldCall ? endAllCalls : endCall}
           color={c.danger}
           rotate
         />

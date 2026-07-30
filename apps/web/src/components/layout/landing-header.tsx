@@ -41,12 +41,7 @@ export function LandingHeader() {
       suppressHydrationWarning
     >
       <Link href="/" aria-label="Kushlov home" className="inline-flex min-w-0 shrink">
-        <span className="sm:hidden">
-          <Logo size={28} withWordmark={false} />
-        </span>
-        <span className="hidden sm:inline-flex">
-          <Logo />
-        </span>
+        <Logo size={28} withWordmark className="[&_span]:text-lg sm:[&_span]:text-xl" />
       </Link>
       <nav className="flex min-w-0 shrink-0 items-center gap-1 sm:gap-3" suppressHydrationWarning>
         {!ready ? (
