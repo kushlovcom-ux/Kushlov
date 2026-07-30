@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -26,14 +26,17 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const tokenRef = useRef(accessToken);
+  tokenRef.current = accessToken;
+  const loggedIn = Boolean(accessToken);
 
   // HTTP presence — keeps isOnline accurate even when Socket.io is disabled (*.vercel.app).
   useEffect(() => {
-    if (!accessToken) return;
+    if (!loggedIn) return;
 
     let cancelled = false;
     const ping = async () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (!tokenRef.current) return;
       try {
         await api.post('/users/me/presence');
         // Do NOT invalidate discover here — that turned a heartbeat into a query storm.
@@ -58,17 +61,21 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [accessToken, qc]);
+  }, [loggedIn, qc]);
 
+  // Connect once per login — do NOT reconnect on every access-token refresh
+  // (that caused "WebSocket is closed before the connection is established").
   useEffect(() => {
-    if (!accessToken || !clientEnv.socketEnabled) {
+    if (!loggedIn || !clientEnv.socketEnabled) {
       setSocket(null);
       setConnected(false);
       return;
     }
 
     const next = io(clientEnv.socketUrl, {
-      auth: { token: accessToken },
+      auth: (cb) => {
+        cb({ token: tokenRef.current });
+      },
       transports: ['websocket', 'polling'],
       autoConnect: true,
       reconnectionAttempts: 8,
@@ -95,11 +102,10 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     });
 
     next.on(SocketEvents.PresenceOnline, () => {
-      qc.invalidateQueries({ queryKey: ['discover'] });
+      // Do not refetch Discover — online filter churn made cards vanish/reappear.
       qc.invalidateQueries({ queryKey: ['admin-online'] });
     });
     next.on(SocketEvents.PresenceOffline, () => {
-      qc.invalidateQueries({ queryKey: ['discover'] });
       qc.invalidateQueries({ queryKey: ['admin-online'] });
     });
 
@@ -110,7 +116,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setSocket(null);
       setConnected(false);
     };
-  }, [accessToken, qc]);
+  }, [loggedIn, qc]);
 
   return (
     <SocketContext.Provider value={{ socket, connected }}>{children}</SocketContext.Provider>

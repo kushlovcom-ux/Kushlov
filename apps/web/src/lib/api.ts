@@ -28,6 +28,15 @@ api.interceptors.request.use((config) => {
 // --- Transparent access-token refresh on 401 (single-flight) ---
 let refreshing: Promise<string | null> | null = null;
 
+function isDefinitiveAuthFailure(err: unknown): boolean {
+  if (!axios.isAxiosError(err)) return false;
+  const status = err.response?.status;
+  // Only treat 401/403 from the refresh endpoint as "session is dead".
+  // Network errors, 429, and 5xx must NOT wipe the session — that caused
+  // wallet/messages/location to vanish until the cookie restored auth.
+  return status === 401 || status === 403;
+}
+
 export async function refreshAccessToken(): Promise<string | null> {
   const storedRefresh = useAuthStore.getState().refreshToken;
   try {
@@ -45,10 +54,14 @@ export async function refreshAccessToken(): Promise<string | null> {
       if (refreshToken) store.setRefreshToken(refreshToken);
       return accessToken;
     }
-  } catch {
-    useAuthStore.getState().clear();
+    // Unexpected empty payload — keep local session; next call can retry.
+    return null;
+  } catch (err) {
+    if (isDefinitiveAuthFailure(err)) {
+      useAuthStore.getState().clear();
+    }
+    return null;
   }
-  return null;
 }
 
 async function refreshAccessTokenSingleFlight(): Promise<string | null> {

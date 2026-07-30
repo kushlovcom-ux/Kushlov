@@ -16,6 +16,8 @@ export function Providers({ children }: { children: ReactNode }) {
           queries: {
             staleTime: 60_000,
             refetchOnWindowFocus: false,
+            // Keep last successful data visible while a refetch fails (auth blip / 429).
+            placeholderData: (previousData) => previousData,
             // Never retry rate-limited or auth failures — retries amplify 429 storms.
             retry: (failureCount, error) => {
               if (isRateLimited(error)) return false;

@@ -35,6 +35,7 @@ export function AuthBootstrap() {
           const res = await api.get('/auth/me');
           store.setAuth(res.data.data, token, useAuthStore.getState().refreshToken);
         }
+        // Transient refresh failure: keep persisted tokens — do not wipe the session.
       } finally {
         if (!cancelled) store.setSessionChecked(true);
       }

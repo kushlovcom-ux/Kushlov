@@ -20,6 +20,7 @@ import { emitToUser } from '../../socket/io';
 import { assertUsersCanConnect } from '../../services/location.service';
 import { getLiveKitPublicUrl } from '../../config/env';
 import { getBusyUserIds } from '../../services/call-busy.service';
+import { pruneStaleCalls } from '../../services/call-lifecycle.service';
 import { notify } from '../../services/notification.service';
 import {
   computeCallDiamondCost,
@@ -34,12 +35,10 @@ const modelFor = (type: CallType) => (type === CallType.Audio ? AudioCall : Vide
 const MAX_CALL_PARTICIPANTS = 6;
 
 function participantIdsOf(call: ICall): string[] {
-  const ids = new Set<string>([
-    call.caller.toString(),
-    call.callee.toString(),
-    ...(call.participants ?? []).map((p) => p.toString()),
-  ]);
-  return [...ids];
+  const parts = (call.participants ?? []).map((p) => p.toString());
+  if (parts.length > 0) return [...new Set(parts)];
+  // Legacy rows before participants were always maintained on join/remove.
+  return [...new Set([call.caller.toString(), call.callee.toString()])];
 }
 
 function isCallMember(call: ICall, userId: string): boolean {
@@ -50,14 +49,23 @@ function isPendingInvitee(call: ICall, userId: string): boolean {
   return (call.pendingInvites ?? []).some((p) => p.toString() === userId);
 }
 
-/** Find an Ongoing call (audio or video) that includes this user. Prefer matching type. */
+/** Find an Ongoing call that this user is actually on (participants first). */
 async function findOngoingCallForUser(
   userId: string,
   preferType?: CallType,
 ): Promise<{ call: ICall; type: CallType } | null> {
   const filter = {
     status: CallStatus.Ongoing,
-    $or: [{ caller: userId }, { callee: userId }, { participants: userId }],
+    $or: [
+      { participants: userId },
+      // Legacy Ongoing rows with empty participants.
+      {
+        $and: [
+          { $or: [{ participants: { $size: 0 } }, { participants: { $exists: false } }] },
+          { $or: [{ caller: userId }, { callee: userId }] },
+        ],
+      },
+    ],
   };
   if (preferType) {
     const preferred = await modelFor(preferType).findOne(filter);
@@ -105,6 +113,9 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   for (const id of groupIds) {
     await assertUsersCanConnect(req.user!.id, id);
   }
+
+  // Clear abandoned Ongoing/Ringing rows before busy checks (ghost "Busy" fix).
+  await pruneStaleCalls();
 
   const busy = await getBusyUserIds([req.user!.id, ...groupIds]);
   if (busy.has(req.user!.id)) {

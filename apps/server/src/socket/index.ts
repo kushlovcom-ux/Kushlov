@@ -7,6 +7,7 @@ import { verifyAccessToken } from '../utils/jwt';
 import { LiveStream, User } from '../models';
 import { createMessage } from '../modules/chat/chat.service';
 import { markLiveEnded } from '../services/live-lifecycle.service';
+import { pruneCallsForUser } from '../services/call-lifecycle.service';
 import { isIdentityInRoom } from '../services/livekit.service';
 import { setIO } from './io';
 import { createSocketThrottle } from './throttle';
@@ -136,6 +137,11 @@ export function initSocket(httpServer: HttpServer): IOServer {
           );
         } catch (err) {
           logger.warn({ err, userId }, 'Failed to end live streams on disconnect');
+        }
+        try {
+          await pruneCallsForUser(userId);
+        } catch (err) {
+          logger.warn({ err, userId }, 'Failed to prune calls on disconnect');
         }
         socket.broadcast.emit(SocketEvents.PresenceOffline, { userId });
       } else {

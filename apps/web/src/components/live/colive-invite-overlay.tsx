@@ -62,7 +62,8 @@ export function ColiveInviteOverlay() {
 
   // HTTP fallback — same pattern as call waiting (works when sockets are down/missed).
   useEffect(() => {
-    if (!user?.id) return;
+    // Co-live is host-only; skip poll for normal users (avoids 403 noise).
+    if (!user?.id || user.role !== 'host' || !user.isHostApproved) return;
     let cancelled = false;
 
     const poll = async () => {
@@ -85,13 +86,13 @@ export function ColiveInviteOverlay() {
 
     void poll();
     // Slow poll when sockets are healthy; still light enough as HTTP fallback.
-    const ms = connected ? 8_000 : 5_000;
+    const ms = connected ? 12_000 : 8_000;
     const id = window.setInterval(() => void poll(), ms);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [user?.id, connected, showInvite]);
+  }, [user?.id, user?.role, user?.isHostApproved, connected, showInvite]);
 
   const decline = async () => {
     const current = inviteRef.current;

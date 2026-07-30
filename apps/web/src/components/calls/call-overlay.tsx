@@ -465,6 +465,7 @@ export function CallOverlay() {
     let cancelled = false;
     const poll = async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (!useAuthStore.getState().accessToken) return;
       try {
         const data = await unwrap<{ items: IncomingInvite[] }>(api.get('/calls/incoming'));
         const next = data.items?.[0];
@@ -484,7 +485,7 @@ export function CallOverlay() {
     };
 
     void poll();
-    const id = window.setInterval(poll, connected ? 6_000 : 4_000);
+    const id = window.setInterval(poll, connected ? 8_000 : 5_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);

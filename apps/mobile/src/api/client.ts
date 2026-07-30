@@ -37,6 +37,7 @@ let refreshPromise: Promise<string | null> | null = null;
 export async function refreshAccessToken(): Promise<string | null> {
   const { refreshToken, setTokens, clear } = useAuthStore.getState();
   if (!refreshToken) {
+    // No refresh token available — cannot renew; end the session.
     clear();
     return null;
   }
@@ -47,6 +48,7 @@ export async function refreshAccessToken(): Promise<string | null> {
       { timeout: 15000 },
     );
     if (!res.data?.success || !res.data.data?.accessToken) {
+      // Definitive auth rejection from server payload.
       clear();
       return null;
     }
@@ -54,8 +56,13 @@ export async function refreshAccessToken(): Promise<string | null> {
     const nextRefresh = res.data.data.refreshToken ?? refreshToken;
     setTokens(nextAccess, nextRefresh);
     return nextAccess;
-  } catch {
-    clear();
+  } catch (err) {
+    const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+    // Only wipe session on definitive auth failure — not network/429/5xx.
+    // Transient clears caused wallet/messages/location to vanish then reappear.
+    if (status === 401 || status === 403) {
+      clear();
+    }
     return null;
   }
 }

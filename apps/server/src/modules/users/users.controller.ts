@@ -269,6 +269,8 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const exclude = [...blocked.map(String), req.user!.id];
 
   await sweepStalePresence();
+  // Clear ghost Ongoing calls so Busy badges stay accurate on Discover.
+  void import('../../services/call-busy.service').then((m) => m.maybePruneStaleCalls());
 
   // Browse: outside exclusion radius. Search: only people within ~10 km.
   const candidateIds = isSearch

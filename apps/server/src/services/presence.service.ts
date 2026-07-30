@@ -1,7 +1,7 @@
 import { User } from '../models';
 
 /** Consider someone online if they pinged / connected within this window. */
-export const PRESENCE_ONLINE_MS = 90_000;
+export const PRESENCE_ONLINE_MS = 180_000;
 
 /** Mark the user online (HTTP heartbeat or socket). */
 export async function touchPresence(userId: string): Promise<void> {

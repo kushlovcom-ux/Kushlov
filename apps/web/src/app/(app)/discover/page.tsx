@@ -57,8 +57,9 @@ export default function DiscoverPage() {
         api.get('/users', { params: { q: deferredQ || undefined, limit: 24 } }),
       ),
     enabled: location.data?.hasLocation === true,
-    staleTime: 10_000,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    refetchInterval: 180_000,
+    placeholderData: (prev) => prev,
   });
 
   const like = useMutation({

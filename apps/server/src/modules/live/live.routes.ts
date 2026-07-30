@@ -10,8 +10,9 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', ctrl.listLive);
-/** Must be registered before `/:id` so "colive" is not parsed as an id. */
-router.get('/colive/incoming', requireApprovedHost, ctrl.listColiveIncoming);
+/** Must be registered before `/:id` so "colive" is not parsed as an id.
+ *  Authenticated for all users; non-hosts get an empty list (no 403 spam). */
+router.get('/colive/incoming', ctrl.listColiveIncoming);
 router.get('/:id/viewers', ctrl.listViewers);
 router.get('/:id/preview-token', ctrl.previewToken);
 router.get('/:id/chat', ctrl.listLiveChat);

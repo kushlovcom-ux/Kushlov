@@ -4,6 +4,7 @@ import {
   GoldTxnReason,
   LiveStatus,
   NotificationType,
+  Role,
   SocketEvents,
 } from '@kushlov/types';
 import { buildPaginated, parsePagination } from '@kushlov/utils';
@@ -514,6 +515,12 @@ const COLIVE_INVITE_TTL_MS = 60_000;
 
 /** GET /live/colive/incoming — pending co-live invites for this host (HTTP fallback). */
 export const listColiveIncoming = asyncHandler(async (req: Request, res: Response) => {
+  const me = await User.findById(req.user!.id).select('role isHostApproved');
+  // Normal users / unapproved hosts: empty list (clients may poll globally).
+  if (!me || me.role !== Role.Host || !me.isHostApproved) {
+    return ok(res, { items: [] });
+  }
+
   const uid = req.user!.id;
   const cutoff = new Date(Date.now() - COLIVE_INVITE_TTL_MS);
 
