@@ -1,7 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
 import { HomeScreen } from '@/screens/home/HomeScreen';
 import { DiscoverScreen } from '@/screens/discover/DiscoverScreen';
 import { LiveListScreen } from '@/screens/live/LiveListScreen';
@@ -25,6 +24,8 @@ import { GoLiveScreen } from '@/screens/live/GoLiveScreen';
 import { BecomeHostScreen } from '@/screens/host/BecomeHostScreen';
 import { ContactScreen } from '@/screens/contact/ContactScreen';
 import { LocationSetupScreen } from '@/screens/misc/LocationSetupScreen';
+import { PremiumTabBar } from '@/design-system';
+import { useBadges } from '@/hooks/useBadges';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { AppStackParamList, MainTabParamList } from './types';
 
@@ -32,34 +33,29 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const Stack = createNativeStackNavigator<AppStackParamList>();
 
 function MainTabs() {
-  const c = useThemeColors();
+  const badges = useBadges();
+  const msgCount = badges.data?.unreadMessages ?? badges.data?.messages ?? 0;
+
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      tabBar={(props) => <PremiumTabBar {...props} />}
+      screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: c.card,
-          borderTopColor: c.border,
-        },
-        tabBarActiveTintColor: c.primary,
-        tabBarInactiveTintColor: c.textMuted,
-        tabBarIcon: ({ color, size }) => {
-          const map: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Home: 'home',
-            Discover: 'compass',
-            Live: 'radio',
-            Messages: 'chatbubbles',
-            Wallet: 'wallet',
-          };
-          return <Ionicons name={map[route.name] ?? 'ellipse'} size={size} color={color} />;
-        },
-      })}
+        tabBarHideOnKeyboard: true,
+      }}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Discover" component={DiscoverScreen} />
-      <Tab.Screen name="Live" component={LiveListScreen} />
-      <Tab.Screen name="Messages" component={ConversationsScreen} />
-      <Tab.Screen name="Wallet" component={WalletScreen} />
+      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home' }} />
+      <Tab.Screen name="Discover" component={DiscoverScreen} options={{ title: 'Discover' }} />
+      <Tab.Screen name="Matches" component={MatchesScreen} options={{ title: 'Matches' }} />
+      <Tab.Screen
+        name="Messages"
+        component={ConversationsScreen}
+        options={{
+          title: 'Chat',
+          tabBarBadge: msgCount > 0 ? msgCount : undefined,
+        }}
+      />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
 }
@@ -71,6 +67,7 @@ export function AppNavigator() {
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: c.bg },
+        animation: 'fade_from_bottom',
       }}
     >
       <Stack.Screen name="MainTabs" component={MainTabs} />
@@ -94,6 +91,7 @@ export function AppNavigator() {
       <Stack.Screen name="LocationSetup" component={LocationSetupScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
+      <Stack.Screen name="LiveList" component={LiveListScreen} />
     </Stack.Navigator>
   );
 }

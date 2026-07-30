@@ -66,7 +66,7 @@ export function LoginScreen({ navigation }: Props) {
 
   return (
     <Screen padded={false}>
-      <LinearGradient colors={['#1a0a14', c.bg, '#0a0612']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -88,13 +88,22 @@ export function LoginScreen({ navigation }: Props) {
               style={styles.logo}
               resizeMode="contain"
             />
-            <Text variant="h1">Welcome back</Text>
-            <Text muted style={{ marginTop: 6 }}>
+            <Text variant="display">Welcome back</Text>
+            <Text muted style={{ marginTop: 8, textAlign: 'center' }}>
               Sign in to continue your Kushlov story
             </Text>
           </View>
 
-          <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: c.card,
+                borderColor: c.border,
+                shadowColor: c.primary,
+              },
+            ]}
+          >
             <Input
               label="Email"
               value={email}
@@ -147,9 +156,13 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', marginVertical: spacing['2xl'] },
   logo: { width: 72, height: 72, marginBottom: spacing.md },
   card: {
-    borderRadius: 24,
-    borderWidth: 1,
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
     padding: spacing.xl,
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
   },
   forgot: { alignSelf: 'flex-end', marginVertical: spacing.md },
   footer: { marginTop: spacing['2xl'], alignItems: 'center' },

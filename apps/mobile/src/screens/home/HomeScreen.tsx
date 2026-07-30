@@ -1,5 +1,12 @@
-import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useMemo } from 'react';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { FlashList } from '@shopify/flash-list';
@@ -11,6 +18,14 @@ import { ErrorView } from '@/components/ui/ErrorView';
 import { UserCard } from '@/components/common/UserCard';
 import { DiamondBadge } from '@/components/common/DiamondBadge';
 import { Screen } from '@/components/common/Screen';
+import { NavBadge } from '@/components/common/NavBadge';
+import {
+  Chip,
+  GlassCard,
+  QuickAction,
+  SectionHeader,
+  StoryRing,
+} from '@/design-system';
 import { useAuth } from '@/hooks/useAuth';
 import { useBadges } from '@/hooks/useBadges';
 import { usePopularHosts, useTopRatedHosts } from '@/hooks/usePopularHosts';
@@ -18,10 +33,15 @@ import { usePlatformStats, useSettings } from '@/hooks/useSettings';
 import { useDiscover } from '@/hooks/useDiscover';
 import { useWallet } from '@/hooks/useWallet';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import { NavBadge } from '@/components/common/NavBadge';
-import { spacing } from '@/theme';
+import { radius, spacing } from '@/theme';
 import type { AppStackParamList } from '@/navigation/types';
 import type { PublicUser } from '@/types';
+
+function greetingForHour(h: number) {
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export function HomeScreen() {
   const c = useThemeColors();
@@ -30,7 +50,7 @@ export function HomeScreen() {
   const badges = useBadges();
   const popular = usePopularHosts();
   const topRated = useTopRatedHosts();
-  const online = useDiscover({ online: true, limit: 12 });
+  const online = useDiscover({ online: true, limit: 16 });
   const stats = usePlatformStats();
   const settings = useSettings();
   const { wallet } = useWallet();
@@ -45,77 +65,172 @@ export function HomeScreen() {
     stats.data?.onlineUsers ?? 0,
     onlineItems.filter((u) => u.isOnline).length,
   );
+  const firstName = (user?.displayName ?? 'Explorer').split(' ')[0];
+  const hello = useMemo(() => greetingForHour(new Date().getHours()), []);
+
+  const storyData: PublicUser[] = useMemo(() => {
+    const map = new Map<string, PublicUser>();
+    [...onlineItems, ...popularItems].forEach((u) => map.set(u.id, u));
+    return Array.from(map.values()).slice(0, 12);
+  }, [onlineItems, popularItems]);
 
   return (
     <Screen padded={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.pad}>
+      <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.pad}
+      >
+        {/* Header */}
         <View style={styles.top}>
-          <Pressable
-            onPress={() => nav.navigate('MainTabs', { screen: 'Home' })}
-            accessibilityRole="button"
-            accessibilityLabel="Kushlov home"
-            style={styles.brandTap}
-          >
+          <View style={styles.brandTap}>
             <Image
               source={require('../../assets/images/kush.png')}
               style={styles.logo}
               resizeMode="contain"
             />
-            <View>
+            <View style={{ flexShrink: 1 }}>
               <Text variant="caption" muted>
-                Kushlov
+                {hello}
               </Text>
-              <Text variant="h2">{user?.displayName ?? 'Explorer'}</Text>
+              <Text variant="h2" numberOfLines={1}>
+                {firstName}
+              </Text>
             </View>
-          </Pressable>
+          </View>
           <View style={styles.topRight}>
-            {wallet.data ? <DiamondBadge amount={wallet.data.diamonds} /> : null}
-            <Pressable
-              onPress={() => nav.navigate('Contact')}
-              accessibilityLabel="Contact us"
-              hitSlop={8}
-            >
-              <Ionicons name="mail-outline" size={24} color={c.text} />
-            </Pressable>
+            {wallet.data ? (
+              <Pressable onPress={() => nav.navigate('Wallet')} hitSlop={8}>
+                <DiamondBadge amount={wallet.data.diamonds} />
+              </Pressable>
+            ) : null}
             <Pressable
               onPress={() => nav.navigate('Notifications')}
               accessibilityLabel="Notifications"
-              style={{ position: 'relative' }}
+              style={styles.iconBtn}
               hitSlop={8}
             >
-              <Ionicons name="notifications-outline" size={24} color={c.text} />
+              <Ionicons name="notifications-outline" size={22} color={c.text} />
               <NavBadge count={notifCount} />
             </Pressable>
-            <Pressable onPress={() => nav.navigate('Profile')}>
-              <Avatar uri={user?.avatarUrl} name={user?.displayName} size={36} />
+            <Pressable onPress={() => nav.navigate('MainTabs', { screen: 'Profile' })}>
+              <Avatar uri={user?.avatarUrl} name={user?.displayName} size={40} />
             </Pressable>
           </View>
         </View>
 
+        {/* Hero stats */}
+        <GlassCard glow style={styles.heroCard}>
+          <Text variant="label" color={c.primaryLight ?? c.pink}>
+            Kushlov Live
+          </Text>
+          <Text variant="h3" style={{ marginTop: 4 }}>
+            {onlineCount} online · {stats.data?.liveStreams ?? 0} live now
+          </Text>
+          <Text variant="caption" muted style={{ marginTop: 4 }}>
+            Meet, match, chat, call & go live — premium connections.
+          </Text>
+          <View style={styles.heroChips}>
+            <Chip label="Verified hosts" tone="pink" />
+            <Chip label="Secure gifts" tone="gold" />
+            <Chip label="HD calls" tone="info" />
+          </View>
+        </GlassCard>
+
         {settings.data?.announcements?.[0]?.text ? (
-          <View style={[styles.banner, { backgroundColor: c.primaryMuted }]}>
-            <Text variant="caption" color={c.pink}>
+          <View style={[styles.banner, { backgroundColor: c.primaryMuted, borderColor: c.border }]}>
+            <Ionicons name="megaphone-outline" size={16} color={c.primary} />
+            <Text variant="caption" color={c.pink} style={{ flex: 1 }}>
               {settings.data.announcements[0].text}
             </Text>
           </View>
         ) : null}
 
-        {stats.data || onlineItems.length > 0 ? (
-          <Text variant="caption" muted style={{ marginBottom: spacing.md }}>
-            {onlineCount} online · {stats.data?.liveStreams ?? 0} live
-          </Text>
-        ) : null}
+        {/* Quick actions */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.actions}
+        >
+          <QuickAction
+            icon="compass"
+            label="Discover"
+            gradient
+            onPress={() => nav.navigate('MainTabs', { screen: 'Discover' })}
+          />
+          <QuickAction
+            icon="radio"
+            label="Live"
+            onPress={() => nav.navigate('LiveList')}
+          />
+          <QuickAction
+            icon="heart"
+            label="Matches"
+            onPress={() => nav.navigate('MainTabs', { screen: 'Matches' })}
+          />
+          <QuickAction
+            icon="wallet"
+            label="Wallet"
+            onPress={() => nav.navigate('Wallet')}
+          />
+          <QuickAction
+            icon="videocam"
+            label="Go Live"
+            onPress={() => nav.navigate('GoLive')}
+          />
+        </ScrollView>
 
-        <Section title="Popular hosts" onSeeAll={() => nav.navigate('MainTabs', { screen: 'Discover' })}>
+        {/* Stories / online */}
+        <SectionHeader
+          title="Active now"
+          subtitle="People online near you"
+          actionLabel="See all"
+          onAction={() => nav.navigate('MainTabs', { screen: 'Discover' })}
+        />
+        <FlashList
+          horizontal
+          data={storyData}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: spacing.screen }}
+          keyExtractor={(item: PublicUser) => item.id}
+          renderItem={({ item }) => (
+            <StoryRing
+              uri={item.avatarUrl}
+              name={item.displayName}
+              onPress={() => nav.navigate('PublicProfile', { userId: item.id })}
+            />
+          )}
+          ListEmptyComponent={
+            loading ? <SkeletonRow /> : (
+              <Text variant="caption" muted style={{ paddingHorizontal: spacing.screen }}>
+                No one online yet — check Discover.
+              </Text>
+            )
+          }
+        />
+
+        {/* Popular hosts */}
+        <View style={{ marginTop: spacing['2xl'] }}>
+          <SectionHeader
+            title="Popular hosts"
+            subtitle="Hand-picked for you"
+            actionLabel="Explore"
+            onAction={() => nav.navigate('MainTabs', { screen: 'Discover' })}
+          />
           {loading ? (
-            <SkeletonRow />
+            <View style={{ paddingHorizontal: spacing.screen }}>
+              <SkeletonRow />
+            </View>
           ) : popular.isError ? (
-            <ErrorView message="Could not load popular hosts" onRetry={() => popular.refetch()} />
+            <View style={{ paddingHorizontal: spacing.screen }}>
+              <ErrorView message="Could not load popular hosts" onRetry={() => popular.refetch()} />
+            </View>
           ) : (
             <FlashList
               horizontal
               data={popularItems}
               showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: spacing.screen }}
               keyExtractor={(item: PublicUser) => item.id}
               renderItem={({ item }) => (
                 <Pressable
@@ -123,25 +238,36 @@ export function HomeScreen() {
                   style={[styles.hostChip, { backgroundColor: c.card, borderColor: c.border }]}
                 >
                   <Avatar uri={item.avatarUrl} name={item.displayName} size={72} />
-                  <Text variant="captionBold" numberOfLines={1} style={{ marginTop: 8, maxWidth: 88 }}>
+                  <Text variant="captionBold" numberOfLines={1} style={styles.hostName}>
                     {item.displayName}
                   </Text>
+                  {item.isOnline ? (
+                    <Chip label="Online" tone="success" />
+                  ) : (
+                    <Chip label="Host" tone="pink" />
+                  )}
                 </Pressable>
               )}
             />
           )}
-        </Section>
+        </View>
 
-        <Section title="Top rated">
-          {topItems.slice(0, 5).map((u) => (
-            <View key={u.id} style={{ marginBottom: 10 }}>
-              <UserCard user={u} onPress={() => nav.navigate('PublicProfile', { userId: u.id })} />
-            </View>
-          ))}
-        </Section>
+        {/* Top rated */}
+        <View style={{ marginTop: spacing['2xl'] }}>
+          <SectionHeader title="Top rated" subtitle="Highest reviews" />
+          <View style={{ paddingHorizontal: spacing.screen }}>
+            {topItems.slice(0, 5).map((u) => (
+              <View key={u.id} style={{ marginBottom: spacing.md }}>
+                <UserCard user={u} onPress={() => nav.navigate('PublicProfile', { userId: u.id })} />
+              </View>
+            ))}
+          </View>
+        </View>
 
-        <Section title="Online now">
-          <View style={styles.grid}>
+        {/* Online grid */}
+        <View style={{ marginTop: spacing.lg }}>
+          <SectionHeader title="New & nearby" subtitle="Recently active" />
+          <View style={[styles.grid, { paddingHorizontal: spacing.screen }]}>
             {onlineItems.slice(0, 8).map((u) => (
               <View key={u.id} style={styles.gridItem}>
                 <UserCard
@@ -152,54 +278,66 @@ export function HomeScreen() {
               </View>
             ))}
           </View>
-        </Section>
+        </View>
       </ScrollView>
     </Screen>
   );
 }
 
-function Section({
-  title,
-  children,
-  onSeeAll,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onSeeAll?: () => void;
-}) {
-  return (
-    <View style={{ marginBottom: spacing['2xl'] }}>
-      <View style={styles.sectionHead}>
-        <Text variant="h3">{title}</Text>
-        {onSeeAll ? (
-          <Pressable onPress={onSeeAll}>
-            <Text variant="caption" color="#ec4899">
-              See all
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
-      {children}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  pad: { padding: spacing.lg, paddingBottom: 40 },
-  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
-  brandTap: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
-  logo: { width: 36, height: 36, borderRadius: 10 },
-  topRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  banner: { padding: spacing.md, borderRadius: 12, marginBottom: spacing.md },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.md },
+  pad: { paddingTop: spacing.sm, paddingBottom: 110 },
+  top: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.screen,
+  },
+  brandTap: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 },
+  logo: { width: 42, height: 42, borderRadius: 12 },
+  topRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroCard: {
+    marginHorizontal: spacing.screen,
+    marginBottom: spacing.lg,
+  },
+  heroChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: spacing.md,
+  },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: spacing.screen,
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  actions: {
+    paddingHorizontal: spacing.screen,
+    gap: spacing.sm,
+    marginBottom: spacing['2xl'],
+  },
   hostChip: {
-    width: 110,
+    width: 118,
     alignItems: 'center',
     padding: spacing.md,
-    borderRadius: 16,
+    borderRadius: radius.xl,
     borderWidth: StyleSheet.hairlineWidth,
-    marginRight: 10,
+    marginRight: spacing.sm,
+    gap: 6,
   },
+  hostName: { marginTop: 4, maxWidth: 96, textAlign: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   gridItem: { width: '48%', flexGrow: 1 },
 });

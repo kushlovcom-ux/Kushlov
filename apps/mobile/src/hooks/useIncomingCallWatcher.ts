@@ -122,12 +122,14 @@ export function useIncomingCallWatcher() {
       };
       if (data?.kind !== 'incoming_call' || !data.callId || !data.callType) return;
 
+      const callId = data.callId;
+      const callType = data.callType;
       const action = response.actionIdentifier;
       void (async () => {
         if (action === Notifications.DEFAULT_ACTION_IDENTIFIER) {
           try {
             const { items } = await callsApi.incoming();
-            const match = items.find((i) => i.id === data.callId) ?? items[0];
+            const match = items.find((i) => i.id === callId) ?? items[0];
             if (match) setIncoming(match);
           } catch {
             // ignore
@@ -137,12 +139,12 @@ export function useIncomingCallWatcher() {
 
         if (action === CALL_ACTION_DECLINE) {
           try {
-            await callsApi.reject(data.callType, data.callId);
+            await callsApi.reject(callType, callId);
           } catch {
             // ignore
           }
           setIncoming(null);
-          await dismissIncomingCallNotification(data.callId);
+          await dismissIncomingCallNotification(callId);
           notifiedId.current = null;
           return;
         }
@@ -155,8 +157,8 @@ export function useIncomingCallWatcher() {
               data.interrupt === 'true' ||
               Boolean(incoming?.interrupt);
             const session = isInterrupt
-              ? await callsApi.acceptInterrupt(data.callType, data.callId)
-              : await callsApi.accept(data.callType, data.callId);
+              ? await callsApi.acceptInterrupt(callType, callId)
+              : await callsApi.accept(callType, callId);
             const active = useCallStore.getState().active;
             if (active && (incoming?.interrupt || session.interrupt)) {
               useCallStore.getState().updateSession({

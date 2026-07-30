@@ -13,9 +13,9 @@ export type AuthStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Discover: undefined;
-  Live: undefined;
+  Matches: undefined;
   Messages: undefined;
-  Wallet: undefined;
+  Profile: undefined;
 };
 
 export type AppStackParamList = {
@@ -34,6 +34,7 @@ export type AppStackParamList = {
   History: undefined;
   Transactions: undefined;
   LiveRoom: { liveId: string; coliveToken?: string; livekitUrl?: string };
+  LiveList: undefined;
   GoLive: undefined;
   BecomeHost: undefined;
   Contact: undefined;

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Platform, View } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
 import { ChatInput } from '@/components/chat/ChatInput';
@@ -8,18 +9,22 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { SkeletonRow } from '@/components/ui/Skeleton';
-import { chatApi, getErrorMessage } from '@/api';
+import { callsApi, chatApi, getErrorMessage } from '@/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useMessages } from '@/hooks/useMessages';
+import { useCallStore } from '@/store/call';
+import { useThemeColors } from '@/hooks/useThemeColors';
 import { emitTyping, getSocket } from '@/services/socket';
-import { SocketEvents } from '@/types';
+import { CallType, SocketEvents } from '@/types';
 import type { AppStackScreenProps } from '@/navigation/types';
 
 type Props = AppStackScreenProps<'Chat'>;
 
 export function ChatScreen({ navigation, route }: Props) {
-  const { conversationId, title } = route.params;
+  const { conversationId, title, peerId } = route.params;
+  const c = useThemeColors();
   const { user } = useAuth();
+  const startCall = useCallStore((s) => s.startCall);
   const { data, isLoading, isError, refetch, send, markRead, fetchNextPage, hasNextPage } =
     useMessages(conversationId);
   const [peerTyping, setPeerTyping] = useState(false);
@@ -75,6 +80,26 @@ export function ChatScreen({ navigation, route }: Props) {
     }
   };
 
+  const call = async (type: CallType) => {
+    if (!peerId) {
+      Alert.alert('Call', 'Unable to start a call from this chat.');
+      return;
+    }
+    try {
+      if (type === CallType.Video) {
+        const cam = await ImagePicker.requestCameraPermissionsAsync();
+        if (!cam.granted) {
+          Alert.alert('Camera needed', 'Allow camera access to start a video call.');
+          return;
+        }
+      }
+      const session = await callsApi.initiate({ type, calleeId: peerId });
+      startCall(session, 'caller');
+    } catch (err) {
+      Alert.alert('Call failed', getErrorMessage(err));
+    }
+  };
+
   return (
     <Screen padded={false} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView
@@ -83,7 +108,32 @@ export function ChatScreen({ navigation, route }: Props) {
         keyboardVerticalOffset={8}
       >
         <View style={{ paddingHorizontal: 16 }}>
-          <Header title={title ?? 'Chat'} onBack={() => navigation.goBack()} />
+          <Header
+            title={title ?? 'Chat'}
+            showBack
+            right={
+              peerId ? (
+                <View style={{ flexDirection: 'row', gap: 4 }}>
+                  <Pressable
+                    onPress={() => void call(CallType.Audio)}
+                    hitSlop={10}
+                    accessibilityLabel="Audio call"
+                    style={{ padding: 8 }}
+                  >
+                    <Ionicons name="call-outline" size={22} color={c.text} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => void call(CallType.Video)}
+                    hitSlop={10}
+                    accessibilityLabel="Video call"
+                    style={{ padding: 8 }}
+                  >
+                    <Ionicons name="videocam-outline" size={22} color={c.primary} />
+                  </Pressable>
+                </View>
+              ) : null
+            }
+          />
         </View>
         {isLoading ? (
           <View style={{ padding: 16 }}>

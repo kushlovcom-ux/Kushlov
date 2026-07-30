@@ -1,8 +1,10 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Text } from './Text';
 import { Button } from './Button';
-import { spacing } from '@/theme';
+import { useThemeColors } from '@/hooks/useThemeColors';
+import { radius, spacing } from '@/theme';
 
 type Props = {
   message?: string;
@@ -10,12 +12,16 @@ type Props = {
 };
 
 export function ErrorView({ message = 'Something went wrong', onRetry }: Props) {
+  const c = useThemeColors();
   return (
     <View style={styles.wrap}>
-      <Text variant="h3" style={{ textAlign: 'center' }}>
+      <View style={[styles.iconWrap, { backgroundColor: 'rgba(244,63,94,0.15)' }]}>
+        <Ionicons name="cloud-offline-outline" size={28} color={c.danger} />
+      </View>
+      <Text variant="h3" style={{ textAlign: 'center', marginTop: spacing.lg }}>
         Unable to load
       </Text>
-      <Text muted style={{ textAlign: 'center', marginTop: spacing.sm }}>
+      <Text muted style={{ textAlign: 'center', marginTop: spacing.sm, maxWidth: 280 }}>
         {message}
       </Text>
       {onRetry ? (
@@ -32,5 +38,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing['2xl'],
     minHeight: 200,
+  },
+  iconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

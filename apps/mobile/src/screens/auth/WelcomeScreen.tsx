@@ -55,7 +55,7 @@ export function WelcomeScreen({ navigation }: Props) {
 
   return (
     <Screen padded={false}>
-      <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: c.bg }]}>
         <FlatList
           ref={listRef}
           data={HERO}
@@ -65,14 +65,21 @@ export function WelcomeScreen({ navigation }: Props) {
           onScroll={onScroll}
           keyExtractor={(item) => item.key}
           renderItem={({ item }) => (
-            <View style={{ width, height: height * 0.62 }}>
+            <View style={{ width, height: height * 0.58 }}>
               <Image source={item.image} style={styles.heroImage} resizeMode="cover" />
               <LinearGradient
-                colors={['transparent', 'rgba(5,5,8,0.55)', c.bg]}
+                colors={['transparent', 'rgba(5,5,16,0.45)', c.bg]}
+                locations={[0.35, 0.7, 1]}
                 style={StyleSheet.absoluteFill}
               />
             </View>
           )}
+        />
+
+        <LinearGradient
+          colors={['transparent', c.bg]}
+          style={styles.fade}
+          pointerEvents="none"
         />
 
         <View style={styles.overlay}>
@@ -81,13 +88,13 @@ export function WelcomeScreen({ navigation }: Props) {
             style={styles.logo}
             resizeMode="contain"
           />
-          <Text variant="display" style={styles.brand}>
+          <Text variant="hero" style={styles.brand}>
             Kushlov
           </Text>
           <Text variant="h2" style={styles.headline}>
             {slide.title}
           </Text>
-          <Text muted style={styles.body}>
+          <Text secondary style={styles.body}>
             {slide.body}
           </Text>
 
@@ -99,7 +106,7 @@ export function WelcomeScreen({ navigation }: Props) {
                   styles.dot,
                   {
                     backgroundColor: i === index ? c.pink : c.borderStrong,
-                    width: i === index ? 22 : 8,
+                    width: i === index ? 24 : 8,
                   },
                 ]}
               />
@@ -134,20 +141,27 @@ export function WelcomeScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#050508' },
+  root: { flex: 1 },
   heroImage: { width: '100%', height: '100%' },
+  fade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: height * 0.42,
+    height: 80,
+  },
   overlay: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
     paddingHorizontal: spacing['2xl'],
-    paddingBottom: 36,
+    paddingBottom: 40,
   },
-  logo: { width: 56, height: 56, marginBottom: 8 },
+  logo: { width: 64, height: 64, marginBottom: 10 },
   brand: { marginBottom: spacing.sm },
   headline: { marginBottom: spacing.sm },
   body: { marginBottom: spacing.lg, lineHeight: 22, maxWidth: 360 },
-  dots: { flexDirection: 'row', gap: 6, marginBottom: spacing.xl },
+  dots: { flexDirection: 'row', gap: 6, marginBottom: spacing.xl, alignItems: 'center' },
   dot: { height: 8, borderRadius: 4 },
 });

@@ -1,15 +1,16 @@
 import React from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Text } from '@/components/ui/Text';
+import { PressableScale } from '@/design-system';
 import { OnlineStatus } from './OnlineStatus';
 import { StarRating } from './StarRating';
 import { VerifiedBadge } from './VerifiedBadge';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import { radius, spacing } from '@/theme';
+import { elevation, radius, spacing } from '@/theme';
 import type { PublicUser } from '@/types';
 import { formatDistance } from '@/utils/distance';
 import { ageFromDob } from '@/utils/age';
@@ -30,15 +31,16 @@ export function UserCard({ user, onPress, variant = 'row', onLike, onMessage }: 
 
   if (variant === 'portrait') {
     return (
-      <Pressable
+      <PressableScale
         onPress={onPress}
-        style={({ pressed }) => [
+        style={[
           styles.portrait,
           {
             backgroundColor: c.card,
             borderColor: c.border,
-            opacity: pressed ? 0.94 : 1,
+            shadowColor: c.primary,
           },
+          elevation.sm,
         ]}
       >
         <View style={styles.media}>
@@ -49,6 +51,10 @@ export function UserCard({ user, onPress, variant = 'row', onLike, onMessage }: 
               <Avatar uri={undefined} name={user.displayName} size={56} />
             </LinearGradient>
           )}
+          <LinearGradient
+            colors={['transparent', 'rgba(5,5,16,0.55)']}
+            style={styles.mediaFade}
+          />
           {isHost ? (
             <View style={styles.hostBadge}>
               <Badge label="Host" tone="pink" />
@@ -74,7 +80,7 @@ export function UserCard({ user, onPress, variant = 'row', onLike, onMessage }: 
             <StarRating rating={user.averageRating} count={user.totalReviews} />
           ) : null}
           {user.distanceKm != null ? (
-            <Text variant="tiny" color={c.pink} style={{ marginTop: 2 }}>
+            <Text variant="caption" color={c.pink} style={{ marginTop: 2 }}>
               {formatDistance(user.distanceKm)}
             </Text>
           ) : null}
@@ -83,40 +89,43 @@ export function UserCard({ user, onPress, variant = 'row', onLike, onMessage }: 
           {(onLike || onMessage) && (
             <View style={styles.actions}>
               {onLike ? (
-                <Pressable
+                <PressableScale
                   onPress={onLike}
                   style={[styles.actionBtn, { backgroundColor: c.primaryMuted }]}
-                  hitSlop={6}
+                  accessibilityLabel="Like"
                 >
                   <Ionicons name="heart" size={16} color={c.pink} />
-                </Pressable>
+                </PressableScale>
               ) : null}
               {onMessage ? (
-                <Pressable
+                <PressableScale
                   onPress={onMessage}
-                  style={[styles.actionBtn, { backgroundColor: c.elevated, borderColor: c.border, borderWidth: 1 }]}
-                  hitSlop={6}
+                  style={[
+                    styles.actionBtn,
+                    { backgroundColor: c.elevated, borderColor: c.border, borderWidth: StyleSheet.hairlineWidth },
+                  ]}
+                  accessibilityLabel="Message"
                 >
                   <Ionicons name="chatbubble" size={15} color={c.text} />
-                </Pressable>
+                </PressableScale>
               ) : null}
             </View>
           )}
         </View>
-      </Pressable>
+      </PressableScale>
     );
   }
 
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
-      style={({ pressed }) => [
+      style={[
         styles.row,
         {
           backgroundColor: c.card,
           borderColor: c.border,
-          opacity: pressed ? 0.9 : 1,
         },
+        elevation.sm,
       ]}
     >
       <View>
@@ -144,19 +153,19 @@ export function UserCard({ user, onPress, variant = 'row', onLike, onMessage }: 
           {user.isPopularHost ? <Badge label="Popular" tone="pink" /> : null}
         </View>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
 const styles = StyleSheet.create({
   portrait: {
     flex: 1,
-    borderRadius: radius.xl ?? 20,
+    borderRadius: radius.xl,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   media: {
-    aspectRatio: 4 / 3,
+    aspectRatio: 3 / 4,
     backgroundColor: '#1a1220',
   },
   cover: {
@@ -164,6 +173,13 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  mediaFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    top: '50%',
   },
   hostBadge: { position: 'absolute', left: 8, top: 8 },
   onlineDot: {
@@ -175,7 +191,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   portraitBody: {
-    padding: spacing.sm,
+    padding: spacing.md,
     gap: 2,
     flex: 1,
   },
@@ -186,8 +202,8 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
-    height: 34,
-    borderRadius: 10,
+    height: 36,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },

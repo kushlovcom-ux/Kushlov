@@ -48,7 +48,6 @@ export function RegisterScreen({ navigation }: Props) {
     setErrors(next);
     if (Object.keys(next).length) return;
     try {
-      // Always register as a normal user — become a host later from Profile.
       await register({
         email: form.email.trim(),
         username: form.username.trim(),
@@ -64,7 +63,7 @@ export function RegisterScreen({ navigation }: Props) {
 
   return (
     <Screen padded={false}>
-      <LinearGradient colors={['#12081a', c.bg, '#080610']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -86,13 +85,23 @@ export function RegisterScreen({ navigation }: Props) {
               style={styles.logo}
               resizeMode="contain"
             />
-            <Text variant="h1">Join Kushlov</Text>
-            <Text muted style={{ marginTop: 6, textAlign: 'center' }}>
-              Create your account and start meeting people. Host applications are available after signup.
+            <Text variant="display">Join Kushlov</Text>
+            <Text muted style={{ marginTop: 8, textAlign: 'center' }}>
+              Create your account and start meeting people. Host applications are available after
+              signup.
             </Text>
           </View>
 
-          <View style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: c.card,
+                borderColor: c.border,
+                shadowColor: c.primary,
+              },
+            ]}
+          >
             <Input
               label="Email"
               value={form.email}
@@ -163,9 +172,13 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', marginVertical: spacing.xl },
   logo: { width: 72, height: 72, marginBottom: spacing.md },
   card: {
-    borderRadius: 24,
-    borderWidth: 1,
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
     padding: spacing.xl,
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
   },
   footer: { marginTop: spacing['2xl'], alignItems: 'center' },
 });

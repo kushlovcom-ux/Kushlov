@@ -7,6 +7,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { FlashList } from '@shopify/flash-list';
@@ -17,10 +18,10 @@ import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { SkeletonRow } from '@/components/ui/Skeleton';
-import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
 import { SearchBar } from '@/components/common/SearchBar';
 import { UserCard } from '@/components/common/UserCard';
+import { Chip } from '@/design-system';
 import { socialApi } from '@/api/social';
 import { chatApi } from '@/api/chat';
 import { usersApi } from '@/api/users';
@@ -40,7 +41,7 @@ export function DiscoverScreen() {
   const [q, setQ] = useState('');
   const debounced = useDebounce(q, 350);
   const gap = spacing.md;
-  const cardWidth = (width - spacing.lg * 2 - gap) / 2;
+  const cardWidth = (width - spacing.screen * 2 - gap) / 2;
 
   const location = useQuery({
     queryKey: queryKeys.location,
@@ -49,7 +50,6 @@ export function DiscoverScreen() {
 
   const hasLocation = Boolean(location.data?.hasLocation);
 
-  // Browse: outside ~10km. Search: within ~10km by name (locals can message/like/call).
   const params = useMemo(
     () => ({
       q: debounced || undefined,
@@ -81,28 +81,35 @@ export function DiscoverScreen() {
 
   if (location.isLoading) {
     return (
-      <Screen>
-        <Header title="Discover" />
-        <SkeletonRow />
-        <SkeletonRow />
+      <Screen padded={false}>
+        <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
+        <View style={styles.pad}>
+          <Text variant="display">Discover</Text>
+          <SkeletonRow />
+          <SkeletonRow />
+        </View>
       </Screen>
     );
   }
 
   return (
     <Screen padded={false}>
+      <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
       <View style={styles.pad}>
-        <Header
-          title="Discover"
-          right={
-            <Button
-              title="Group call"
-              size="sm"
-              variant="secondary"
-              onPress={() => nav.navigate('GroupCall')}
-            />
-          }
-        />
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text variant="display">Discover</Text>
+            <Text variant="caption" muted style={{ marginTop: 4 }}>
+              People outside your local zone — search finds locals too.
+            </Text>
+          </View>
+          <Button
+            title="Group"
+            size="sm"
+            variant="secondary"
+            onPress={() => nav.navigate('GroupCall')}
+          />
+        </View>
 
         <Pressable
           onPress={() => nav.navigate('LocationSetup')}
@@ -144,6 +151,10 @@ export function DiscoverScreen() {
               onChangeText={setQ}
               placeholder="Search locals within 10 km…"
             />
+            <View style={styles.filters}>
+              <Chip label="Nearby" selected={!debounced} onPress={() => setQ('')} />
+              <Chip label={debounced ? 'Searching' : 'Browse'} selected={Boolean(debounced)} tone="info" />
+            </View>
             {discover.isLoading ? (
               <>
                 <SkeletonRow />
@@ -155,9 +166,8 @@ export function DiscoverScreen() {
               <FlashList
                 data={items}
                 numColumns={2}
-                estimatedItemSize={260}
                 keyExtractor={(item) => item.id}
-                contentContainerStyle={{ paddingBottom: 40 }}
+                contentContainerStyle={{ paddingBottom: 110 }}
                 ListEmptyComponent={
                   <EmptyState
                     title={debounced ? 'No matches' : 'No one online nearby'}
@@ -205,14 +215,27 @@ export function DiscoverScreen() {
 }
 
 const styles = StyleSheet.create({
-  pad: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  pad: { flex: 1, paddingHorizontal: spacing.screen, paddingTop: spacing.sm },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
   locationChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     padding: spacing.md,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
     marginBottom: spacing.md,
+  },
+  filters: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
   },
 });

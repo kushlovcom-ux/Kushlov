@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { FlashList } from '@shopify/flash-list';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '@/components/common/Screen';
 import { Header } from '@/components/common/Header';
 import { EmptyState } from '@/components/common/EmptyState';
 import { ErrorView } from '@/components/common/ErrorView';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
+import { GlassCard, PressableScale, SectionHeader } from '@/design-system';
 import { apiError, paymentsApi, walletApi } from '@/api';
 import { queryKeys } from '@/constants/queryKeys';
 import { openRazorpayCheckout } from '@/services/razorpay';
@@ -19,7 +21,7 @@ import { useAuthStore } from '@/store/auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { DiamondPackage, LedgerEntry } from '@/types';
 import { formatDiamonds, formatMoney } from '@/utils/format';
-import { spacing } from '@/theme';
+import { radius, spacing } from '@/theme';
 
 export function WalletScreen() {
   const c = useThemeColors();
@@ -91,7 +93,7 @@ export function WalletScreen() {
   if (wallet.isLoading || packages.isLoading) {
     return (
       <Screen>
-        <Header title="Wallet" />
+        <Header title="Wallet" showBack />
         <Skeleton height={100} />
         <Skeleton height={160} style={{ marginTop: 16 }} />
       </Screen>
@@ -101,7 +103,7 @@ export function WalletScreen() {
   if (wallet.error) {
     return (
       <Screen>
-        <Header title="Wallet" />
+        <Header title="Wallet" showBack />
         <ErrorView message="Could not load wallet" onRetry={() => wallet.refetch()} />
       </Screen>
     );
@@ -110,121 +112,146 @@ export function WalletScreen() {
   const txItems: LedgerEntry[] = tx.data?.items ?? [];
 
   return (
-    <Screen scroll>
-      <Header title="Wallet" />
-      <Card style={{ marginBottom: spacing.xl }}>
-        <View style={styles.balances}>
-          <View>
-            <Text muted variant="caption">
-              Diamonds
-            </Text>
-            <Text variant="h1" color={c.primary}>
-              {formatDiamonds(wallet.data?.diamonds ?? 0)}
+    <Screen scroll padded={false}>
+      <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
+      <View style={styles.pad}>
+        <Header title="Wallet" showBack />
+
+        <LinearGradient
+          colors={[...c.gradientVip]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
+        >
+          <View style={styles.heroTop}>
+            <Ionicons name="diamond" size={22} color="#1A1208" />
+            <Text variant="captionBold" color="#1A1208">
+              Kushlov Wallet
             </Text>
           </View>
-          <View>
-            <Text muted variant="caption">
-              Gold
-            </Text>
-            <Text variant="h1" color={c.orange}>
-              {formatDiamonds(wallet.data?.gold ?? 0)}
-            </Text>
-          </View>
-        </View>
-      </Card>
-
-      <Text variant="h3" style={{ marginBottom: spacing.md }}>
-        Buy diamonds
-      </Text>
-      <View style={styles.packages}>
-        {pkgList.map((pkg) => (
-          <Pressable
-            key={pkg.id}
-            onPress={() => buy.mutate(pkg.id)}
-            disabled={buy.isPending}
-            style={[
-              styles.pkg,
-              { backgroundColor: c.card, borderColor: pkg.popular ? c.primary : c.border },
-            ]}
-          >
-            {pkg.popular ? <Badge label="Popular" tone="pink" /> : null}
-            <Text variant="h3" style={{ marginTop: 6 }}>
-              {formatDiamonds(pkg.diamonds + (pkg.bonusDiamonds ?? 0))}◆
-            </Text>
-            <Text muted variant="caption">
-              {formatMoney(pkg.priceInr)}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      {pkgList.length === 0 ? (
-        <EmptyState title="No packages" description="Diamond packs will appear here." />
-      ) : null}
-
-      <Text variant="h3" style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
-        Withdraw gold
-      </Text>
-      <Input
-        label="Amount"
-        keyboardType="numeric"
-        value={withdrawAmount}
-        onChangeText={setWithdrawAmount}
-        placeholder="Gold amount"
-      />
-      <Input
-        label="UPI ID"
-        value={upi}
-        onChangeText={setUpi}
-        placeholder="name@upi"
-        autoCapitalize="none"
-      />
-      <Button
-        title="Request withdrawal"
-        variant="outline"
-        onPress={() => withdraw.mutate()}
-        loading={withdraw.isPending}
-        fullWidth
-      />
-
-      <Text variant="h3" style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
-        Recent diamond activity
-      </Text>
-      <FlashList
-        data={txItems}
-        scrollEnabled={false}
-        ListEmptyComponent={<Text muted>No transactions yet.</Text>}
-        renderItem={({ item }) => (
-          <View style={[styles.tx, { borderBottomColor: c.border }]}>
-            <View style={{ flex: 1 }}>
-              <Text variant="bodyBold">{String(item.reason ?? 'txn')}</Text>
-              <Text muted variant="tiny">
-                {item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}
+          <View style={styles.balances}>
+            <View>
+              <Text variant="caption" color="rgba(26,18,8,0.7)">
+                Diamonds
+              </Text>
+              <Text variant="display" color="#1A1208">
+                {formatDiamonds(wallet.data?.diamonds ?? 0)}
               </Text>
             </View>
-            <Text color={item.direction === 'credit' ? c.success : c.danger}>
-              {item.direction === 'credit' ? '+' : '-'}
-              {formatDiamonds(Number(item.amount ?? 0))}
-            </Text>
+            <View>
+              <Text variant="caption" color="rgba(26,18,8,0.7)">
+                Gold
+              </Text>
+              <Text variant="display" color="#1A1208">
+                {formatDiamonds(wallet.data?.gold ?? 0)}
+              </Text>
+            </View>
           </View>
-        )}
-      />
+        </LinearGradient>
+
+        <SectionHeader title="Buy diamonds" subtitle="Instant top-up via Razorpay" flush />
+        <View style={styles.packages}>
+          {pkgList.map((pkg) => (
+            <PressableScale
+              key={pkg.id}
+              onPress={() => buy.mutate(pkg.id)}
+              disabled={buy.isPending}
+              style={[
+                styles.pkg,
+                {
+                  backgroundColor: c.card,
+                  borderColor: pkg.popular ? c.premiumGold : c.border,
+                },
+              ]}
+            >
+              {pkg.popular ? <Badge label="Popular" tone="orange" /> : null}
+              <Text variant="h3" style={{ marginTop: 6 }}>
+                {formatDiamonds(pkg.diamonds + (pkg.bonusDiamonds ?? 0))}◆
+              </Text>
+              <Text muted variant="caption">
+                {formatMoney(pkg.priceInr ?? 0)}
+              </Text>
+            </PressableScale>
+          ))}
+        </View>
+        {pkgList.length === 0 ? (
+          <EmptyState title="No packages" description="Diamond packs will appear here." />
+        ) : null}
+
+        <SectionHeader title="Withdraw gold" subtitle="UPI payouts after review" flush />
+        <GlassCard style={{ marginBottom: spacing.lg }}>
+          <Input
+            label="Amount"
+            keyboardType="numeric"
+            value={withdrawAmount}
+            onChangeText={setWithdrawAmount}
+            placeholder="Gold amount"
+          />
+          <View style={{ height: spacing.md }} />
+          <Input
+            label="UPI ID"
+            value={upi}
+            onChangeText={setUpi}
+            placeholder="name@upi"
+            autoCapitalize="none"
+          />
+          <Button
+            title="Request withdrawal"
+            variant="outline"
+            onPress={() => withdraw.mutate()}
+            loading={withdraw.isPending}
+            fullWidth
+            style={{ marginTop: spacing.lg }}
+          />
+        </GlassCard>
+
+        <SectionHeader title="Recent activity" flush />
+        <FlashList
+          data={txItems}
+          scrollEnabled={false}
+          ListEmptyComponent={<Text muted>No transactions yet.</Text>}
+          renderItem={({ item }) => (
+            <View style={[styles.tx, { backgroundColor: c.card, borderColor: c.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text variant="bodyBold">{String(item.reason ?? 'txn')}</Text>
+                <Text muted variant="caption">
+                  {item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}
+                </Text>
+              </View>
+              <Text color={item.direction === 'credit' ? c.success : c.danger}>
+                {item.direction === 'credit' ? '+' : '-'}
+                {formatDiamonds(Number(item.amount ?? 0))}
+              </Text>
+            </View>
+          )}
+        />
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  pad: { paddingHorizontal: spacing.screen, paddingBottom: spacing['4xl'] },
+  hero: {
+    borderRadius: radius['2xl'],
+    padding: spacing.xl,
+    marginBottom: spacing.xl,
+  },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.lg },
   balances: { flexDirection: 'row', justifyContent: 'space-between' },
-  packages: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  packages: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: spacing.lg },
   pkg: {
     width: '47%',
     padding: spacing.md,
-    borderRadius: 16,
+    borderRadius: radius.xl,
     borderWidth: 1.5,
   },
   tx: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.sm,
   },
 });

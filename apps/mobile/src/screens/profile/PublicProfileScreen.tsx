@@ -8,9 +8,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -21,6 +23,7 @@ import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
 import { StarRating } from '@/components/common/StarRating';
 import { VerifiedBadge } from '@/components/common/VerifiedBadge';
+import { GlassCard, PressableScale } from '@/design-system';
 import { callsApi } from '@/api/calls';
 import { chatApi } from '@/api/chat';
 import { getErrorMessage } from '@/api/client';
@@ -33,7 +36,7 @@ import { useCallStore } from '@/store/call';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { CallType, Role } from '@/types';
 import { ageFromDob } from '@/utils/age';
-import { spacing } from '@/theme';
+import { radius, spacing } from '@/theme';
 import type { AppStackParamList } from '@/navigation/types';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'PublicProfile'>;
@@ -130,8 +133,8 @@ export function PublicProfileScreen({ navigation, route }: Props) {
   if (userQ.isLoading) {
     return (
       <Screen>
-        <Header title="Profile" onBack={() => navigation.goBack()} />
-        <Skeleton height={180} />
+        <Header title="Profile" showBack />
+        <Skeleton height={220} borderRadius={radius.xl} />
       </Screen>
     );
   }
@@ -139,7 +142,7 @@ export function PublicProfileScreen({ navigation, route }: Props) {
   if (userQ.isError || !userQ.data) {
     return (
       <Screen>
-        <Header title="Profile" onBack={() => navigation.goBack()} />
+        <Header title="Profile" showBack />
         <ErrorView message={getErrorMessage(userQ.error)} onRetry={() => userQ.refetch()} />
       </Screen>
     );
@@ -154,18 +157,31 @@ export function PublicProfileScreen({ navigation, route }: Props) {
 
   return (
     <Screen padded={false}>
-      <ScrollView contentContainerStyle={styles.pad}>
-        <Header title={u.displayName} onBack={() => navigation.goBack()} />
-        {u.coverUrl ? (
-          <Image source={{ uri: u.coverUrl }} style={styles.cover} />
-        ) : (
-          <View style={[styles.cover, { backgroundColor: c.elevated }]} />
-        )}
-        <View style={styles.avatarWrap}>
-          <Avatar uri={avatarUri} name={u.displayName} size={96} />
+      <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
+      <ScrollView contentContainerStyle={styles.pad} showsVerticalScrollIndicator={false}>
+        <Header title={u.displayName} showBack />
+
+        <View style={styles.hero}>
+          {u.coverUrl ? (
+            <Image source={{ uri: u.coverUrl }} style={styles.cover} />
+          ) : (
+            <LinearGradient colors={[...c.gradientBrand]} style={styles.cover} />
+          )}
+          <LinearGradient
+            colors={['transparent', c.bg]}
+            style={styles.coverFade}
+          />
+          <View style={styles.avatarWrap}>
+            <LinearGradient colors={[...c.gradientSoft]} style={styles.avatarRing}>
+              <View style={[styles.avatarInner, { backgroundColor: c.bg }]}>
+                <Avatar uri={avatarUri} name={u.displayName} size={92} />
+              </View>
+            </LinearGradient>
+          </View>
         </View>
+
         <View style={styles.nameRow}>
-          <Text variant="h2">
+          <Text variant="h1">
             {u.displayName}
             {age != null ? `, ${age}` : ''}
           </Text>
@@ -177,7 +193,14 @@ export function PublicProfileScreen({ navigation, route }: Props) {
             <StarRating rating={u.averageRating ?? 0} count={u.totalReviews} />
           </View>
         ) : null}
-        {u.bio ? <Text style={{ marginTop: spacing.md }}>{u.bio}</Text> : null}
+        {u.bio ? (
+          <GlassCard style={{ marginTop: spacing.lg }}>
+            <Text variant="captionBold" muted style={{ marginBottom: 6 }}>
+              About
+            </Text>
+            <Text>{u.bio}</Text>
+          </GlassCard>
+        ) : null}
 
         <View style={styles.actions}>
           <Button
@@ -197,9 +220,25 @@ export function PublicProfileScreen({ navigation, route }: Props) {
           />
           <Button title="Message" variant="secondary" onPress={message} style={{ flex: 1 }} />
         </View>
-        <View style={styles.actions}>
-          <Button title="Audio" variant="outline" onPress={() => call(CallType.Audio)} style={{ flex: 1 }} />
-          <Button title="Video" variant="outline" onPress={() => call(CallType.Video)} style={{ flex: 1 }} />
+        <View style={styles.callRow}>
+          <PressableScale
+            onPress={() => call(CallType.Audio)}
+            style={[styles.callBtn, { backgroundColor: c.elevated, borderColor: c.border }]}
+            accessibilityLabel="Audio call"
+          >
+            <Ionicons name="call" size={20} color={c.text} />
+            <Text variant="captionBold">Audio</Text>
+          </PressableScale>
+          <PressableScale
+            onPress={() => call(CallType.Video)}
+            style={[styles.callBtn, { backgroundColor: c.primaryMuted, borderColor: c.primary }]}
+            accessibilityLabel="Video call"
+          >
+            <Ionicons name="videocam" size={20} color={c.primary} />
+            <Text variant="captionBold" color={c.primary}>
+              Video
+            </Text>
+          </PressableScale>
         </View>
 
         <Text variant="h3" style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
@@ -220,14 +259,14 @@ export function PublicProfileScreen({ navigation, route }: Props) {
         </Text>
 
         {canReview ? (
-          <View style={[styles.reviewBox, { backgroundColor: c.card, borderColor: c.border }]}>
+          <GlassCard style={{ marginBottom: spacing.lg }}>
             <Text variant="bodyBold" style={{ marginBottom: spacing.sm }}>
               {myReview.data ? 'Update your review' : 'Leave a review'}
             </Text>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((n) => (
                 <Pressable key={n} onPress={() => setRating(n)} hitSlop={6}>
-                  <Text style={{ fontSize: 28, color: n <= rating ? c.orange : c.borderStrong }}>
+                  <Text style={{ fontSize: 28, color: n <= rating ? c.premiumGold : c.borderStrong }}>
                     ★
                   </Text>
                 </Pressable>
@@ -251,14 +290,17 @@ export function PublicProfileScreen({ navigation, route }: Props) {
               fullWidth
               style={{ marginTop: spacing.md }}
             />
-          </View>
+          </GlassCard>
         ) : null}
 
         {(reviewsQ.data?.items ?? []).length === 0 ? (
           <EmptyState title="No reviews yet" />
         ) : (
           (reviewsQ.data?.items ?? []).map((r) => (
-            <View key={r.id} style={styles.review}>
+            <View
+              key={r.id}
+              style={[styles.review, { backgroundColor: c.card, borderColor: c.border }]}
+            >
               <Text variant="bodyBold">{r.reviewer.displayName}</Text>
               <StarRating rating={r.rating} />
               {r.text ? (
@@ -275,25 +317,59 @@ export function PublicProfileScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  pad: { padding: spacing.lg, paddingBottom: 48 },
-  cover: { height: 140, borderRadius: 16, width: '100%' },
-  avatarWrap: { marginTop: -48, marginBottom: spacing.sm, alignSelf: 'flex-start' },
+  pad: { paddingHorizontal: spacing.screen, paddingBottom: 48 },
+  hero: { marginBottom: spacing.md },
+  cover: { height: 180, borderRadius: radius['2xl'], width: '100%' },
+  coverFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 80,
+    borderBottomLeftRadius: radius['2xl'],
+    borderBottomRightRadius: radius['2xl'],
+  },
+  avatarWrap: { marginTop: -52, marginBottom: spacing.sm, alignSelf: 'flex-start' },
+  avatarRing: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInner: {
+    width: 98,
+    height: 98,
+    borderRadius: 49,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actions: { flexDirection: 'row', gap: 10, marginTop: spacing.md },
+  actions: { flexDirection: 'row', gap: 10, marginTop: spacing.lg },
+  callRow: { flexDirection: 'row', gap: 10, marginTop: spacing.md },
+  callBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   gallery: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  gImg: { width: '31%', aspectRatio: 1, borderRadius: 12 },
-  review: { marginBottom: spacing.md },
-  reviewBox: {
-    borderWidth: 1,
-    borderRadius: 16,
+  gImg: { width: '31%', aspectRatio: 1, borderRadius: radius.md },
+  review: {
+    marginBottom: spacing.md,
     padding: spacing.md,
-    marginBottom: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   starsRow: { flexDirection: 'row', gap: 6, marginBottom: spacing.sm },
   reviewInput: {
     minHeight: 88,
-    borderWidth: 1,
-    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.md,
     padding: 12,
     textAlignVertical: 'top',
   },

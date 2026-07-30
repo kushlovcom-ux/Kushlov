@@ -24,7 +24,7 @@ export function Text({
 }: Props) {
   const c = useThemeColors();
   const resolved =
-    color ?? (muted || secondary ? c.textSecondary : c.text);
+    color ?? (muted ? c.textMuted : secondary ? c.textSecondary : c.text);
   return (
     <RNText
       style={[

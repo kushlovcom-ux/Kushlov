@@ -6,15 +6,17 @@ module.exports = {
     extend: {
       colors: {
         brand: {
-          pink: '#ec4899',
-          purple: '#8b5cf6',
-          orange: '#f97316',
+          pink: '#EC4899',
+          purple: '#8B5CF6',
+          cyan: '#22D3EE',
+          orange: '#F97316',
+          gold: '#FBBF24',
         },
         surface: {
-          bg: '#0a0a0b',
-          card: '#141416',
-          elevated: '#1c1c1f',
-          border: '#27272a',
+          bg: '#050510',
+          card: '#12121C',
+          elevated: '#1A1A28',
+          border: 'rgba(255,255,255,0.08)',
         },
       },
     },
