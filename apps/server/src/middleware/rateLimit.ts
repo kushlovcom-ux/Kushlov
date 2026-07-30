@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import rateLimit, { type Options, type RateLimitRequestHandler } from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
 import { env } from '../config/env';
 import { getRedis } from '../config/redis';
 import { logger } from '../config/logger';
@@ -70,21 +71,17 @@ function createStore(prefix: string): Options['store'] | undefined {
   const redis = getRedis();
   if (!redis) return undefined;
   try {
-    // Lazy require keeps this optional dependency from breaking startup.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { RedisStore } = require('rate-limit-redis') as {
-      RedisStore: new (opts: {
-        prefix: string;
-        sendCommand: (...args: string[]) => unknown;
-      }) => Options['store'];
-    };
     return new RedisStore({
       prefix,
+      // ioredis supports Redis command arrays via .call(...)
       sendCommand: (...args: string[]) =>
         (redis.call as (...a: string[]) => unknown).apply(redis, args),
     });
-  } catch {
-    logger.warn({ prefix }, 'rate-limit-redis unavailable, using memory store');
+  } catch (err) {
+    logger.warn(
+      { prefix, err: err instanceof Error ? err.message : String(err) },
+      'rate-limit-redis unavailable, using memory store',
+    );
     return undefined;
   }
 }

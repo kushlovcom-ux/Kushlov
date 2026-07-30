@@ -6,8 +6,9 @@ import { defineConfig } from 'tsup';
  * - api/index.js  → CommonJS bundle for the Vercel serverless function
  *
  * Workspace packages (@kushlov/*) are always inlined. Real node_modules stay
- * external so Vercel's file tracer includes them and native/dynamic-require
- * packages (mongoose, firebase-admin, etc.) work unmodified at runtime.
+ * external so native / CJS packages (mongoose, firebase-admin, ioredis, etc.)
+ * resolve from node_modules at runtime — never get incorrectly inlined as ESM
+ * with a broken dynamic require.
  */
 export default defineConfig([
   {
@@ -18,6 +19,7 @@ export default defineConfig([
     splitting: false,
     minify: false,
     noExternal: [/^@kushlov\//],
+    // Keep Redis clients out of the bundle (static import → runtime node_modules).
     external: ['ioredis', 'rate-limit-redis'],
     entry: ['src/index.ts'],
     outDir: 'dist',
@@ -35,6 +37,7 @@ export default defineConfig([
     // require() a pure-ESM module from this CommonJS bundle (ERR_REQUIRE_ESM),
     // so esbuild inlines/transpiles them to CJS instead.
     noExternal: [/^@kushlov\//, 'nanoid'],
+    external: ['ioredis', 'rate-limit-redis'],
     entry: { index: 'api-entry.ts' },
     outDir: 'dist-vercel',
     clean: true,
