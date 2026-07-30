@@ -60,7 +60,7 @@ export function SiteFooter() {
             </Link>
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/55">
               Kushlov is a premium dating and live-streaming platform where people meet, match,
-              chat, call, and go live — all in one beautiful experience.
+              chat, call, and go live — all in one beautiful experience platform.
             </p>
             <div className="mt-6 space-y-2 text-sm text-white/45">
               <p className="flex items-center gap-2">
