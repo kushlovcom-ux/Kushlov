@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode, useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { keepPreviousData, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from 'sonner';
 import { isRateLimited } from '@/lib/api';
@@ -17,7 +17,7 @@ export function Providers({ children }: { children: ReactNode }) {
             staleTime: 60_000,
             refetchOnWindowFocus: false,
             // Keep last successful data visible while a refetch fails (auth blip / 429).
-            placeholderData: (previousData) => previousData,
+            placeholderData: keepPreviousData,
             // Never retry rate-limited or auth failures — retries amplify 429 storms.
             retry: (failureCount, error) => {
               if (isRateLimited(error)) return false;
