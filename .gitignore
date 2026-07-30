@@ -33,3 +33,4 @@ coverage/
 # uploads (local temp)
 apps/server/uploads/
 tmp/
+apps/server/.env.save
