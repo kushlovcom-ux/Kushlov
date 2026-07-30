@@ -15,18 +15,25 @@ import { Button } from '@/components/ui/Button';
 import { callsApi } from '@/api/calls';
 import { apiGet, getErrorMessage } from '@/api/client';
 import { useThemeColors } from '@/hooks/useThemeColors';
+import { useCallStore } from '@/store/call';
 import { spacing } from '@/theme';
 import type { CallType, Paginated, PublicUser } from '@/types';
 
 type Props = {
   callId: string;
   type: CallType;
+  /** invite = same-room add; consult = hold current call and ring someone else */
+  mode?: 'invite' | 'consult';
 };
 
-export function AddCallParticipant({ callId, type }: Props) {
+export function AddCallParticipant({ callId, type, mode = 'invite' }: Props) {
   const c = useThemeColors();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
+  const isConsult = mode === 'consult';
+  const startCall = useCallStore((s) => s.startCall);
+  const setHeldCall = useCallStore((s) => s.setHeldCall);
+  const active = useCallStore((s) => s.active);
 
   const discover = useQuery({
     queryKey: ['call-invite-users', q],
@@ -38,9 +45,38 @@ export function AddCallParticipant({ callId, type }: Props) {
     staleTime: 15_000,
   });
 
-  const invite = async (userId: string) => {
+  const pick = async (user: PublicUser) => {
+    if (isConsult) {
+      try {
+        if (active) {
+          setHeldCall({
+            callId: active.session.id,
+            type: active.session.type,
+            peer: active.peer,
+          });
+        }
+        const session = await callsApi.initiate({
+          type,
+          calleeId: user.id,
+          fromCallId: callId,
+        });
+        if (session.heldCallId) {
+          setHeldCall({
+            callId: session.heldCallId,
+            type: session.heldType ?? type,
+            peer: active?.peer,
+          });
+        }
+        startCall(session, 'caller', user);
+        setOpen(false);
+      } catch (err) {
+        setHeldCall(null);
+        Alert.alert('Call failed', getErrorMessage(err));
+      }
+      return;
+    }
     try {
-      await callsApi.invite(type, callId, userId);
+      await callsApi.invite(type, callId, user.id);
       Alert.alert('Invite sent');
       setOpen(false);
     } catch (err) {
@@ -52,7 +88,7 @@ export function AddCallParticipant({ callId, type }: Props) {
     <>
       <Pressable onPress={() => setOpen(true)} style={styles.trigger}>
         <Text variant="caption" color="#fff">
-          Add person
+          {isConsult ? 'Call another' : 'Add person'}
         </Text>
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -62,7 +98,7 @@ export function AddCallParticipant({ callId, type }: Props) {
             onPress={() => undefined}
           >
             <Text variant="h3" style={{ marginBottom: spacing.sm }}>
-              Add to call
+              {isConsult ? 'Hold current & call' : 'Add to call'}
             </Text>
             <TextInput
               value={q}
@@ -84,7 +120,7 @@ export function AddCallParticipant({ callId, type }: Props) {
                 </Text>
               }
               renderItem={({ item }) => (
-                <Pressable style={styles.row} onPress={() => void invite(item.id)}>
+                <Pressable style={styles.row} onPress={() => void pick(item)}>
                   <Avatar uri={item.avatarUrl} name={item.displayName} size={32} />
                   <Text>{item.displayName}</Text>
                 </Pressable>

@@ -15,8 +15,10 @@ import {
   GripHorizontal,
   Maximize2,
   Minimize2,
+  Merge,
   Phone,
   PhoneOff,
+  Pause,
   UserMinus,
   Video,
   X,
@@ -66,6 +68,14 @@ type ActiveCall = {
   peerId?: string;
   peerIsHost: boolean;
   role: 'caller' | 'callee';
+};
+
+type HeldCall = {
+  callId: string;
+  type: CallType;
+  peerName: string;
+  peerId?: string;
+  peerIsHost: boolean;
 };
 
 type ReviewPrompt = { hostId: string; hostName: string };
@@ -229,12 +239,15 @@ export function CallOverlay() {
     maxDurationSec: number;
   } | null>(null);
   const [active, setActive] = useState<ActiveCall | null>(null);
+  const [heldCall, setHeldCall] = useState<HeldCall | null>(null);
+  const [parked, setParked] = useState(false);
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
   const [reviewPrompt, setReviewPrompt] = useState<ReviewPrompt | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [browserFs, setBrowserFs] = useState(false);
   const warnedRef = useRef(false);
   const activeRef = useRef<ActiveCall | null>(null);
+  const heldCallRef = useRef<HeldCall | null>(null);
   const incomingRef = useRef<IncomingInvite | null>(null);
   const outgoingRef = useRef<{ callId: string } | null>(null);
   const endingRef = useRef(false);
@@ -246,6 +259,9 @@ export function CallOverlay() {
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
+  useEffect(() => {
+    heldCallRef.current = heldCall;
+  }, [heldCall]);
   useEffect(() => {
     incomingRef.current = incoming;
   }, [incoming]);
@@ -321,6 +337,102 @@ export function CallOverlay() {
     [offerReviewIfEligible],
   );
 
+  const endHeldOnly = useCallback(async () => {
+    if (!heldCall) return;
+    try {
+      await api.post(`/calls/${heldCall.type}/${heldCall.callId}/end`);
+    } catch {
+      /* ignore */
+    }
+    setHeldCall(null);
+    toast.message(`Ended held call with ${heldCall.peerName}`);
+  }, [heldCall]);
+
+  const mergeHeld = useCallback(async () => {
+    if (!active || !heldCall) return;
+    try {
+      const data = await unwrap<{
+        token?: string;
+        roomName?: string;
+        livekitUrl?: string;
+        maxDurationSec?: number;
+        call?: { _id?: string };
+        type?: CallType;
+      }>(api.post(`/calls/${active.type}/${active.callId}/merge`, { heldCallId: heldCall.callId }));
+      setActive({
+        ...active,
+        callId: data.call?._id ?? active.callId,
+        type: data.type ?? active.type,
+        roomName: data.roomName ?? active.roomName,
+        token: data.token || active.token,
+        livekitUrl: data.livekitUrl ?? active.livekitUrl,
+        maxDurationSec: data.maxDurationSec ?? active.maxDurationSec,
+        peerName: `${active.peerName} + ${heldCall.peerName}`,
+      });
+      setHeldCall(null);
+      toast.success('Calls merged');
+    } catch (e) {
+      toast.error(apiError(e));
+    }
+  }, [active, heldCall]);
+
+  const endConsultAndResumeHeld = useCallback(async () => {
+    const c = activeRef.current;
+    const held = heldCall;
+    if (!c) return;
+    endingRef.current = true;
+    // Clear held first so CallEnd does not double-resume.
+    setHeldCall(null);
+    try {
+      await api.post(`/calls/${c.type}/${c.callId}/end`);
+    } catch {
+      /* ignore */
+    }
+    offerReviewIfEligible(c);
+    setActive(null);
+    setOutgoing(null);
+    setRemainingSec(null);
+    endingRef.current = false;
+
+    if (!held) return;
+    try {
+      const data = await unwrap<{
+        token: string;
+        roomName: string;
+        livekitUrl?: string;
+        maxDurationSec?: number;
+      }>(api.post(`/calls/${held.type}/${held.callId}/unhold`));
+      setActive({
+        callId: held.callId,
+        type: held.type,
+        roomName: data.roomName,
+        token: data.token,
+        livekitUrl: data.livekitUrl,
+        maxDurationSec: data.maxDurationSec ?? 0,
+        peerName: held.peerName,
+        peerId: held.peerId,
+        peerIsHost: held.peerIsHost,
+        role: 'caller',
+      });
+      toast.success(`Resumed call with ${held.peerName}`);
+    } catch (e) {
+      toast.error(apiError(e));
+    }
+  }, [heldCall, offerReviewIfEligible]);
+
+  const endAllCalls = useCallback(async () => {
+    const held = heldCall;
+    if (held) {
+      try {
+        await api.post(`/calls/${held.type}/${held.callId}/end`);
+      } catch {
+        /* ignore */
+      }
+      setHeldCall(null);
+    }
+    await endActive();
+  }, [heldCall, endActive]);
+
   const toggleFullscreen = useCallback(async () => {
     const el = shellRef.current;
     if (!el) {
@@ -359,7 +471,29 @@ export function CallOverlay() {
       livekitUrl?: string;
       maxDurationSec?: number;
       interrupt?: boolean;
+      mergedFromHold?: string;
+      merged?: boolean;
     }) => {
+      const cur = activeRef.current;
+      if (
+        payload.mergedFromHold &&
+        cur &&
+        (cur.callId === payload.mergedFromHold || payload.token)
+      ) {
+        setParked(false);
+        setActive({
+          ...cur,
+          callId: payload.callId,
+          type: payload.type ?? cur.type,
+          roomName: payload.roomName ?? cur.roomName,
+          token: payload.token || cur.token,
+          livekitUrl: payload.livekitUrl ?? cur.livekitUrl,
+          maxDurationSec: payload.maxDurationSec ?? cur.maxDurationSec,
+        });
+        toast.success('Joined merged call');
+        return;
+      }
+
       setOutgoing((prev) => {
         if (!prev) return prev;
         if (payload.interrupt || prev.callId === payload.callId || payload.token) {
@@ -381,8 +515,40 @@ export function CallOverlay() {
       });
     };
 
+    const resumeHeldAfterConsultFail = async () => {
+      const held = heldCallRef.current;
+      if (!held) return;
+      try {
+        const data = await unwrap<{
+          token: string;
+          roomName: string;
+          livekitUrl?: string;
+          maxDurationSec?: number;
+        }>(api.post(`/calls/${held.type}/${held.callId}/unhold`));
+        setActive({
+          callId: held.callId,
+          type: held.type,
+          roomName: data.roomName,
+          token: data.token,
+          livekitUrl: data.livekitUrl,
+          maxDurationSec: data.maxDurationSec ?? 0,
+          peerName: held.peerName,
+          peerId: held.peerId,
+          peerIsHost: held.peerIsHost,
+          role: 'caller',
+        });
+        setHeldCall(null);
+        toast.message(`Resumed call with ${held.peerName}`);
+      } catch (e) {
+        setHeldCall(null);
+        toast.error(apiError(e));
+      }
+    };
+
     const onReject = (payload?: { callId?: string; interrupt?: boolean }) => {
       const id = payload?.callId;
+      const outBefore = outgoingRef.current;
+      const wasOutgoing = Boolean(!id || outBefore?.callId === id);
       setOutgoing((o) => {
         if (!o) return o;
         if (id && o.callId !== id) return o;
@@ -393,22 +559,33 @@ export function CallOverlay() {
         if (id && i.callId !== id) return i;
         return null;
       });
-      if (!id || outgoingRef.current?.callId === id || incomingRef.current?.callId === id) {
+      if (!id || outBefore?.callId === id || incomingRef.current?.callId === id) {
         toast.error(payload?.interrupt ? 'Call waiting declined' : 'Call declined');
+      }
+      if (wasOutgoing && heldCallRef.current) {
+        void resumeHeldAfterConsultFail();
       }
     };
 
     const onEnd = (payload?: { callId?: string; interrupt?: boolean }) => {
       const id = payload?.callId;
       const activeCall = activeRef.current;
+      const held = heldCallRef.current;
       const out = outgoingRef.current;
       const inc = incomingRef.current;
+
+      if (id && held && id === held.callId) {
+        setHeldCall(null);
+        toast.message(`Held call with ${held.peerName} ended`);
+        return;
+      }
 
       if (id && activeCall && id !== activeCall.callId) {
         setOutgoing((o) => (o?.callId === id ? null : o));
         setIncoming((i) => (i?.callId === id ? null : i));
         if (out?.callId === id) {
           toast.message(payload?.interrupt ? 'Call waiting ended' : 'Call ended');
+          if (held) void resumeHeldAfterConsultFail();
         }
         return;
       }
@@ -421,9 +598,31 @@ export function CallOverlay() {
       setActive(null);
       setOutgoing(null);
       setIncoming(null);
+      setParked(false);
       setRemainingSec(null);
       toast.message('Call ended');
       if (!endingRef.current) offerReviewIfEligible(ended);
+      if (held && ended && id === ended.callId) {
+        void resumeHeldAfterConsultFail();
+      }
+    };
+
+    const onHold = (payload: { callId?: string; held?: boolean }) => {
+      const cur = activeRef.current;
+      if (!cur || (payload.callId && payload.callId !== cur.callId)) return;
+      setParked(true);
+      toast.message('You are on hold');
+    };
+
+    const onUnhold = (payload: { callId?: string; merged?: boolean }) => {
+      const cur = activeRef.current;
+      if (payload.merged) {
+        setParked(false);
+        return;
+      }
+      if (!cur || (payload.callId && payload.callId !== cur.callId)) return;
+      setParked(false);
+      toast.message('Call resumed');
     };
 
     const onParticipantLeft = (payload: {
@@ -434,6 +633,7 @@ export function CallOverlay() {
       if (payload.endedForYou) {
         setActive(null);
         setOutgoing(null);
+        setParked(false);
         toast.message('You were removed from the call');
         return;
       }
@@ -445,6 +645,8 @@ export function CallOverlay() {
     socket.on(SocketEvents.CallAccept, onAccept);
     socket.on(SocketEvents.CallReject, onReject);
     socket.on(SocketEvents.CallEnd, onEnd);
+    socket.on(SocketEvents.CallHold, onHold);
+    socket.on(SocketEvents.CallUnhold, onUnhold);
     socket.on(SocketEvents.CallParticipantLeft, onParticipantLeft);
 
     return () => {
@@ -453,6 +655,8 @@ export function CallOverlay() {
       socket.off(SocketEvents.CallAccept, onAccept);
       socket.off(SocketEvents.CallReject, onReject);
       socket.off(SocketEvents.CallEnd, onEnd);
+      socket.off(SocketEvents.CallHold, onHold);
+      socket.off(SocketEvents.CallUnhold, onUnhold);
       socket.off(SocketEvents.CallParticipantLeft, onParticipantLeft);
     };
   }, [socket, user, offerReviewIfEligible]);
@@ -577,8 +781,25 @@ export function CallOverlay() {
         peerRole?: string;
         peerHostApproved?: boolean;
         participantIds?: string[];
+        fromCallId?: string;
       };
+      if (activeRef.current && !detail.fromCallId) {
+        toast.error('You are already on a call');
+        return;
+      }
+      if (outgoingRef.current && !detail.fromCallId) {
+        toast.error('A call is already ringing');
+        return;
+      }
       try {
+        const body: Record<string, unknown> = {
+          type: detail.type,
+          calleeId: detail.calleeId,
+        };
+        if (detail.fromCallId) body.fromCallId = detail.fromCallId;
+        if (detail.participantIds?.length) {
+          body.participantIds = [detail.calleeId, ...detail.participantIds];
+        }
         const data = await unwrap<{
           call?: { _id: string };
           callId?: string;
@@ -588,21 +809,32 @@ export function CallOverlay() {
           maxDurationSec?: number;
           busy?: boolean;
           interrupt?: boolean;
+          consult?: boolean;
+          heldCallId?: string;
+          heldType?: CallType;
           message?: string;
-        }>(
-          api.post('/calls/initiate', {
-            type: detail.type,
-            calleeId: detail.calleeId,
-            participantIds: detail.participantIds?.length
-              ? [detail.calleeId, ...detail.participantIds]
-              : undefined,
-          }),
-        );
+        }>(api.post('/calls/initiate', body));
         const peerIsHost =
           detail.peerIsHost ??
           isApprovedHostPeer(detail.peerRole, detail.peerHostApproved ?? true);
         const callId = data.call?._id ?? data.callId;
         if (!callId) throw new Error('No call id');
+
+        if (data.consult && data.heldCallId && activeRef.current) {
+          const prev = activeRef.current;
+          setHeldCall({
+            callId: data.heldCallId,
+            type: data.heldType ?? prev.type,
+            peerName: prev.peerName,
+            peerId: prev.peerId,
+            peerIsHost: prev.peerIsHost,
+          });
+          setActive(null);
+          setRemainingSec(null);
+          toast.message(`On hold: ${prev.peerName}`, {
+            description: `Calling ${detail.peerName}…`,
+          });
+        }
 
         if (data.busy || data.interrupt) {
           setOutgoing({
@@ -633,7 +865,7 @@ export function CallOverlay() {
           livekitUrl: data.livekitUrl,
           maxDurationSec: data.maxDurationSec!,
         });
-        toast.success('Calling…');
+        if (!data.consult) toast.success('Calling…');
       } catch (e) {
         toast.error(apiError(e));
       }
@@ -800,6 +1032,12 @@ export function CallOverlay() {
             <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-card p-6 text-center shadow-2xl">
               <p className="text-lg font-semibold">Calling {outgoing.peerName}…</p>
               <p className="mt-2 text-sm capitalize text-white/50">{outgoing.type} call</p>
+              {heldCall ? (
+                <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-amber-300/90">
+                  <Pause className="h-3.5 w-3.5" />
+                  On hold: {heldCall.peerName}
+                </p>
+              ) : null}
               <Button
                 className="mt-6"
                 variant="destructive"
@@ -811,6 +1049,33 @@ export function CallOverlay() {
                       /* ignore */
                     }
                     setOutgoing(null);
+                    const held = heldCallRef.current;
+                    if (!held) return;
+                    try {
+                      const data = await unwrap<{
+                        token: string;
+                        roomName: string;
+                        livekitUrl?: string;
+                        maxDurationSec?: number;
+                      }>(api.post(`/calls/${held.type}/${held.callId}/unhold`));
+                      setActive({
+                        callId: held.callId,
+                        type: held.type,
+                        roomName: data.roomName,
+                        token: data.token,
+                        livekitUrl: data.livekitUrl,
+                        maxDurationSec: data.maxDurationSec ?? 0,
+                        peerName: held.peerName,
+                        peerId: held.peerId,
+                        peerIsHost: held.peerIsHost,
+                        role: 'caller',
+                      });
+                      setHeldCall(null);
+                      toast.message(`Resumed call with ${held.peerName}`);
+                    } catch (e) {
+                      setHeldCall(null);
+                      toast.error(apiError(e));
+                    }
                   })()
                 }
               >
@@ -921,13 +1186,57 @@ export function CallOverlay() {
                     size="icon"
                     variant="ghost"
                     className="h-9 w-9"
-                    onClick={() => void endActive()}
+                    onClick={() =>
+                      void (heldCall ? endConsultAndResumeHeld() : endActive())
+                    }
                     aria-label="Close"
                   >
                     <X className="h-5 w-5" />
                   </Button>
                 </div>
               </div>
+
+              {parked ? (
+                <div className="flex items-center justify-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                  <Pause className="h-4 w-4 shrink-0" />
+                  On hold — please wait
+                </div>
+              ) : null}
+
+              {heldCall ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <Pause className="h-4 w-4 shrink-0" />
+                    <span className="truncate">On hold: {heldCall.peerName}</span>
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      size="sm"
+                      className="h-8 gap-1 rounded-full bg-emerald-600 px-2.5 text-xs hover:bg-emerald-500"
+                      onClick={() => void mergeHeld()}
+                    >
+                      <Merge className="h-3.5 w-3.5" />
+                      Merge
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-8 gap-1 rounded-full border border-white/10 bg-white/10 px-2.5 text-xs"
+                      onClick={() => void endHeldOnly()}
+                    >
+                      End held
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-8 gap-1 rounded-full px-2.5 text-xs"
+                      onClick={() => void endAllCalls()}
+                    >
+                      End all
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Stage */}
               <div className="min-h-0 flex-1 bg-black">
@@ -941,18 +1250,31 @@ export function CallOverlay() {
                   showFilters={active.type === CallType.Video}
                   videoFit="contain"
                   layout="speaker"
-                  onDisconnected={() => void endActive()}
+                  onDisconnected={() =>
+                    void (heldCall ? endConsultAndResumeHeld() : endActive())
+                  }
                 />
               </div>
 
               {/* Compact horizontal toolbar */}
               <div className="border-t border-white/10 bg-zinc-950/95 px-2 py-2 sm:px-4">
                 <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-2">
-                  <AddCallParticipant
-                    callId={active.callId}
-                    type={active.type}
-                    compact
-                  />
+                  {!heldCall && !parked ? (
+                    <AddCallParticipant
+                      callId={active.callId}
+                      type={active.type}
+                      compact
+                      mode="consult"
+                    />
+                  ) : null}
+                  {!heldCall ? (
+                    <AddCallParticipant
+                      callId={active.callId}
+                      type={active.type}
+                      compact
+                      mode="invite"
+                    />
+                  ) : null}
                   {active.peerId ? (
                     <Button
                       size="sm"
@@ -985,10 +1307,12 @@ export function CallOverlay() {
                     size="sm"
                     variant="destructive"
                     className="h-9 gap-1.5 rounded-full px-4 text-xs"
-                    onClick={() => void endActive()}
+                    onClick={() =>
+                      void (heldCall ? endConsultAndResumeHeld() : endActive())
+                    }
                   >
                     <PhoneOff className="h-3.5 w-3.5" />
-                    End call
+                    {heldCall ? 'End & resume held' : 'End call'}
                   </Button>
                 </div>
               </div>

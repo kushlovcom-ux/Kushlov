@@ -12,6 +12,8 @@ const initiateSchema = z.object({
   type: z.nativeEnum(CallType),
   calleeId: z.string().min(1).optional(),
   participantIds: z.array(z.string().min(1)).max(5).optional(),
+  /** When set, caller parks this Ongoing call and starts a consult to callee. */
+  fromCallId: z.string().min(1).optional(),
 }).refine((b) => Boolean(b.calleeId || (b.participantIds && b.participantIds.length > 0)), {
   message: 'calleeId or participantIds required',
 });
@@ -23,6 +25,13 @@ router.get('/:type/:id', ctrl.getCall);
 router.post('/:type/:id/accept', ctrl.acceptCall);
 router.post('/:type/:id/accept-interrupt', ctrl.acceptInterrupt);
 router.post('/:type/:id/reject', ctrl.rejectCall);
+router.post('/:type/:id/hold', ctrl.holdCall);
+router.post('/:type/:id/unhold', ctrl.unholdCall);
+router.post(
+  '/:type/:id/merge',
+  validate({ body: z.object({ heldCallId: z.string().min(1) }) }),
+  ctrl.mergeCalls,
+);
 router.post(
   '/:type/:id/invite',
   validate({ body: z.object({ userId: z.string().min(1) }) }),

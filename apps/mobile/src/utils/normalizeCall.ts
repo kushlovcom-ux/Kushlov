@@ -30,6 +30,10 @@ type RawCallPayload = {
   targetCallId?: string;
   busy?: boolean;
   message?: string;
+  consult?: boolean;
+  heldCallId?: string;
+  heldType?: CallType | string;
+  mergedFromHold?: string;
 };
 
 function idOf(value: unknown): string {
@@ -84,5 +88,9 @@ export function normalizeCallSession(raw: unknown): CallSession {
       undefined,
     busy: Boolean(data.busy),
     message: data.message,
+    consult: Boolean(data.consult),
+    heldCallId: data.heldCallId ? String(data.heldCallId) : undefined,
+    heldType: data.heldType as CallType | undefined,
+    mergedFromHold: data.mergedFromHold ? String(data.mergedFromHold) : undefined,
   };
 }

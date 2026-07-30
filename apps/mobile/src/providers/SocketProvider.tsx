@@ -5,6 +5,7 @@ import { connectSocket, disconnectSocket, getSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/auth';
 import { useCallStore } from '@/store/call';
 import { useColiveStore } from '@/store/colive';
+import { callsApi } from '@/api/calls';
 import { CallStatus, SocketEvents } from '@/types';
 import { normalizeCallSession } from '@/utils/normalizeCall';
 import { useQueryClient } from '@tanstack/react-query';
@@ -37,6 +38,25 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     const onAccept = (payload: unknown) => {
       const session = normalizeCallSession(payload);
       const active = useCallStore.getState().active;
+      const raw = (payload ?? {}) as { mergedFromHold?: string; merged?: boolean };
+
+      if (
+        raw.mergedFromHold &&
+        active &&
+        (active.session.id === raw.mergedFromHold || Boolean(session.token))
+      ) {
+        useCallStore.getState().setParked(false);
+        useCallStore.getState().updateSession({
+          id: session.id || active.session.id,
+          type: session.type ?? active.session.type,
+          token: session.token ?? active.session.token,
+          livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
+          roomName: session.roomName ?? active.session.roomName,
+          status: CallStatus.Ongoing,
+        });
+        return;
+      }
+
       if (active && (session.interrupt || !active.session.token)) {
         useCallStore.getState().updateSession({
           ...session,
@@ -48,10 +68,29 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         updateSession({ ...session, status: CallStatus.Ongoing });
       }
     };
+
+    const resumeHeld = async () => {
+      const held = useCallStore.getState().heldCall;
+      if (!held) return;
+      try {
+        const session = await callsApi.unhold(held.type, held.callId);
+        useCallStore.getState().setHeldCall(null);
+        useCallStore.getState().startCall(session, 'caller', held.peer);
+      } catch {
+        useCallStore.getState().setHeldCall(null);
+      }
+    };
+
     const onRejectOrEnd = (payload?: { callId?: string; interrupt?: boolean }) => {
       const id = payload?.callId;
       const active = useCallStore.getState().active;
       const incoming = useCallStore.getState().incoming;
+      const held = useCallStore.getState().heldCall;
+
+      if (id && held && id === held.callId) {
+        useCallStore.getState().setHeldCall(null);
+        return;
+      }
 
       // Ending/rejecting a call-waiting interrupt must not wipe A↔B.
       if (id && active?.session?.id && id !== active.session.id) {
@@ -68,12 +107,42 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Active consult ended while a held line exists → resume held.
+      if (held && active && (!id || active.session.id === id)) {
+        useCallStore.setState({ active: null, incoming: null, parked: false });
+        void resumeHeld();
+        return;
+      }
+
+      // Consult already cleared locally; CallEnd arrived mid-resume.
+      if (!active && held && id && id !== held.callId) {
+        void resumeHeld();
+        return;
+      }
+
       if (!active || !id || active.session.id === id) {
         clearCall();
       } else if (incoming?.id === id) {
         setIncoming(null);
       }
     };
+
+    const onHold = (payload: { callId?: string }) => {
+      const active = useCallStore.getState().active;
+      if (!active || (payload.callId && payload.callId !== active.session.id)) return;
+      useCallStore.getState().setParked(true);
+    };
+
+    const onUnhold = (payload: { callId?: string; merged?: boolean }) => {
+      if (payload.merged) {
+        useCallStore.getState().setParked(false);
+        return;
+      }
+      const active = useCallStore.getState().active;
+      if (!active || (payload.callId && payload.callId !== active.session.id)) return;
+      useCallStore.getState().setParked(false);
+    };
+
     const onParticipantLeft = (payload: { endedForYou?: boolean }) => {
       if (payload?.endedForYou) clearCall();
     };
@@ -100,6 +169,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket.on(SocketEvents.CallAccept, onAccept);
     socket.on(SocketEvents.CallReject, onRejectOrEnd);
     socket.on(SocketEvents.CallEnd, onRejectOrEnd);
+    socket.on(SocketEvents.CallHold, onHold);
+    socket.on(SocketEvents.CallUnhold, onUnhold);
     socket.on(SocketEvents.CallParticipantLeft, onParticipantLeft);
     socket.on(SocketEvents.MessageNew, onMessage);
     socket.on(SocketEvents.Notification, onNotification);
@@ -116,6 +187,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       s?.off(SocketEvents.CallAccept, onAccept);
       s?.off(SocketEvents.CallReject, onRejectOrEnd);
       s?.off(SocketEvents.CallEnd, onRejectOrEnd);
+      s?.off(SocketEvents.CallHold, onHold);
+      s?.off(SocketEvents.CallUnhold, onUnhold);
       s?.off(SocketEvents.CallParticipantLeft, onParticipantLeft);
       s?.off(SocketEvents.MessageNew, onMessage);
       s?.off(SocketEvents.Notification, onNotification);

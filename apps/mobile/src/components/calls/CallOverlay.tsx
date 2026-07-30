@@ -29,8 +29,11 @@ export function CallOverlay() {
   const c = useThemeColors();
   const active = useCallStore((s) => s.active);
   const incoming = useCallStore((s) => s.incoming);
+  const heldCall = useCallStore((s) => s.heldCall);
+  const parked = useCallStore((s) => s.parked);
   const clear = useCallStore((s) => s.clear);
   const setIncoming = useCallStore((s) => s.setIncoming);
+  const setHeldCall = useCallStore((s) => s.setHeldCall);
   const startCall = useCallStore((s) => s.startCall);
   const setMuted = useCallStore((s) => s.setMuted);
   const setCameraOff = useCallStore((s) => s.setCameraOff);
@@ -98,6 +101,51 @@ export function CallOverlay() {
 
   const endCall = async () => {
     haptics.medium();
+    const held = useCallStore.getState().heldCall;
+    try {
+      if (active) {
+        await callsApi.end(active.session.type, active.session.id);
+      }
+    } catch {
+      // ignore
+    }
+    setRoom(null);
+    if (held) {
+      // Clear held first so socket CallEnd does not double-resume.
+      setHeldCall(null);
+      useCallStore.setState({ active: null, incoming: null, parked: false });
+      try {
+        const session = await callsApi.unhold(held.type, held.callId);
+        startCall(session, 'caller', held.peer);
+      } catch (err) {
+        Alert.alert('Resume failed', getErrorMessage(err));
+      }
+      return;
+    }
+    clear();
+  };
+
+  const endHeldOnly = async () => {
+    if (!heldCall) return;
+    try {
+      await callsApi.end(heldCall.type, heldCall.callId);
+    } catch {
+      // ignore
+    }
+    setHeldCall(null);
+  };
+
+  const endAllCalls = async () => {
+    haptics.medium();
+    const held = heldCall;
+    if (held) {
+      try {
+        await callsApi.end(held.type, held.callId);
+      } catch {
+        // ignore
+      }
+      setHeldCall(null);
+    }
     try {
       if (active) {
         await callsApi.end(active.session.type, active.session.id);
@@ -107,6 +155,28 @@ export function CallOverlay() {
     }
     setRoom(null);
     clear();
+  };
+
+  const mergeHeld = async () => {
+    if (!active || !heldCall) return;
+    try {
+      const session = await callsApi.merge(
+        active.session.type,
+        active.session.id,
+        heldCall.callId,
+      );
+      useCallStore.getState().updateSession({
+        id: session.id || active.session.id,
+        token: session.token ?? active.session.token,
+        livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
+        roomName: session.roomName ?? active.session.roomName,
+        status: CallStatus.Ongoing,
+      });
+      setHeldCall(null);
+      Alert.alert('Merged', 'Calls merged into one room');
+    } catch (err) {
+      Alert.alert('Merge failed', getErrorMessage(err));
+    }
   };
 
   const acceptIncoming = async () => {
@@ -277,13 +347,59 @@ export function CallOverlay() {
           {active.session.status === CallStatus.Ringing ? 'Ringing…' : formatDuration(elapsed)}
         </Text>
         <Text variant="bodyBold">{peer?.displayName ?? 'Call'}</Text>
+        {parked ? (
+          <View style={[styles.holdChip, { backgroundColor: 'rgba(245, 158, 11, 0.25)' }]}>
+            <Ionicons name="pause" size={14} color="#fbbf24" />
+            <Text variant="caption" color="#fbbf24">
+              On hold — please wait
+            </Text>
+          </View>
+        ) : null}
+        {heldCall ? (
+          <View style={[styles.heldBanner, { borderColor: 'rgba(245, 158, 11, 0.45)' }]}>
+            <Text variant="caption" color="#fbbf24">
+              On hold: {heldCall.peer?.displayName ?? 'Other call'}
+            </Text>
+            <View style={styles.heldActions}>
+              <Pressable
+                onPress={() => void mergeHeld()}
+                style={[styles.heldBtn, { backgroundColor: c.success }]}
+              >
+                <Text variant="tiny" color="#fff">
+                  Merge
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void endHeldOnly()}
+                style={[styles.heldBtn, { backgroundColor: 'rgba(255,255,255,0.18)' }]}
+              >
+                <Text variant="tiny" color="#fff">
+                  End held
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void endAllCalls()}
+                style={[styles.heldBtn, { backgroundColor: c.danger }]}
+              >
+                <Text variant="tiny" color="#fff">
+                  End all
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
         {nativeOk === false ? (
           <Text muted style={{ textAlign: 'center', paddingHorizontal: 24, marginTop: 8 }}>
             LiveKit native modules unavailable in Expo Go. Use a dev client / EAS build for media.
           </Text>
         ) : null}
-        <View style={{ marginTop: 12 }}>
-          <AddCallParticipant callId={active.session.id} type={active.session.type} />
+        <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {!heldCall && !parked ? (
+            <AddCallParticipant callId={active.session.id} type={active.session.type} mode="consult" />
+          ) : null}
+          {!heldCall ? (
+            <AddCallParticipant callId={active.session.id} type={active.session.type} mode="invite" />
+          ) : null}
         </View>
         {active.peer?.id ? (
           <Pressable
@@ -362,7 +478,13 @@ export function CallOverlay() {
             color={c.elevated}
           />
         )}
-        <Ctrl icon="call" label="End" onPress={endCall} color={c.danger} rotate />
+        <Ctrl
+          icon="call"
+          label={heldCall ? 'End & resume' : 'End'}
+          onPress={endCall}
+          color={c.danger}
+          rotate
+        />
       </View>
     </View>
   );
@@ -426,6 +548,36 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     gap: 4,
+  },
+  holdChip: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  heldBanner: {
+    marginTop: 10,
+    marginHorizontal: 16,
+    alignSelf: 'stretch',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    padding: 10,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    gap: 8,
+  },
+  heldActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  heldBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
   filterBar: {
     position: 'absolute',

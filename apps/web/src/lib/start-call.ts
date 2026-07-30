@@ -11,6 +11,8 @@ export function startCall(
     peerHostApproved?: boolean;
     /** Extra participant ids for group start (1B), not including calleeId. */
     participantIds?: string[];
+    /** Park this Ongoing call and start a consult to callee. */
+    fromCallId?: string;
   },
 ) {
   window.dispatchEvent(
@@ -23,6 +25,7 @@ export function startCall(
         peerRole: opts?.peerRole,
         peerHostApproved: opts?.peerHostApproved,
         participantIds: opts?.participantIds,
+        fromCallId: opts?.fromCallId,
       },
     }),
   );

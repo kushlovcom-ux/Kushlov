@@ -32,9 +32,10 @@ export function AuthUserMenu({ compact = false }: { compact?: boolean }) {
           </div>
         )}
       </Link>
-      <Link href={home} className="hidden md:inline-flex">
+      <Link href={home} className="inline-flex">
         <Button variant="secondary" size="sm">
-          Open app
+          <span className="sm:hidden">App</span>
+          <span className="hidden sm:inline">Open app</span>
         </Button>
       </Link>
       <Button

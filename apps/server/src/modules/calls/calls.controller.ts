@@ -13,7 +13,7 @@ import { AudioCall, ICall, User, VideoCall } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
-import { createLiveKitToken, removeParticipant } from '../../services/livekit.service';
+import { createLiveKitToken, removeParticipant, closeRoom } from '../../services/livekit.service';
 import { spendDiamonds, ensureWallet } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
 import { emitToUser } from '../../socket/io';
@@ -89,10 +89,11 @@ async function findOngoingCallForUser(
  * - Call auto-ends when caller's affordable duration (from diamonds) runs out
  */
 export const initiateCall = asyncHandler(async (req: Request, res: Response) => {
-  const { type, calleeId, participantIds } = req.body as {
+  const { type, calleeId, participantIds, fromCallId } = req.body as {
     type: CallType;
     calleeId?: string;
     participantIds?: string[];
+    fromCallId?: string;
   };
 
   const extras = (participantIds ?? []).map(String).filter((id) => id && id !== req.user!.id);
@@ -117,14 +118,38 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   // Clear abandoned Ongoing/Ringing rows before busy checks (ghost "Busy" fix).
   await pruneStaleCalls();
 
+  /** Consult: park an Ongoing call and ring another user. */
+  let heldCall: ICall | null = null;
+  let heldType: CallType | undefined;
+  if (fromCallId) {
+    heldCall =
+      (await AudioCall.findById(fromCallId)) || (await VideoCall.findById(fromCallId));
+    if (!heldCall || heldCall.status !== CallStatus.Ongoing) {
+      throw ApiError.badRequest('Held call is not ongoing');
+    }
+    if (!isCallMember(heldCall, req.user!.id)) {
+      throw ApiError.forbidden('Not a member of the held call');
+    }
+    if (groupIds.length > 1) {
+      throw ApiError.badRequest('Consult call supports one callee at a time');
+    }
+    if (isCallMember(heldCall, primaryCalleeId)) {
+      throw ApiError.badRequest('User is already on your current call');
+    }
+    heldType = heldCall.type as CallType;
+  }
+
   const busy = await getBusyUserIds([req.user!.id, ...groupIds]);
-  if (busy.has(req.user!.id)) {
+  if (busy.has(req.user!.id) && !heldCall) {
     throw ApiError.badRequest('You are already on another call');
   }
 
-  // Soft-busy / call-waiting: 1:1 only — callee is on another Ongoing call.
+  // Soft-busy / call-waiting: 1:1 only — callee is on another Ongoing call (not consult).
   const calleeBusy = busy.has(primaryCalleeId);
-  if (calleeBusy && groupIds.length === 1) {
+  if (heldCall && calleeBusy) {
+    throw ApiError.badRequest('One of the invited users is busy on another call');
+  }
+  if (!heldCall && calleeBusy && groupIds.length === 1) {
     const ongoing = await findOngoingCallForUser(primaryCalleeId, type);
     if (!ongoing) {
       throw ApiError.badRequest('One of the invited users is busy on another call');
@@ -285,6 +310,8 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     ratePerMinute,
     secondsPerDiamond,
     maxDurationSec,
+    // Link consult → held Ongoing (not an inbound interrupt).
+    ...(heldCall ? { targetCallId: heldCall._id, isInterrupt: false } : {}),
   });
 
   const token = await createLiveKitToken({
@@ -327,6 +354,21 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     });
   }
 
+  // Park other members of the held call while consult rings.
+  if (heldCall && heldType) {
+    const holdPayload = {
+      callId: heldCall._id.toString(),
+      type: heldType,
+      heldBy: req.user!.id,
+      held: true,
+      consultCallId: call._id.toString(),
+    };
+    for (const memberId of participantIdsOf(heldCall)) {
+      if (memberId === req.user!.id) continue;
+      emitToUser(memberId, SocketEvents.CallHold, holdPayload);
+    }
+  }
+
   return created(
     res,
     {
@@ -337,8 +379,11 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
       ratePerMinute,
       secondsPerDiamond,
       maxDurationSec,
+      consult: Boolean(heldCall),
+      heldCallId: heldCall?._id.toString(),
+      heldType,
     },
-    'Calling…',
+    heldCall ? 'Consult calling…' : 'Calling…',
   );
 });
 
@@ -629,6 +674,170 @@ export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) 
       merged: true,
     },
     'Merged into call',
+  );
+});
+
+/** POST /calls/:type/:id/hold — park peers on an Ongoing call (consult). */
+export const holdCall = asyncHandler(async (req: Request, res: Response) => {
+  const type = req.params.type as CallType;
+  const call = await modelFor(type).findById(req.params.id);
+  if (!call) throw ApiError.notFound('Call not found');
+  if (call.status !== CallStatus.Ongoing) throw ApiError.badRequest('Call is not ongoing');
+  if (!isCallMember(call, req.user!.id)) throw ApiError.forbidden('Not your call');
+
+  const payload = {
+    callId: call._id.toString(),
+    type,
+    heldBy: req.user!.id,
+    held: true,
+  };
+  for (const memberId of participantIdsOf(call)) {
+    if (memberId === req.user!.id) continue;
+    emitToUser(memberId, SocketEvents.CallHold, payload);
+  }
+  return ok(res, payload, 'Call on hold');
+});
+
+/** POST /calls/:type/:id/unhold — resume a parked call. */
+export const unholdCall = asyncHandler(async (req: Request, res: Response) => {
+  const type = req.params.type as CallType;
+  const call = await modelFor(type).findById(req.params.id);
+  if (!call) throw ApiError.notFound('Call not found');
+  if (call.status !== CallStatus.Ongoing) throw ApiError.badRequest('Call is not ongoing');
+  if (!isCallMember(call, req.user!.id)) throw ApiError.forbidden('Not your call');
+
+  const livekitUrl = getLiveKitPublicUrl();
+  const token = await createLiveKitToken({
+    identity: req.user!.id,
+    roomName: call.roomName,
+    canPublish: true,
+  });
+
+  const payload = {
+    callId: call._id.toString(),
+    type,
+    heldBy: req.user!.id,
+    held: false,
+    token,
+    roomName: call.roomName,
+    livekitUrl,
+    maxDurationSec: call.maxDurationSec,
+  };
+  for (const memberId of participantIdsOf(call)) {
+    if (memberId === req.user!.id) continue;
+    emitToUser(memberId, SocketEvents.CallUnhold, {
+      callId: call._id.toString(),
+      type,
+      heldBy: req.user!.id,
+      held: false,
+    });
+  }
+  return ok(res, payload, 'Call resumed');
+});
+
+/**
+ * POST /calls/:type/:id/merge
+ * Merge a held Ongoing call into the active consult Ongoing call (:id).
+ */
+export const mergeCalls = asyncHandler(async (req: Request, res: Response) => {
+  const type = req.params.type as CallType;
+  const { heldCallId } = req.body as { heldCallId: string };
+  const uid = req.user!.id;
+
+  const active = await modelFor(type).findById(req.params.id);
+  if (!active) throw ApiError.notFound('Active call not found');
+  if (active.status !== CallStatus.Ongoing) throw ApiError.badRequest('Active call is not ongoing');
+  if (!isCallMember(active, uid)) throw ApiError.forbidden('Not on the active call');
+
+  let held =
+    (await AudioCall.findById(heldCallId)) || (await VideoCall.findById(heldCallId));
+  if (!held || held.status !== CallStatus.Ongoing) {
+    throw ApiError.badRequest('Held call is not ongoing');
+  }
+  if (!isCallMember(held, uid)) throw ApiError.forbidden('Not on the held call');
+
+  const heldMembers = participantIdsOf(held).filter((id) => id !== uid);
+  const activeMembers = participantIdsOf(active);
+  if (activeMembers.length + heldMembers.length > MAX_CALL_PARTICIPANTS) {
+    throw ApiError.badRequest(`Max ${MAX_CALL_PARTICIPANTS} participants per call`);
+  }
+
+  const parts = new Set(activeMembers);
+  for (const id of heldMembers) parts.add(id);
+  active.participants = [...parts] as unknown as typeof active.participants;
+  await active.save();
+
+  held.status = CallStatus.Ended;
+  held.endedAt = new Date();
+  held.pendingInvites = [];
+  await held.save();
+
+  const livekitUrl = getLiveKitPublicUrl();
+  const activeType = active.type as CallType;
+
+  for (const memberId of heldMembers) {
+    const joinerToken = await createLiveKitToken({
+      identity: memberId,
+      roomName: active.roomName,
+      canPublish: true,
+    });
+    const joiner = await User.findById(memberId).select('displayName avatarUrl');
+    const joinPayload = {
+      callId: active._id.toString(),
+      type: activeType,
+      roomName: active.roomName,
+      livekitUrl,
+      maxDurationSec: active.maxDurationSec,
+      mergedFromHold: held._id.toString(),
+      participant: {
+        id: memberId,
+        displayName: joiner?.displayName,
+        avatarUrl: joiner?.avatarUrl,
+      },
+    };
+    emitToUser(memberId, SocketEvents.CallAccept, {
+      ...joinPayload,
+      token: joinerToken,
+      merged: true,
+      call: active,
+    });
+    emitToUser(memberId, SocketEvents.CallUnhold, {
+      callId: held._id.toString(),
+      type: held.type,
+      held: false,
+      merged: true,
+    });
+    for (const mid of participantIdsOf(active)) {
+      if (mid === memberId) continue;
+      emitToUser(mid, SocketEvents.CallParticipantJoined, joinPayload);
+    }
+  }
+
+  // Close held LiveKit room after members have been directed to the active room.
+  try {
+    await closeRoom(held.roomName);
+  } catch {
+    /* ignore */
+  }
+
+  const selfToken = await createLiveKitToken({
+    identity: uid,
+    roomName: active.roomName,
+    canPublish: true,
+  });
+
+  return ok(
+    res,
+    {
+      call: active,
+      type: activeType,
+      token: selfToken,
+      roomName: active.roomName,
+      livekitUrl,
+      maxDurationSec: active.maxDurationSec,
+      merged: true,
+    },
+    'Calls merged',
   );
 });
 

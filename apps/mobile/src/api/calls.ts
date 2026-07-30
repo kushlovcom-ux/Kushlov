@@ -7,12 +7,24 @@ export const callsApi = {
     type: CallType;
     calleeId?: string;
     participantIds?: string[];
+    /** Park this Ongoing call and start a consult to callee. */
+    fromCallId?: string;
   }) => {
     const raw = await apiPost<unknown>('/calls/initiate', body);
     return normalizeCallSession(raw);
   },
   invite: (type: CallType | string, id: string, userId: string) =>
     apiPost<{ ok?: boolean }>(`/calls/${type}/${id}/invite`, { userId }),
+  hold: (type: CallType | string, id: string) =>
+    apiPost<{ callId: string; held: boolean }>(`/calls/${type}/${id}/hold`),
+  unhold: async (type: CallType | string, id: string) => {
+    const raw = await apiPost<unknown>(`/calls/${type}/${id}/unhold`);
+    return normalizeCallSession(raw);
+  },
+  merge: async (type: CallType | string, id: string, heldCallId: string) => {
+    const raw = await apiPost<unknown>(`/calls/${type}/${id}/merge`, { heldCallId });
+    return normalizeCallSession(raw);
+  },
   incoming: async () => {
     const res = await apiGet<{ items: unknown[] }>('/calls/incoming');
     return { items: (res.items ?? []).map((i) => normalizeCallSession(i)) };

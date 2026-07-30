@@ -288,6 +288,8 @@ export const SocketEvents = {
   CallAccept: 'call:accept',
   CallReject: 'call:reject',
   CallEnd: 'call:end',
+  CallHold: 'call:hold',
+  CallUnhold: 'call:unhold',
   CallParticipantJoined: 'call:participant_joined',
   CallParticipantLeft: 'call:participant_left',
   // live
