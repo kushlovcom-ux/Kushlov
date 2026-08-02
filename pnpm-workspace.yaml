@@ -2,10 +2,17 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Expo SDK 54+ supports isolated deps, but React Native/LiveKit/Razorpay
+# still resolve more reliably with a hoisted node_modules layout on EAS.
+nodeLinker: hoisted
+
 # Keep a single Zod major across the monorepo so @hookform/resolvers
 # (web) does not typecheck against mobile's Zod 4 while schemas use Zod 3.
 overrides:
   zod: 3.25.76
+  # Single React across web + Expo so pnpm does not nest 19.2.3 under every RN package.
+  react: 19.2.3
+  react-dom: 19.2.3
 
 # pnpm 11: allow lifecycle scripts for packages that need native/postinstall builds
 allowBuilds:
