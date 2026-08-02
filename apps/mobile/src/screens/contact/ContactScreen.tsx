@@ -60,7 +60,8 @@ export function ContactScreen({ navigation }: Props) {
         multiline
         style={{ minHeight: 120, textAlignVertical: 'top' }}
       />
-      <Button title="Send" onPress={submit} loading={loading} style={{ marginTop: spacing.xl }} />
+      <View style={{ height: spacing.xl }} />
+      <Button title="Send" onPress={submit} loading={loading} fullWidth />
 
       <Text variant="h3" style={{ marginTop: spacing['2xl'], marginBottom: spacing.md }}>
         Your inquiries

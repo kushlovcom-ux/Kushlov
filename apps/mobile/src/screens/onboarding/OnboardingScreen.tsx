@@ -84,7 +84,9 @@ export function OnboardingScreen() {
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => (
           <View style={[styles.slide, { width }]}>
-            <Image source={item.image} style={styles.image} resizeMode="cover" />
+            <View style={[styles.imageWrap, { backgroundColor: c.elevated }]}>
+              <Image source={item.image} style={styles.image} resizeMode="contain" />
+            </View>
             <Text variant="h1" style={styles.title}>
               {item.title}
             </Text>
@@ -115,11 +117,18 @@ export function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   slide: { paddingTop: 24, alignItems: 'center' },
-  image: {
+  imageWrap: {
     width: width - 48,
     height: width * 0.95,
     borderRadius: 24,
     marginBottom: spacing.xl,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
   },
   title: { textAlign: 'center', paddingHorizontal: 24 },
   body: { textAlign: 'center', paddingHorizontal: 32, marginTop: spacing.sm },

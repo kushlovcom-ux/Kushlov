@@ -29,8 +29,13 @@ export const callsApi = {
     const res = await apiGet<{ items: unknown[] }>('/calls/incoming');
     return { items: (res.items ?? []).map((i) => normalizeCallSession(i)) };
   },
-  history: (params?: { page?: number; limit?: number }) =>
-    apiGet<Paginated<CallSession>>('/calls/history', { params }),
+  history: async (params?: { page?: number; limit?: number }) => {
+    const res = await apiGet<Paginated<unknown>>('/calls/history', { params });
+    return {
+      ...res,
+      items: (res.items ?? []).map((i) => normalizeCallSession(i)),
+    };
+  },
   get: async (type: CallType | string, id: string) =>
     normalizeCallSession(await apiGet<unknown>(`/calls/${type}/${id}`)),
   accept: async (type: CallType | string, id: string) =>

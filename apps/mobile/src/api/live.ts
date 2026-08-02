@@ -1,10 +1,16 @@
 import { api, apiGet, apiPost } from './client';
+import { normalizeLiveRoom } from '@/utils/normalizeLive';
 import type { LiveRoom, Paginated } from '@/types';
 
 export const liveApi = {
-  list: (params?: { page?: number; limit?: number }) =>
-    apiGet<Paginated<LiveRoom>>('/live', { params }),
-  get: (id: string) => apiGet<LiveRoom>(`/live/${id}`),
+  list: async (params?: { page?: number; limit?: number }) => {
+    const res = await apiGet<Paginated<unknown>>('/live', { params });
+    return {
+      ...res,
+      items: (res.items ?? []).map((i) => normalizeLiveRoom(i)).filter((r) => Boolean(r.id)),
+    };
+  },
+  get: async (id: string) => normalizeLiveRoom(await apiGet<unknown>(`/live/${id}`)),
   start: async (payload: { title: string; thumbnailUri?: string }) => {
     const form = new FormData();
     form.append('title', payload.title);
@@ -18,8 +24,8 @@ export const liveApi = {
     const res = await api.post('/live/start', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    const data = res.data.data as { live?: LiveRoom } & LiveRoom;
-    return (data.live ?? data) as LiveRoom;
+    const data = res.data.data as { live?: unknown } & Record<string, unknown>;
+    return normalizeLiveRoom(data.live ?? data);
   },
   hostToken: (id: string) =>
     apiGet<{ token: string; livekitUrl?: string; roomName?: string; viewerCount?: number }>(
@@ -70,14 +76,19 @@ export const liveApi = {
         from?: { id?: string; displayName?: string; avatarUrl?: string };
       }>;
     }>('/live/colive/incoming'),
-  coliveAccept: (id: string) =>
-    apiPost<{
+  coliveAccept: async (id: string) => {
+    const raw = await apiPost<{
       token: string;
       livekitUrl?: string;
       roomName?: string;
-      live?: LiveRoom;
+      live?: unknown;
       role?: string;
-    }>(`/live/${id}/colive/accept`),
+    }>(`/live/${id}/colive/accept`);
+    return {
+      ...raw,
+      live: raw.live ? normalizeLiveRoom(raw.live) : undefined,
+    };
+  },
   coliveToken: (id: string) =>
     apiGet<{
       token: string;

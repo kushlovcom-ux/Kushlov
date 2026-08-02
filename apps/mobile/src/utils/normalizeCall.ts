@@ -53,11 +53,23 @@ function idOf(value: unknown): string {
  * Server returns `{ call, token, livekitUrl }` — without this, `type`/`id` are missing
  * and video calls incorrectly fall back to audio-only.
  */
+function asPublicUser(value: unknown): PublicUser | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const v = value as PublicUser & { _id?: string | { toString(): string }; displayName?: string };
+  const id = idOf(v);
+  if (!id && !v.displayName) return undefined;
+  return {
+    ...(v as PublicUser),
+    id: id || v.id || '',
+    displayName: v.displayName,
+  };
+}
+
 export function normalizeCallSession(raw: unknown): CallSession {
   const data = (raw ?? {}) as RawCallPayload;
   const call = data.call ?? data;
-  const caller = (call.caller ?? data.caller ?? data.from) as PublicUser | undefined;
-  const callee = (call.callee ?? data.callee) as PublicUser | undefined;
+  const caller = asPublicUser(call.caller ?? data.caller ?? data.from);
+  const callee = asPublicUser(call.callee ?? data.callee);
 
   const id =
     idOf(call.id) ||

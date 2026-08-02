@@ -83,6 +83,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   const live = useQuery({
     queryKey: queryKeys.liveRoom(liveId),
     queryFn: () => liveApi.get(liveId),
+    enabled: Boolean(liveId),
   });
 
   const isHost = useMemo(() => {
@@ -278,6 +279,15 @@ export function LiveRoomScreen({ navigation, route }: Props) {
       Alert.alert('Co-live', getErrorMessage(err));
     }
   };
+
+  if (!liveId) {
+    return (
+      <Screen>
+        <Header title="Live" onBack={() => navigation.goBack()} />
+        <ErrorView message="Invalid live stream id. Go back and try again." />
+      </Screen>
+    );
+  }
 
   if (live.isError) {
     return (

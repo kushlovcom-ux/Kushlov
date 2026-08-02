@@ -64,14 +64,17 @@ export function LiveListScreen() {
           items.map((room, index) => (
             <PressableScale
               key={room.id}
-              onPress={() => nav.navigate('LiveRoom', { liveId: room.id })}
+              onPress={() => {
+                if (!room.id) return;
+                nav.navigate('LiveRoom', { liveId: room.id });
+              }}
               style={[styles.card, { backgroundColor: c.card, borderColor: c.border }]}
             >
               <View style={styles.thumbWrap}>
                 <LiveCardPreview
                   liveId={room.id}
                   thumbnailUrl={room.thumbnailUrl}
-                  active={index < MAX_PREVIEWS}
+                  active={Boolean(room.id) && index < MAX_PREVIEWS}
                   style={styles.thumb}
                 />
                 <LinearGradient

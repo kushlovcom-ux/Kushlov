@@ -9,6 +9,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     orientation: 'portrait',
     // Razorpay does not support the New Architecture yet — keep it off for stable Android launches.
     newArchEnabled: false,
+    // Align Metro resolution with native autolinking in this pnpm monorepo.
+    experiments: {
+      autolinkingModuleResolution: true,
+    },
     icon: './assets/adaptive-icon.png',
     scheme: 'kushlov',
     userInterfaceStyle: 'automatic',

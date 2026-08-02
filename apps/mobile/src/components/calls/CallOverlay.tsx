@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -42,6 +42,7 @@ export function CallOverlay() {
   const [elapsed, setElapsed] = useState(0);
   const [nativeOk, setNativeOk] = useState<boolean | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
+  const endingRef = useRef(false);
 
   const onRoom = useCallback((r: Room | null) => {
     setRoom(r);
@@ -73,14 +74,16 @@ export function CallOverlay() {
     return () => clearInterval(t);
   }, [active?.connectedAt]);
 
+  // Only start the call timer after the peer accepts (Ongoing) — not while ringing.
   useEffect(() => {
     if (!active?.session.token || !active.session.livekitUrl) return;
+    if (active.session.status !== CallStatus.Ongoing) return;
     if (!active.connectedAt) markConnected();
-    useCallStore.getState().updateSession({ status: CallStatus.Ongoing });
   }, [
     active?.session.id,
     active?.session.token,
     active?.session.livekitUrl,
+    active?.session.status,
     active?.connectedAt,
     markConnected,
   ]);
@@ -100,29 +103,47 @@ export function CallOverlay() {
   }, [room, active?.session.id, active?.session.type, active?.muted, active?.cameraOff]);
 
   const endCall = async () => {
+    if (endingRef.current) return;
+    endingRef.current = true;
     haptics.medium();
     const held = useCallStore.getState().heldCall;
+    const session = active?.session ?? useCallStore.getState().active?.session;
+    // Drop local media immediately so the other side is not left waiting on us.
     try {
-      if (active) {
-        await callsApi.end(active.session.type, active.session.id);
-      }
+      await room?.disconnect();
     } catch {
-      // ignore
+      /* ignore */
     }
     setRoom(null);
-    if (held) {
-      // Clear held first so socket CallEnd does not double-resume.
-      setHeldCall(null);
-      useCallStore.setState({ active: null, incoming: null, parked: false });
-      try {
-        const session = await callsApi.unhold(held.type, held.callId);
-        startCall(session, 'caller', held.peer);
-      } catch (err) {
-        Alert.alert('Resume failed', getErrorMessage(err));
+
+    try {
+      if (held) {
+        setHeldCall(null);
+        useCallStore.setState({ active: null, incoming: null, parked: false });
+        try {
+          if (session?.id) await callsApi.end(session.type, session.id);
+        } catch {
+          /* ignore */
+        }
+        try {
+          const resumed = await callsApi.unhold(held.type, held.callId);
+          startCall(resumed, 'caller', held.peer);
+        } catch (err) {
+          Alert.alert('Resume failed', getErrorMessage(err));
+        }
+        return;
       }
-      return;
+
+      // Clear UI first so we never look "still on the call", then notify the server.
+      clear();
+      try {
+        if (session?.id) await callsApi.end(session.type, session.id);
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      endingRef.current = false;
     }
-    clear();
   };
 
   const endHeldOnly = async () => {
@@ -357,7 +378,9 @@ export function CallOverlay() {
             publish
             audioOnly={!isVideo}
             onDisconnected={() => {
+              if (endingRef.current) return;
               if (useCallStore.getState().parked) return;
+              if (!useCallStore.getState().active) return;
               void endCall();
             }}
             onRoom={onRoom}

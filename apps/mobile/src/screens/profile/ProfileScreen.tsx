@@ -16,6 +16,7 @@ import { queryKeys } from '@/constants/queryKeys';
 import { useAuthStore } from '@/store/auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { AppStackParamList } from '@/navigation/types';
+import { Role } from '@/types';
 import { displayName, formatDiamonds } from '@/utils/format';
 import { radius, spacing } from '@/theme';
 
@@ -67,7 +68,9 @@ export function ProfileScreen() {
     ]);
   };
 
-  const links = ALL_LINKS.filter((link) => !(link.hostOnlyHide && user?.isHostApproved));
+  const isHost =
+    user?.role === Role.Host || user?.role === Role.Admin || Boolean(user?.isHostApproved);
+  const links = ALL_LINKS.filter((link) => !(link.hostOnlyHide && isHost));
 
   return (
     <Screen padded={false}>
@@ -120,14 +123,16 @@ export function ProfileScreen() {
                 {formatDiamonds(wallet.data?.diamonds ?? 0)}
               </Text>
             </View>
-            <View>
-              <Text muted variant="caption">
-                Gold
-              </Text>
-              <Text variant="h2" color={c.premiumGold}>
-                {formatDiamonds(wallet.data?.gold ?? 0)}
-              </Text>
-            </View>
+            {isHost ? (
+              <View>
+                <Text muted variant="caption">
+                  Gold
+                </Text>
+                <Text variant="h2" color={c.premiumGold}>
+                  {formatDiamonds(wallet.data?.gold ?? 0)}
+                </Text>
+              </View>
+            ) : null}
             <Button title="Top up" size="sm" onPress={() => nav.navigate('Wallet')} />
           </View>
         </GlassCard>
@@ -154,7 +159,7 @@ export function ProfileScreen() {
           ))}
         </GlassCard>
 
-        <Button title="Sign out" variant="danger" onPress={logout} fullWidth />
+        <Button title="Sign out" variant="primary" onPress={logout} fullWidth size="lg" />
       </ScrollView>
     </Screen>
   );

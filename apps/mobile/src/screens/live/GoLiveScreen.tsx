@@ -35,6 +35,7 @@ export function GoLiveScreen({ navigation }: Props) {
     setLoading(true);
     try {
       const room = await liveApi.start({ title: title.trim(), thumbnailUri: thumb });
+      if (!room.id) throw new Error('Live stream id missing from server response');
       navigation.replace('LiveRoom', { liveId: room.id });
     } catch (err) {
       Alert.alert('Could not go live', getErrorMessage(err));

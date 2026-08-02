@@ -65,8 +65,8 @@ export function WelcomeScreen({ navigation }: Props) {
           onScroll={onScroll}
           keyExtractor={(item) => item.key}
           renderItem={({ item }) => (
-            <View style={{ width, height: height * 0.58 }}>
-              <Image source={item.image} style={styles.heroImage} resizeMode="cover" />
+            <View style={[styles.heroSlide, { width, height: height * 0.58, backgroundColor: c.bg }]}>
+              <Image source={item.image} style={styles.heroImage} resizeMode="contain" />
               <LinearGradient
                 colors={['transparent', 'rgba(5,5,16,0.45)', c.bg]}
                 locations={[0.35, 0.7, 1]}
@@ -142,6 +142,7 @@ export function WelcomeScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  heroSlide: { overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   heroImage: { width: '100%', height: '100%' },
   fade: {
     position: 'absolute',

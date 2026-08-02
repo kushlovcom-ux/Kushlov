@@ -63,7 +63,7 @@ export function EditProfileScreen({ navigation }: Props) {
   return (
     <Screen scroll>
       <Header title="Edit profile" onBack={() => navigation.goBack()} />
-      <Button title="Change avatar" variant="secondary" onPress={uploadAvatar} />
+      <Button title="Change Your Profile" variant="primary" onPress={uploadAvatar} fullWidth />
       <View style={{ height: spacing.lg }} />
       <Input label="Display name" value={displayName} onChangeText={setDisplayName} />
       <View style={{ height: spacing.md }} />
@@ -74,7 +74,8 @@ export function EditProfileScreen({ navigation }: Props) {
         multiline
         style={{ minHeight: 100, textAlignVertical: 'top' }}
       />
-      <Button title="Save" onPress={save} loading={loading} style={{ marginTop: spacing.xl }} />
+      <View style={{ height: spacing.xl }} />
+      <Button title="Save" onPress={save} loading={loading} fullWidth />
     </Screen>
   );
 }

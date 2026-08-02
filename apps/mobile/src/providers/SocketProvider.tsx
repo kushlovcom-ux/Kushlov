@@ -82,47 +82,51 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     };
 
     const onRejectOrEnd = (payload?: { callId?: string; interrupt?: boolean }) => {
-      const id = payload?.callId;
+      const id = payload?.callId ? String(payload.callId) : undefined;
       const active = useCallStore.getState().active;
       const incoming = useCallStore.getState().incoming;
       const held = useCallStore.getState().heldCall;
+      const activeId = active?.session?.id ? String(active.session.id) : '';
+      const incomingId = incoming?.id ? String(incoming.id) : '';
+      const heldId = held?.callId ? String(held.callId) : '';
 
-      if (id && held && id === held.callId) {
+      if (id && heldId && id === heldId) {
         useCallStore.getState().setHeldCall(null);
         return;
       }
 
       // Ending/rejecting a call-waiting interrupt must not wipe A↔B.
-      if (id && active?.session?.id && id !== active.session.id) {
-        if (incoming?.id === id) setIncoming(null);
+      if (id && activeId && id !== activeId) {
+        if (incomingId && id === incomingId) setIncoming(null);
         return;
       }
       if (payload?.interrupt && active) {
-        if (incoming?.id === id || !id) setIncoming(null);
+        if (!id || id === incomingId) setIncoming(null);
         return;
       }
 
-      if (incoming && (!id || incoming.id === id) && !active) {
+      if (incoming && (!id || id === incomingId) && !active) {
         setIncoming(null);
         return;
       }
 
       // Active consult ended while a held line exists → resume held.
-      if (held && active && (!id || active.session.id === id)) {
+      if (held && active && (!id || id === activeId)) {
         useCallStore.setState({ active: null, incoming: null, parked: false });
         void resumeHeld();
         return;
       }
 
       // Consult already cleared locally; CallEnd arrived mid-resume.
-      if (!active && held && id && id !== held.callId) {
+      if (!active && held && id && id !== heldId) {
         void resumeHeld();
         return;
       }
 
-      if (!active || !id || active.session.id === id) {
+      // Hang up for everyone on this call (or clear if payload has no id).
+      if (!active || !id || id === activeId) {
         clearCall();
-      } else if (incoming?.id === id) {
+      } else if (id === incomingId) {
         setIncoming(null);
       }
     };

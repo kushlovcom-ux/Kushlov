@@ -86,13 +86,8 @@ export function LocationSetupScreen({ navigation }: Props) {
       ) : null}
       <View style={{ height: spacing.lg }} />
       <Input label="City (optional)" value={city} onChangeText={setCity} />
-      <Button
-        title="Save location"
-        onPress={save}
-        loading={loading}
-        fullWidth
-        style={{ marginTop: spacing.xl }}
-      />
+      <View style={{ height: spacing.xl }} />
+      <Button title="Save location" onPress={save} loading={loading} fullWidth />
     </Screen>
   );
 }

@@ -12,13 +12,29 @@ import { Screen } from '@/components/common/Screen';
 import { callsApi } from '@/api/calls';
 import { getErrorMessage } from '@/api/client';
 import { queryKeys } from '@/constants/queryKeys';
+import { useAuthStore } from '@/store/auth';
 import { formatDateTime, formatDuration } from '@/utils/format';
 import { spacing } from '@/theme';
 import type { AppStackParamList } from '@/navigation/types';
+import type { CallSession, PublicUser } from '@/types';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'CallHistory' | 'History'>;
 
+function peerForCall(call: CallSession, myId?: string): PublicUser | undefined {
+  if (!myId) return call.callee ?? call.caller;
+  const iAmCaller = call.callerId === myId || call.caller?.id === myId;
+  if (iAmCaller) return call.callee ?? call.caller;
+  return call.caller ?? call.callee;
+}
+
+function directionLabel(call: CallSession, myId?: string): string {
+  if (!myId) return 'Call';
+  const iAmCaller = call.callerId === myId || call.caller?.id === myId;
+  return iAmCaller ? 'Outgoing' : 'Incoming';
+}
+
 export function CallHistoryScreen({ navigation }: Props) {
+  const myId = useAuthStore((s) => s.user?.id);
   const history = useQuery({
     queryKey: queryKeys.callHistory,
     queryFn: () => callsApi.history({ limit: 50 }),
@@ -41,13 +57,16 @@ export function CallHistoryScreen({ navigation }: Props) {
           <EmptyState title="No calls yet" />
         ) : (
           items.map((call) => {
-            const peer = call.caller?.id === call.calleeId ? call.caller : call.callee ?? call.caller;
+            const peer = peerForCall(call, myId);
+            const name =
+              peer?.displayName || peer?.username || 'Unknown';
             return (
               <View key={call.id} style={{ marginBottom: spacing.lg }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text variant="bodyBold">{peer?.displayName ?? 'Call'}</Text>
-                  <Badge label={call.type} tone="purple" />
-                  <Badge label={call.status} tone="muted" />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Text variant="bodyBold">{name}</Text>
+                  <Badge label={directionLabel(call, myId)} tone="muted" />
+                  <Badge label={String(call.type)} tone="purple" />
+                  <Badge label={String(call.status)} tone="muted" />
                 </View>
                 <Text muted variant="caption">
                   {formatDateTime(call.createdAt)}

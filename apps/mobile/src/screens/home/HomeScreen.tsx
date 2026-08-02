@@ -35,7 +35,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { radius, spacing } from '@/theme';
 import type { AppStackParamList } from '@/navigation/types';
-import type { PublicUser } from '@/types';
+import { Role, type PublicUser } from '@/types';
 
 function greetingForHour(h: number) {
   if (h < 12) return 'Good morning';
@@ -58,21 +58,20 @@ export function HomeScreen() {
   const popularItems = popular.data ?? [];
   const topItems = topRated.data?.items ?? [];
   const onlineItems = online.data?.pages.flatMap((p) => p.items) ?? [];
+  const trulyOnline = useMemo(
+    () => onlineItems.filter((u) => u.isOnline === true),
+    [onlineItems],
+  );
   const loading = popular.isLoading || topRated.isLoading;
   const notifCount =
     badges.data?.notifications ?? badges.data?.unreadNotifications ?? 0;
-  const onlineCount = Math.max(
-    stats.data?.onlineUsers ?? 0,
-    onlineItems.filter((u) => u.isOnline).length,
-  );
+  const onlineCount = Math.max(stats.data?.onlineUsers ?? 0, trulyOnline.length);
   const firstName = (user?.displayName ?? 'Explorer').split(' ')[0];
   const hello = useMemo(() => greetingForHour(new Date().getHours()), []);
+  const canGoLive =
+    user?.role === Role.Host || user?.role === Role.Admin || Boolean(user?.isHostApproved);
 
-  const storyData: PublicUser[] = useMemo(() => {
-    const map = new Map<string, PublicUser>();
-    [...onlineItems, ...popularItems].forEach((u) => map.set(u.id, u));
-    return Array.from(map.values()).slice(0, 12);
-  }, [onlineItems, popularItems]);
+  const storyData: PublicUser[] = useMemo(() => trulyOnline.slice(0, 12), [trulyOnline]);
 
   return (
     <Screen padded={false}>
@@ -173,11 +172,13 @@ export function HomeScreen() {
             label="Wallet"
             onPress={() => nav.navigate('Wallet')}
           />
-          <QuickAction
-            icon="videocam"
-            label="Go Live"
-            onPress={() => nav.navigate('GoLive')}
-          />
+          {canGoLive ? (
+            <QuickAction
+              icon="videocam"
+              label="Go Live"
+              onPress={() => nav.navigate('GoLive')}
+            />
+          ) : null}
         </ScrollView>
 
         {/* Stories / online */}

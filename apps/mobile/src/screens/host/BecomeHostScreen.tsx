@@ -114,7 +114,8 @@ export function BecomeHostScreen({ navigation }: Props) {
           <Input label="Date of birth (YYYY-MM-DD)" value={basic.dob} onChangeText={(v) => setBasic((s) => ({ ...s, dob: v }))} />
           <View style={{ height: spacing.md }} />
           <Input label="Country" value={basic.country} onChangeText={(v) => setBasic((s) => ({ ...s, country: v }))} />
-          <Button title="Continue" onPress={submitBasic} loading={loading} style={{ marginTop: spacing.xl }} />
+          <View style={{ height: spacing.xl }} />
+          <Button title="Continue" onPress={submitBasic} loading={loading} fullWidth />
         </>
       ) : null}
 

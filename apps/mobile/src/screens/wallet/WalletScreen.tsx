@@ -19,7 +19,7 @@ import { queryKeys } from '@/constants/queryKeys';
 import { openRazorpayCheckout } from '@/services/razorpay';
 import { useAuthStore } from '@/store/auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import type { DiamondPackage, LedgerEntry } from '@/types';
+import { Role, type DiamondPackage, type LedgerEntry } from '@/types';
 import { formatDiamonds, formatMoney } from '@/utils/format';
 import { radius, spacing } from '@/theme';
 
@@ -29,6 +29,8 @@ export function WalletScreen() {
   const qc = useQueryClient();
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [upi, setUpi] = useState('');
+  const canUseGold =
+    user?.role === Role.Host || user?.role === Role.Admin || Boolean(user?.isHostApproved);
 
   const wallet = useQuery({ queryKey: queryKeys.wallet, queryFn: () => walletApi.get() });
   const packages = useQuery({ queryKey: queryKeys.packages, queryFn: () => paymentsApi.packages() });
@@ -138,14 +140,16 @@ export function WalletScreen() {
                 {formatDiamonds(wallet.data?.diamonds ?? 0)}
               </Text>
             </View>
-            <View>
-              <Text variant="caption" color="rgba(26,18,8,0.7)">
-                Gold
-              </Text>
-              <Text variant="display" color="#1A1208">
-                {formatDiamonds(wallet.data?.gold ?? 0)}
-              </Text>
-            </View>
+            {canUseGold ? (
+              <View>
+                <Text variant="caption" color="rgba(26,18,8,0.7)">
+                  Gold
+                </Text>
+                <Text variant="display" color="#1A1208">
+                  {formatDiamonds(wallet.data?.gold ?? 0)}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </LinearGradient>
 
@@ -178,32 +182,36 @@ export function WalletScreen() {
           <EmptyState title="No packages" description="Diamond packs will appear here." />
         ) : null}
 
-        <SectionHeader title="Withdraw gold" subtitle="UPI payouts after review" flush />
-        <GlassCard style={{ marginBottom: spacing.lg }}>
-          <Input
-            label="Amount"
-            keyboardType="numeric"
-            value={withdrawAmount}
-            onChangeText={setWithdrawAmount}
-            placeholder="Gold amount"
-          />
-          <View style={{ height: spacing.md }} />
-          <Input
-            label="UPI ID"
-            value={upi}
-            onChangeText={setUpi}
-            placeholder="name@upi"
-            autoCapitalize="none"
-          />
-          <Button
-            title="Request withdrawal"
-            variant="outline"
-            onPress={() => withdraw.mutate()}
-            loading={withdraw.isPending}
-            fullWidth
-            style={{ marginTop: spacing.lg }}
-          />
-        </GlassCard>
+        {canUseGold ? (
+          <>
+            <SectionHeader title="Withdraw gold" subtitle="UPI payouts after review" flush />
+            <GlassCard style={{ marginBottom: spacing.lg }}>
+              <Input
+                label="Amount"
+                keyboardType="numeric"
+                value={withdrawAmount}
+                onChangeText={setWithdrawAmount}
+                placeholder="Gold amount"
+              />
+              <View style={{ height: spacing.md }} />
+              <Input
+                label="UPI ID"
+                value={upi}
+                onChangeText={setUpi}
+                placeholder="name@upi"
+                autoCapitalize="none"
+              />
+              <Button
+                title="Request withdrawal"
+                variant="outline"
+                onPress={() => withdraw.mutate()}
+                loading={withdraw.isPending}
+                fullWidth
+                style={{ marginTop: spacing.lg }}
+              />
+            </GlassCard>
+          </>
+        ) : null}
 
         <SectionHeader title="Recent activity" flush />
         <FlashList

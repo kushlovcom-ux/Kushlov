@@ -1108,9 +1108,10 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
 export const callHistory = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
   const filter = { $or: [{ caller: req.user!.id }, { callee: req.user!.id }] };
+  const populatePeer = { path: 'caller callee', select: 'displayName username avatarUrl role' };
   const [audio, video] = await Promise.all([
-    AudioCall.find(filter).lean(),
-    VideoCall.find(filter).lean(),
+    AudioCall.find(filter).populate(populatePeer).lean(),
+    VideoCall.find(filter).populate(populatePeer).lean(),
   ]);
   const all = [...audio, ...video].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
