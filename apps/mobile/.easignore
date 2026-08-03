@@ -1,15 +1,41 @@
-# Reduce upload size. Do NOT exclude workspace package.json folders
-# that appear in pnpm-lock.yaml (apps/web, apps/server, packages/*).
+# Shrink EAS upload + install surface. Keep every package.json that appears
+# in pnpm-lock.yaml so frozen install still resolves the workspace.
+
+# Dependencies / VCS / caches
 **/node_modules/**
 **/.git/**
 **/.expo/**
 **/dist/**
 **/.next/**
 **/coverage/**
+**/.turbo/**
+**/.cache/**
 **/android/**
 **/ios/**
 **/*.log
+**/.DS_Store
+
+# Local Metro/export dumps (multi‑MB Hermès bundles)
+**/.tmp-export-audit/**
+apps/mobile/.tmp-export-audit/**
+
+# Web app source is not needed for the mobile native build
+apps/web/src/**
+apps/web/public/**
 apps/web/.next/**
 apps/web/node_modules/**
+
+# Server source is not needed for the mobile native build
+apps/server/src/**
 apps/server/dist/**
 apps/server/node_modules/**
+
+# Shared packages: keep package.json for the lockfile, skip sources/build output
+packages/*/src/**
+packages/*/dist/**
+
+# Docs / IDE noise
+**/*.md
+docs/**
+.cursor/**
+*.canvas.tsx

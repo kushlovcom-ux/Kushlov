@@ -10,10 +10,12 @@
       "env": {
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com",
+        "GRADLE_OPTS": "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options=-Xmx1536m -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2 -Dorg.gradle.caching=true"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "resourceClass": "medium"
       },
       "ios": {
         "simulator": true
@@ -24,10 +26,12 @@
       "env": {
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com",
+        "GRADLE_OPTS": "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2 -Dorg.gradle.caching=true"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "resourceClass": "large"
       },
       "ios": {
         "simulator": false
@@ -38,10 +42,26 @@
       "env": {
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com",
+        "GRADLE_OPTS": "-Dorg.gradle.jvmargs=-Xmx8g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2 -Dorg.gradle.caching=true"
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "resourceClass": "large"
+      }
+    },
+    "production-apk": {
+      "autoIncrement": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com",
+        "GRADLE_OPTS": "-Dorg.gradle.jvmargs=-Xmx8g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options=-Xmx2g -Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2 -Dorg.gradle.caching=true"
+      },
+      "android": {
+        "buildType": "apk",
+        "resourceClass": "large"
       }
     }
   },

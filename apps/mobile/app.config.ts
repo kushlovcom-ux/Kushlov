@@ -82,6 +82,34 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundler: 'metro',
     },
     plugins: [
+      [
+        'expo-build-properties',
+        {
+          android: {
+            // Lower peak RAM while packaging native .so from LiveKit / WebRTC.
+            useLegacyPackaging: true,
+            // Avoid duplicate native libs aborting release packaging.
+            packagingOptions: {
+              pickFirst: [
+                '**/libc++_shared.so',
+                '**/libfbjni.so',
+                '**/libjsi.so',
+                '**/libreactnative.so',
+              ],
+            },
+            // Keep release builds lean after native compile (does not raise Gradle peak much).
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            extraProguardRules: [
+              '-keep class com.razorpay.** { *; }',
+              '-keep class com.google.android.gms.** { *; }',
+              '-keep class io.livekit.** { *; }',
+              '-dontwarn com.razorpay.**',
+              '-dontwarn org.webrtc.**',
+            ].join('\n'),
+          },
+        },
+      ],
       'expo-secure-store',
       [
         '@react-native-google-signin/google-signin',
