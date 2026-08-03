@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -19,20 +19,29 @@ export function PrivacyScreen({ navigation }: Props) {
       </Text>
       <Button
         title="Manage blocked users"
-        variant="secondary"
+        variant="primary"
+        fullWidth
+        size="lg"
         onPress={() => navigation.navigate('BlockedUsers')}
       />
+      <View style={{ height: spacing.md }} />
       <Button
         title="Report a safety concern"
-        variant="outline"
-        style={{ marginTop: spacing.md }}
+        variant="primary"
+        fullWidth
+        size="lg"
         onPress={() => navigation.navigate('Contact')}
       />
       <Button
         title="Learn more"
         variant="ghost"
         style={{ marginTop: spacing.md }}
-        onPress={() => Alert.alert('Privacy', 'Your data is used to power matches, calls, and safety tools on Kushlov.')}
+        onPress={() =>
+          Alert.alert(
+            'Privacy',
+            'Your data is used to power matches, calls, and safety tools on Kushlov.',
+          )
+        }
       />
     </Screen>
   );

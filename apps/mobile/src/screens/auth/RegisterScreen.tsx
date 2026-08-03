@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Eye, EyeOff } from 'lucide-react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -32,8 +33,11 @@ export function RegisterScreen({ navigation }: Props) {
     username: '',
     displayName: '',
     password: '',
+    confirmPassword: '',
     country: 'IN',
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -44,6 +48,7 @@ export function RegisterScreen({ navigation }: Props) {
     if (!isValidUsername(form.username)) next.username = '3–30 letters, numbers, underscore';
     if (form.displayName.trim().length < 2) next.displayName = 'Enter your display name';
     if (!isValidPassword(form.password)) next.password = 'At least 8 characters';
+    if (form.confirmPassword !== form.password) next.confirmPassword = 'Passwords do not match';
     if (form.country.trim().length < 2) next.country = 'Country code required';
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -133,9 +138,48 @@ export function RegisterScreen({ navigation }: Props) {
               label="Password"
               value={form.password}
               onChangeText={(v) => set('password', v)}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               error={errors.password}
               placeholder="At least 8 characters"
+              right={
+                <Pressable
+                  onPress={() => setShowPassword((v) => !v)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} color={c.textMuted} />
+                  ) : (
+                    <Eye size={20} color={c.textMuted} />
+                  )}
+                </Pressable>
+              }
+            />
+            <View style={{ height: spacing.md }} />
+            <Input
+              label="Confirm password"
+              value={form.confirmPassword}
+              onChangeText={(v) => set('confirmPassword', v)}
+              secureTextEntry={!showConfirmPassword}
+              error={errors.confirmPassword}
+              placeholder="Re-enter your password"
+              right={
+                <Pressable
+                  onPress={() => setShowConfirmPassword((v) => !v)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'
+                  }
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff size={20} color={c.textMuted} />
+                  ) : (
+                    <Eye size={20} color={c.textMuted} />
+                  )}
+                </Pressable>
+              }
             />
             <View style={{ height: spacing.md }} />
             <Input
@@ -152,7 +196,7 @@ export function RegisterScreen({ navigation }: Props) {
               loading={isRegistering}
               fullWidth
               size="lg"
-              style={{ marginTop: spacing.xl }}
+              style={{ marginTop: spacing['2xl'] }}
             />
           </View>
 

@@ -115,6 +115,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'https://kushlov-server.vercel.app/api',
       socketUrl: process.env.EXPO_PUBLIC_SOCKET_URL ?? 'https://kushlov-server.vercel.app',
       siteUrl: process.env.EXPO_PUBLIC_SITE_URL ?? 'https://www.klproind.com',
+      googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '',
+      googleAndroidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '',
+      googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '',
     },
     owner: 'kushlov1',
   } as unknown as ExpoConfig;

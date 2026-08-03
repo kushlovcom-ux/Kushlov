@@ -9,11 +9,17 @@ export type VerificationState = {
   [key: string]: unknown;
 };
 
+export type VerificationInstruction = {
+  _id?: string;
+  id?: string;
+  text: string;
+  category: 'selfie' | 'video' | 'general' | string;
+  sortOrder?: number;
+  isActive?: boolean;
+};
+
 export const verificationApi = {
-  instructions: () =>
-    apiGet<{ items: Array<{ id: string; title: string; body: string }> }>(
-      '/verification/instructions',
-    ),
+  instructions: () => apiGet<VerificationInstruction[]>('/verification/instructions'),
   me: () => apiGet<VerificationState | null>('/verification/me'),
   submitBasic: (body: {
     name: string;
@@ -46,22 +52,28 @@ export const verificationApi = {
     });
     return res.data.data as VerificationState;
   },
-  submitIdentity: async (files: { selfieUris: string[]; videoUri?: string }) => {
+  submitIdentity: async (files: {
+    selfieUris: string[];
+    selfieInstructions: string[];
+    videoUri: string;
+    videoInstruction: string;
+  }) => {
     const form = new FormData();
     files.selfieUris.forEach((uri, i) => {
       form.append('selfies', {
         uri,
         type: 'image/jpeg',
-        name: `selfie-${i}.jpg`,
+        name: `live-selfie-${i + 1}.jpg`,
       } as unknown as Blob);
+      form.append('instructions', files.selfieInstructions[i] ?? `Selfie ${i + 1}`);
     });
-    if (files.videoUri) {
-      form.append('video', {
-        uri: files.videoUri,
-        type: 'video/mp4',
-        name: 'identity.mp4',
-      } as unknown as Blob);
-    }
+    const isMp4 = files.videoUri.toLowerCase().includes('.mp4');
+    form.append('video', {
+      uri: files.videoUri,
+      type: isMp4 ? 'video/mp4' : 'video/mp4',
+      name: isMp4 ? 'live-verification.mp4' : 'live-verification.mp4',
+    } as unknown as Blob);
+    form.append('videoInstruction', files.videoInstruction);
     const res = await api.post('/verification/identity', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });

@@ -66,7 +66,7 @@ export function WelcomeScreen({ navigation }: Props) {
           keyExtractor={(item) => item.key}
           renderItem={({ item }) => (
             <View style={[styles.heroSlide, { width, height: height * 0.58, backgroundColor: c.bg }]}>
-              <Image source={item.image} style={styles.heroImage} resizeMode="contain" />
+              <Image source={item.image} style={styles.heroImage} resizeMode="cover" />
               <LinearGradient
                 colors={['transparent', 'rgba(5,5,16,0.45)', c.bg]}
                 locations={[0.35, 0.7, 1]}
@@ -121,18 +121,18 @@ export function WelcomeScreen({ navigation }: Props) {
           />
           <Button
             title="Log in"
-            variant="outline"
+            variant="primary"
             fullWidth
             size="lg"
             onPress={() => navigation.navigate('Login')}
-            style={{ marginTop: spacing.md }}
+            style={{ marginTop: spacing.lg }}
           />
           <Button
             title="See how it works"
             variant="ghost"
             fullWidth
             onPress={() => navigation.navigate('Onboarding')}
-            style={{ marginTop: spacing.sm }}
+            style={{ marginTop: spacing.lg }}
           />
         </View>
       </View>

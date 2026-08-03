@@ -34,6 +34,7 @@ export const queryKeys = {
   reviews: (hostId: string) => ['reviews', hostId] as const,
   gifts: ['gifts'] as const,
   verification: ['verification', 'me'] as const,
+  verificationInstructions: ['verification', 'instructions'] as const,
   interactions: ['users', 'interactions'] as const,
   contact: ['contact'] as const,
 } as const;

@@ -84,8 +84,8 @@ export function OnboardingScreen() {
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => (
           <View style={[styles.slide, { width }]}>
-            <View style={[styles.imageWrap, { backgroundColor: c.elevated }]}>
-              <Image source={item.image} style={styles.image} resizeMode="contain" />
+            <View style={styles.imageWrap}>
+              <Image source={item.image} style={styles.image} resizeMode="cover" />
             </View>
             <Text variant="h1" style={styles.title}>
               {item.title}
@@ -108,8 +108,19 @@ export function OnboardingScreen() {
             />
           ))}
         </View>
-        <Button title={index === SLIDES.length - 1 ? 'Get started' : 'Next'} onPress={next} fullWidth size="lg" />
-        <Button title="Skip" variant="ghost" onPress={() => void finish()} fullWidth style={{ marginTop: 8 }} />
+        <Button
+          title={index === SLIDES.length - 1 ? 'Get started' : 'Next'}
+          onPress={next}
+          fullWidth
+          size="lg"
+        />
+        <Button
+          title="Skip"
+          variant="ghost"
+          onPress={() => void finish()}
+          fullWidth
+          style={{ marginTop: spacing.lg }}
+        />
       </View>
     </Screen>
   );
@@ -119,12 +130,11 @@ const styles = StyleSheet.create({
   slide: { paddingTop: 24, alignItems: 'center' },
   imageWrap: {
     width: width - 48,
-    height: width * 0.95,
+    aspectRatio: 3 / 4,
     borderRadius: 24,
     marginBottom: spacing.xl,
     overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   image: {
     width: '100%',

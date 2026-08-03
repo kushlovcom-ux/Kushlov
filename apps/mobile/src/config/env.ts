@@ -4,6 +4,9 @@ type Extra = {
   apiUrl?: string;
   socketUrl?: string;
   siteUrl?: string;
+  googleWebClientId?: string;
+  googleAndroidClientId?: string;
+  googleIosClientId?: string;
   eas?: { projectId?: string };
 };
 
@@ -29,9 +32,18 @@ export const env = {
     extra.socketUrl ?? 'https://kushlov-server.vercel.app',
   ),
   siteUrl: read('EXPO_PUBLIC_SITE_URL', extra.siteUrl ?? 'https://www.klproind.com'),
-  googleWebClientId: read('EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID'),
-  googleAndroidClientId: read('EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID'),
-  googleIosClientId: read('EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID'),
+  googleWebClientId: read(
+    'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
+    extra.googleWebClientId ?? '',
+  ),
+  googleAndroidClientId: read(
+    'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID',
+    extra.googleAndroidClientId ?? '',
+  ),
+  googleIosClientId: read(
+    'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
+    extra.googleIosClientId ?? '',
+  ),
   firebase: {
     apiKey: read('EXPO_PUBLIC_FIREBASE_API_KEY'),
     authDomain: read('EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN'),
