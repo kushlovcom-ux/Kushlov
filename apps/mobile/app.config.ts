@@ -25,6 +25,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       supportsTablet: true,
       bundleIdentifier: 'com.kushlov.app',
       infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
         NSCameraUsageDescription:
           'Kushlov needs camera access for video calls, live streams, and profile photos.',
         NSMicrophoneUsageDescription:
