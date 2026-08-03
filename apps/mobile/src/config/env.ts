@@ -7,6 +7,14 @@ type Extra = {
   googleWebClientId?: string;
   googleAndroidClientId?: string;
   googleIosClientId?: string;
+  firebase?: {
+    apiKey?: string;
+    authDomain?: string;
+    projectId?: string;
+    storageBucket?: string;
+    messagingSenderId?: string;
+    appId?: string;
+  };
   eas?: { projectId?: string };
 };
 
@@ -45,12 +53,18 @@ export const env = {
     extra.googleIosClientId ?? '',
   ),
   firebase: {
-    apiKey: read('EXPO_PUBLIC_FIREBASE_API_KEY'),
-    authDomain: read('EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN'),
-    projectId: read('EXPO_PUBLIC_FIREBASE_PROJECT_ID'),
-    storageBucket: read('EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET'),
-    messagingSenderId: read('EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'),
-    appId: read('EXPO_PUBLIC_FIREBASE_APP_ID'),
+    apiKey: read('EXPO_PUBLIC_FIREBASE_API_KEY', extra.firebase?.apiKey ?? ''),
+    authDomain: read('EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN', extra.firebase?.authDomain ?? ''),
+    projectId: read('EXPO_PUBLIC_FIREBASE_PROJECT_ID', extra.firebase?.projectId ?? ''),
+    storageBucket: read(
+      'EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET',
+      extra.firebase?.storageBucket ?? '',
+    ),
+    messagingSenderId: read(
+      'EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
+      extra.firebase?.messagingSenderId ?? '',
+    ),
+    appId: read('EXPO_PUBLIC_FIREBASE_APP_ID', extra.firebase?.appId ?? ''),
   },
   easProjectId: read('EXPO_PUBLIC_EAS_PROJECT_ID', extra.eas?.projectId ?? ''),
 } as const;

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { FlashList } from '@shopify/flash-list';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -39,6 +39,7 @@ export function DiscoverScreen() {
   const nav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const qc = useQueryClient();
   const [q, setQ] = useState('');
+  const [focused, setFocused] = useState(true);
   const debounced = useDebounce(q, 350);
   const gap = spacing.md;
   const cardWidth = (width - spacing.screen * 2 - gap) / 2;
@@ -58,8 +59,22 @@ export function DiscoverScreen() {
     [debounced],
   );
 
-  const discover = useDiscover(params, { enabled: hasLocation });
+  const discover = useDiscover(params, {
+    enabled: hasLocation,
+    // Keep online presence in sync while Discover is open (Home already polls).
+    refetchInterval: focused && hasLocation ? 15_000 : false,
+  });
   const items = discover.data?.pages.flatMap((p) => p.items) ?? [];
+
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      if (hasLocation) {
+        void qc.invalidateQueries({ queryKey: ['users', 'discover'] });
+      }
+      return () => setFocused(false);
+    }, [hasLocation, qc]),
+  );
 
   const like = useMutation({
     mutationFn: (userId: string) => socialApi.like(userId),
@@ -73,7 +88,11 @@ export function DiscoverScreen() {
   const openChat = async (userId: string, title?: string) => {
     try {
       const conv = await chatApi.openConversation(userId);
-      nav.navigate('Chat', { conversationId: conv.id, title });
+      if (!conv.id) {
+        Alert.alert('Chat', 'Could not open conversation. Please try again.');
+        return;
+      }
+      nav.navigate('Chat', { conversationId: conv.id, title, peerId: userId });
     } catch (e) {
       Alert.alert('Chat', getErrorMessage(e));
     }

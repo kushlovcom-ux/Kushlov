@@ -4,7 +4,7 @@ import { queryKeys } from '@/constants/queryKeys';
 
 export function useDiscover(
   params: SearchUsersParams = {},
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; refetchInterval?: number | false },
 ) {
   return useInfiniteQuery({
     queryKey: queryKeys.discover(params),
@@ -13,5 +13,9 @@ export function useDiscover(
     initialPageParam: 1,
     getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
     enabled: options?.enabled ?? true,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnReconnect: true,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }

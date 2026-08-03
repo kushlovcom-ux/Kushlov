@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authApi, type LoginInput, type RegisterInput } from '@/api/auth';
 import { getErrorMessage } from '@/api/client';
 import { queryKeys } from '@/constants/queryKeys';
+import { signOutFirebase } from '@/services/firebase';
 import { connectSocket, disconnectSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/auth';
 
@@ -56,6 +57,7 @@ export function useAuth() {
       } catch {
         // still clear local
       }
+      await signOutFirebase();
     },
     onSettled: () => {
       disconnectSocket();

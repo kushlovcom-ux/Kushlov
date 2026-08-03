@@ -17,7 +17,7 @@ import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/common/Screen';
 import { getErrorMessage } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
-import { getGoogleIdToken, useGoogleAuth } from '@/services/google-auth';
+import { getFirebaseIdTokenFromGoogle, useGoogleAuth } from '@/services/google-auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { isValidEmail, isValidPassword } from '@/utils/validation';
 import { spacing } from '@/theme';
@@ -52,12 +52,12 @@ export function LoginScreen({ navigation }: Props) {
         Alert.alert(
           'Google Sign-In',
           Platform.OS === 'android'
-            ? 'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID + EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID (with package com.kushlov.app and EAS SHA-1), then rebuild the app.'
-            : 'Google Sign-In is not configured for this build.',
+            ? 'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID (package com.kushlov.app + EAS SHA-1), and EXPO_PUBLIC_FIREBASE_* — then rebuild the app.'
+            : 'Google Sign-In / Firebase is not configured for this build.',
         );
         return;
       }
-      const idToken = await getGoogleIdToken();
+      const idToken = await getFirebaseIdTokenFromGoogle();
       await loginWithGoogle({ idToken });
     } catch (err) {
       Alert.alert('Google Sign-In', getErrorMessage(err));

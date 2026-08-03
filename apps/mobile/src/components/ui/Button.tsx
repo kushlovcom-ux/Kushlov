@@ -102,6 +102,8 @@ export function Button({
               paddingVertical: padV,
               paddingHorizontal: padH,
               minHeight,
+              width: '100%',
+              flex: style && 'flex' in style && style.flex != null ? 1 : undefined,
             },
           ]}
         >

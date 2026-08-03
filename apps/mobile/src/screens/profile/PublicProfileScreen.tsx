@@ -96,9 +96,14 @@ export function PublicProfileScreen({ navigation, route }: Props) {
   const message = async () => {
     try {
       const conv = await chatApi.openConversation(userId);
+      if (!conv.id) {
+        Alert.alert('Chat', 'Could not open conversation. Please try again.');
+        return;
+      }
       navigation.navigate('Chat', {
         conversationId: conv.id,
         title: userQ.data?.displayName,
+        peerId: userId,
       });
     } catch (err) {
       Alert.alert('Chat', getErrorMessage(err));
@@ -150,10 +155,9 @@ export function PublicProfileScreen({ navigation, route }: Props) {
 
   const u = userQ.data;
   const age = ageFromDob(u.dob);
-  const gallery = u.gallery ?? [];
   const isHostProfile = u.role === Role.Host && !!u.isHostApproved;
   const canReview = me?.role === Role.User && isHostProfile && me.id !== userId;
-  const avatarUri = u.avatarUrl || gallery[0]?.url;
+  const avatarUri = u.avatarUrl;
 
   return (
     <Screen padded={false}>
@@ -205,6 +209,7 @@ export function PublicProfileScreen({ navigation, route }: Props) {
         <View style={styles.actions}>
           <Button
             title="Like"
+            variant="secondary"
             onPress={async () => {
               setLiking(true);
               try {
@@ -218,7 +223,7 @@ export function PublicProfileScreen({ navigation, route }: Props) {
             loading={liking}
             style={{ flex: 1 }}
           />
-          <Button title="Message" variant="secondary" onPress={message} style={{ flex: 1 }} />
+          <Button title="Message" variant="primary" onPress={message} style={{ flex: 1 }} />
         </View>
         <View style={styles.callRow}>
           <PressableScale
@@ -240,19 +245,6 @@ export function PublicProfileScreen({ navigation, route }: Props) {
             </Text>
           </PressableScale>
         </View>
-
-        <Text variant="h3" style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
-          Gallery
-        </Text>
-        {gallery.length === 0 ? (
-          <EmptyState title="No photos yet" />
-        ) : (
-          <View style={styles.gallery}>
-            {gallery.map((g) => (
-              <Image key={g.publicId || g.url} source={{ uri: g.url }} style={styles.gImg} />
-            ))}
-          </View>
-        )}
 
         <Text variant="h3" style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
           Reviews
@@ -357,8 +349,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  gallery: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  gImg: { width: '31%', aspectRatio: 1, borderRadius: radius.md },
   review: {
     marginBottom: spacing.md,
     padding: spacing.md,
