@@ -13,10 +13,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '@/components/ui/Button';
+import { CountrySelect } from '@/components/ui/CountrySelect';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/common/Screen';
 import { getErrorMessage } from '@/api/client';
+import { DEFAULT_COUNTRY } from '@/constants/countries';
 import { useAuth } from '@/hooks/useAuth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { isValidEmail, isValidPassword, isValidUsername } from '@/utils/validation';
@@ -34,7 +36,7 @@ export function RegisterScreen({ navigation }: Props) {
     displayName: '',
     password: '',
     confirmPassword: '',
-    country: 'IN',
+    country: DEFAULT_COUNTRY,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -49,7 +51,7 @@ export function RegisterScreen({ navigation }: Props) {
     if (form.displayName.trim().length < 2) next.displayName = 'Enter your display name';
     if (!isValidPassword(form.password)) next.password = 'At least 8 characters';
     if (form.confirmPassword !== form.password) next.confirmPassword = 'Passwords do not match';
-    if (form.country.trim().length < 2) next.country = 'Country code required';
+    if (!form.country.trim()) next.country = 'Select your country';
     setErrors(next);
     if (Object.keys(next).length) return;
     try {
@@ -58,7 +60,7 @@ export function RegisterScreen({ navigation }: Props) {
         username: form.username.trim(),
         displayName: form.displayName.trim(),
         password: form.password,
-        country: form.country.trim().toUpperCase(),
+        country: form.country.trim(),
         accountType: 'user',
       });
     } catch (err) {
@@ -182,13 +184,12 @@ export function RegisterScreen({ navigation }: Props) {
               }
             />
             <View style={{ height: spacing.md }} />
-            <Input
-              label="Country (ISO)"
+            <CountrySelect
+              label="Country"
               value={form.country}
-              onChangeText={(v) => set('country', v)}
-              autoCapitalize="characters"
+              onChange={(v) => set('country', v)}
               error={errors.country}
-              placeholder="IN"
+              placeholder="Select your country"
             />
             <View style={{ height: spacing['3xl'] }} />
             <Button
