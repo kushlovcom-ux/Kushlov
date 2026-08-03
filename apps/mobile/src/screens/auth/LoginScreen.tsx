@@ -11,13 +11,13 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Eye, EyeOff } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/common/Screen';
 import { getErrorMessage } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
-import { getFirebaseIdTokenFromGoogle, useGoogleAuth } from '@/services/google-auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { isValidEmail, isValidPassword } from '@/utils/validation';
 import { spacing } from '@/theme';
@@ -27,10 +27,10 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export function LoginScreen({ navigation }: Props) {
   const c = useThemeColors();
-  const { login, loginWithGoogle, isLoggingIn } = useAuth();
-  const { ready, configured } = useGoogleAuth();
+  const { login, isLoggingIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   const submit = async () => {
@@ -43,24 +43,6 @@ export function LoginScreen({ navigation }: Props) {
       await login({ email: email.trim(), password });
     } catch (err) {
       Alert.alert('Login failed', getErrorMessage(err));
-    }
-  };
-
-  const onGoogle = async () => {
-    try {
-      if (!configured) {
-        Alert.alert(
-          'Google Sign-In',
-          Platform.OS === 'android'
-            ? 'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID, EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID (package com.kushlov.app + EAS SHA-1), and EXPO_PUBLIC_FIREBASE_* — then rebuild the app.'
-            : 'Google Sign-In / Firebase is not configured for this build.',
-        );
-        return;
-      }
-      const idToken = await getFirebaseIdTokenFromGoogle();
-      await loginWithGoogle({ idToken });
-    } catch (err) {
-      Alert.alert('Google Sign-In', getErrorMessage(err));
     }
   };
 
@@ -118,9 +100,23 @@ export function LoginScreen({ navigation }: Props) {
               label="Password"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               error={errors.password}
               placeholder="Your password"
+              right={
+                <Pressable
+                  onPress={() => setShowPassword((v) => !v)}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} color={c.textMuted} />
+                  ) : (
+                    <Eye size={20} color={c.textMuted} />
+                  )}
+                </Pressable>
+              }
             />
             <Pressable onPress={() => navigation.navigate('ForgotPassword')} style={styles.forgot}>
               <Text variant="caption" color={c.pink}>
@@ -128,16 +124,6 @@ export function LoginScreen({ navigation }: Props) {
               </Text>
             </Pressable>
             <Button title="Log in" onPress={submit} loading={isLoggingIn} fullWidth size="lg" />
-            {configured ? (
-              <Button
-                title="Continue with Google"
-                variant="secondary"
-                onPress={onGoogle}
-                disabled={!ready}
-                fullWidth
-                style={{ marginTop: spacing.md }}
-              />
-            ) : null}
           </View>
 
           <Pressable onPress={() => navigation.navigate('Register')} style={styles.footer}>

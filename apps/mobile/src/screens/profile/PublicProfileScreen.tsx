@@ -209,7 +209,7 @@ export function PublicProfileScreen({ navigation, route }: Props) {
         <View style={styles.actions}>
           <Button
             title="Like"
-            variant="secondary"
+            variant="primary"
             onPress={async () => {
               setLiking(true);
               try {

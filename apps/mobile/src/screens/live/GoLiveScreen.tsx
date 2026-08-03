@@ -52,7 +52,7 @@ export function GoLiveScreen({ navigation }: Props) {
       </Text>
       <Input label="Title" value={title} onChangeText={setTitle} placeholder="Tonight with…" />
       <View style={{ height: spacing.md }} />
-      <Button title={thumb ? 'Change thumbnail' : 'Add thumbnail'} variant="secondary" onPress={pickThumb} />
+      <Button title={thumb ? 'Change thumbnail' : 'Add thumbnail'} variant="primary" onPress={pickThumb} />
       <Button title="Start live" onPress={start} loading={loading} style={{ marginTop: spacing.xl }} />
     </Screen>
   );
