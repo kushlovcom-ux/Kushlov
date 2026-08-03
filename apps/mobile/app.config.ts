@@ -155,7 +155,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     extra: {
       eas: {
         projectId:
-          process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? '6325ac28-9c0c-4069-ac0d-325379493e84',
+          process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? 'ecab9e35-1360-4ce3-b5fb-25076affb3a2',
       },
       apiUrl: process.env.EXPO_PUBLIC_API_URL ?? 'https://kushlov-server.vercel.app/api',
       socketUrl: process.env.EXPO_PUBLIC_SOCKET_URL ?? 'https://kushlov-server.vercel.app',
