@@ -28,7 +28,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 export function LoginScreen({ navigation }: Props) {
   const c = useThemeColors();
   const { login, loginWithGoogle, isLoggingIn } = useAuth();
-  const { ready, promptAsync, configured } = useGoogleAuth();
+  const { ready, configured } = useGoogleAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
@@ -52,12 +52,12 @@ export function LoginScreen({ navigation }: Props) {
         Alert.alert(
           'Google Sign-In',
           Platform.OS === 'android'
-            ? 'Set EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID (Android OAuth client from Google Cloud Console) and rebuild the app.'
+            ? 'Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID + EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID (with package com.kushlov.app and EAS SHA-1), then rebuild the app.'
             : 'Google Sign-In is not configured for this build.',
         );
         return;
       }
-      const idToken = await getGoogleIdToken(promptAsync);
+      const idToken = await getGoogleIdToken();
       await loginWithGoogle({ idToken });
     } catch (err) {
       Alert.alert('Google Sign-In', getErrorMessage(err));

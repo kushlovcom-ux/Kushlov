@@ -12,6 +12,9 @@ const DEFAULT_ORIGINS = [
   'https://kushlov-server.vercel.app',
   'https://www.klproind.com',
   'https://klproind.com',
+  // Additional production domain (kept alongside klproind.com)
+  'https://www.genzone.cloud',
+  'https://genzone.cloud',
 ];
 
 /** Local dev servers (Next.js on :3000, etc.). */

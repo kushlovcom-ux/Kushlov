@@ -117,13 +117,13 @@ export function WelcomeScreen({ navigation }: Props) {
             size="lg"
             onPress={() => navigation.navigate('Register')}
           />
+          <View style={{ height: spacing['4xl'] }} />
           <Button
             title="Log in"
             variant="primary"
             fullWidth
             size="lg"
             onPress={() => navigation.navigate('Login')}
-            style={{ marginTop: spacing['2xl'] }}
           />
           <Button
             title="See how it works"

@@ -36,7 +36,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           'Kushlov needs photo library access to update your profile and gallery.',
         UIBackgroundModes: ['audio', 'voip', 'remote-notification'],
       },
-      associatedDomains: ['applinks:www.klproind.com', 'applinks:klproind.com'],
+      associatedDomains: [
+        'applinks:www.klproind.com',
+        'applinks:klproind.com',
+        'applinks:www.genzone.cloud',
+        'applinks:genzone.cloud',
+      ],
     },
     android: {
       adaptiveIcon: {
@@ -63,6 +68,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           autoVerify: true,
           data: [
             { scheme: 'https', host: 'www.klproind.com', pathPrefix: '/' },
+            { scheme: 'https', host: 'klproind.com', pathPrefix: '/' },
+            { scheme: 'https', host: 'www.genzone.cloud', pathPrefix: '/' },
+            { scheme: 'https', host: 'genzone.cloud', pathPrefix: '/' },
             { scheme: 'kushlov' },
           ],
           category: ['BROWSABLE', 'DEFAULT'],
@@ -75,6 +83,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     plugins: [
       'expo-secure-store',
+      [
+        '@react-native-google-signin/google-signin',
+        {
+          // Reversed iOS client ID — required by the Google Sign-In iOS SDK.
+          iosUrlScheme:
+            'com.googleusercontent.apps.338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej',
+        },
+      ],
       [
         'expo-notifications',
         {

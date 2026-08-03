@@ -6,7 +6,15 @@ import { env } from '@/config/env';
 const prefix = Linking.createURL('/');
 
 export const linking: LinkingOptions<RootStackParamList> = {
-  prefixes: [prefix, 'kushlov://', env.siteUrl, 'https://www.klproind.com'],
+  prefixes: [
+    prefix,
+    'kushlov://',
+    env.siteUrl,
+    'https://www.klproind.com',
+    'https://klproind.com',
+    'https://www.genzone.cloud',
+    'https://genzone.cloud',
+  ],
   config: {
     screens: {
       Auth: {

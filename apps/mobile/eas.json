@@ -8,8 +8,9 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "apk"
@@ -21,8 +22,9 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "apk"
@@ -34,8 +36,9 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "338864282655-lt4ppqtp5o4bab1jrhfhj1vudv5i5osv.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "338864282655-qb38rsvaapr5n4u2q6r779lstga3kuej.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "app-bundle"
