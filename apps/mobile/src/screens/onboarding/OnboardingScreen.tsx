@@ -85,7 +85,7 @@ export function OnboardingScreen() {
         renderItem={({ item }) => (
           <View style={[styles.slide, { width }]}>
             <View style={styles.imageWrap}>
-              <Image source={item.image} style={styles.image} resizeMode="cover" />
+              <Image source={item.image} style={styles.image} resizeMode="contain" />
             </View>
             <Text variant="h1" style={styles.title}>
               {item.title}
@@ -128,9 +128,10 @@ export function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   slide: { paddingTop: 24, alignItems: 'center' },
+  // Art is 1774×887 (2:1). Match that frame so contain shows the full image.
   imageWrap: {
     width: width - 48,
-    aspectRatio: 3 / 4,
+    aspectRatio: 2,
     borderRadius: 24,
     marginBottom: spacing.xl,
     overflow: 'hidden',

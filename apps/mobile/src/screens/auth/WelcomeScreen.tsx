@@ -19,7 +19,9 @@ import type { AuthStackParamList } from '@/navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
+/** Onboarding art is 1774×887 (2:1) — keep the frame matching so sides aren’t cropped. */
+const HERO_HEIGHT = width / 2;
 
 const HERO = [
   {
@@ -56,33 +58,29 @@ export function WelcomeScreen({ navigation }: Props) {
   return (
     <Screen padded={false}>
       <View style={[styles.root, { backgroundColor: c.bg }]}>
-        <FlatList
-          ref={listRef}
-          data={HERO}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onScroll={onScroll}
-          keyExtractor={(item) => item.key}
-          renderItem={({ item }) => (
-            <View style={[styles.heroSlide, { width, height: height * 0.58, backgroundColor: c.bg }]}>
-              <Image source={item.image} style={styles.heroImage} resizeMode="cover" />
-              <LinearGradient
-                colors={['transparent', 'rgba(5,5,16,0.45)', c.bg]}
-                locations={[0.35, 0.7, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-            </View>
-          )}
-        />
+        <View style={{ height: HERO_HEIGHT }}>
+          <FlatList
+            ref={listRef}
+            data={HERO}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={onScroll}
+            keyExtractor={(item) => item.key}
+            renderItem={({ item }) => (
+              <View style={[styles.heroSlide, { width, height: HERO_HEIGHT, backgroundColor: c.bg }]}>
+                <Image source={item.image} style={styles.heroImage} resizeMode="contain" />
+                <LinearGradient
+                  colors={['transparent', 'rgba(5,5,16,0.35)', c.bg]}
+                  locations={[0.45, 0.78, 1]}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+            )}
+          />
+        </View>
 
-        <LinearGradient
-          colors={['transparent', c.bg]}
-          style={styles.fade}
-          pointerEvents="none"
-        />
-
-        <View style={styles.overlay}>
+        <View style={styles.content}>
           <Image
             source={require('../../assets/images/kush.png')}
             style={styles.logo}
@@ -125,7 +123,7 @@ export function WelcomeScreen({ navigation }: Props) {
             fullWidth
             size="lg"
             onPress={() => navigation.navigate('Login')}
-            style={{ marginTop: spacing.lg }}
+            style={{ marginTop: spacing['2xl'] }}
           />
           <Button
             title="See how it works"
@@ -144,20 +142,12 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   heroSlide: { overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   heroImage: { width: '100%', height: '100%' },
-  fade: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: height * 0.42,
-    height: 80,
-  },
-  overlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+  content: {
+    flex: 1,
+    justifyContent: 'flex-end',
     paddingHorizontal: spacing['2xl'],
     paddingBottom: 40,
+    paddingTop: spacing.md,
   },
   logo: { width: 64, height: 64, marginBottom: 10 },
   brand: { marginBottom: spacing.sm },

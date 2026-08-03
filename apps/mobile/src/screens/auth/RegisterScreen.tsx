@@ -190,13 +190,13 @@ export function RegisterScreen({ navigation }: Props) {
               error={errors.country}
               placeholder="IN"
             />
+            <View style={{ height: spacing['3xl'] }} />
             <Button
               title="Create account"
               onPress={submit}
               loading={isRegistering}
               fullWidth
               size="lg"
-              style={{ marginTop: spacing['2xl'] }}
             />
           </View>
 
