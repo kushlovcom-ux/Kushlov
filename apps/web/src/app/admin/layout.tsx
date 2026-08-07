@@ -71,7 +71,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </Link>
         <nav className="mt-6 flex flex-1 flex-col gap-1 overflow-y-auto no-scrollbar">
           {nav.map((n) => {
-            const active = pathname === n.href;
+            const active =
+              n.href === '/admin'
+                ? pathname === '/admin'
+                : pathname === n.href || pathname.startsWith(`${n.href}/`);
             const badge = adminBadgeForHref(n.href, badges);
             return (
               <Link

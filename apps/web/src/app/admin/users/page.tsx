@@ -1,14 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Eye } from 'lucide-react';
 import { Role, type PublicUser, type Paginated } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { Input } from '@/components/ui/input';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,7 +24,12 @@ import { cn } from '@/lib/utils';
 
 type RoleFilter = 'all' | 'user' | 'host';
 
+function userIdOf(u: PublicUser & { _id?: string }): string {
+  return u.id || u._id || '';
+}
+
 export default function AdminUsersPage() {
+  const router = useRouter();
   const qc = useQueryClient();
   const [q, setQ] = useState('');
   const [role, setRole] = useState<RoleFilter>('all');
@@ -80,17 +86,20 @@ export default function AdminUsersPage() {
     (confirmText === 'DELETE' ||
       confirmText.toLowerCase() === deleteTarget.username.toLowerCase());
 
+  const openDetails = (u: PublicUser) => {
+    const id = userIdOf(u);
+    if (!id) {
+      toast.error('Missing user id');
+      return;
+    }
+    router.push(`/admin/users/${id}`);
+  };
+
   return (
     <div>
       <PageHeader
         title="Users"
-        subtitle={
-          role === 'user'
-            ? 'Manage normal user accounts'
-            : role === 'host'
-              ? 'Manage host accounts'
-              : 'Manage all accounts'
-        }
+        subtitle="Click Open details to view wallet, location, and edit profile fields"
         action={
           <Input
             value={q}
@@ -137,73 +146,82 @@ export default function AdminUsersPage() {
                   </td>
                 </tr>
               )}
-              {data?.items.map((u) => (
-                <tr key={u.id} className="border-t border-white/5">
-                  <td className="p-4">
-                    <Link
-                      href={`/admin/users/${u.id}`}
-                      className="flex items-center gap-3 hover:opacity-90"
-                    >
-                      <UserAvatar name={u.displayName} src={u.avatarUrl} className="h-9 w-9" />
-                      <div>
-                        <p className="font-medium">{u.displayName}</p>
-                        <p className="text-xs text-white/40">{u.email}</p>
-                      </div>
-                    </Link>
-                  </td>
-                  <td className="p-4 capitalize">{u.role}</td>
-                  <td className="p-4">
-                    <Badge variant={statusVariant(u.status) as any}>{u.status}</Badge>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Link
-                        href={`/admin/users/${u.id}`}
-                        className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}
+              {data?.items.map((u) => {
+                const id = userIdOf(u);
+                return (
+                  <tr
+                    key={id || u.email}
+                    className="border-t border-white/5 transition-colors hover:bg-white/[0.03]"
+                  >
+                    <td className="p-4">
+                      <button
+                        type="button"
+                        onClick={() => openDetails(u)}
+                        className="flex items-center gap-3 text-left hover:opacity-90"
                       >
-                        Details
-                      </Link>
-                      {u.status !== 'active' && (
+                        <UserAvatar name={u.displayName} src={u.avatarUrl} className="h-9 w-9" />
+                        <div>
+                          <p className="font-medium">{u.displayName}</p>
+                          <p className="text-xs text-white/40">{u.email}</p>
+                        </div>
+                      </button>
+                    </td>
+                    <td className="p-4 capitalize">{u.role}</td>
+                    <td className="p-4">
+                      <Badge variant={statusVariant(u.status) as any}>{u.status}</Badge>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <Button
                           size="sm"
-                          variant="secondary"
-                          onClick={() => setStatus.mutate({ id: u.id, status: 'active' })}
+                          className="bg-brand-gradient"
+                          onClick={() => openDetails(u)}
                         >
-                          Activate
+                          <Eye className="h-4 w-4" />
+                          Open details
                         </Button>
-                      )}
-                      {u.status === 'active' && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setStatus.mutate({ id: u.id, status: 'suspended' })}
-                        >
-                          Suspend
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => setStatus.mutate({ id: u.id, status: 'banned' })}
-                      >
-                        Ban
-                      </Button>
-                      {u.role !== Role.Admin && (
+                        {u.status !== 'active' && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setStatus.mutate({ id, status: 'active' })}
+                          >
+                            Activate
+                          </Button>
+                        )}
+                        {u.status === 'active' && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setStatus.mutate({ id, status: 'suspended' })}
+                          >
+                            Suspend
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="destructive"
-                          onClick={() => {
-                            setConfirmText('');
-                            setDeleteTarget(u);
-                          }}
+                          onClick={() => setStatus.mutate({ id, status: 'banned' })}
                         >
-                          Delete
+                          Ban
                         </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {u.role !== Role.Admin && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              setConfirmText('');
+                              setDeleteTarget(u);
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {!isLoading && (data?.items.length ?? 0) === 0 && (
                 <tr>
                   <td colSpan={4} className="p-10 text-center text-white/40">
@@ -258,7 +276,7 @@ export default function AdminUsersPage() {
                 variant="destructive"
                 loading={remove.isPending}
                 disabled={!canConfirmDelete}
-                onClick={() => deleteTarget && remove.mutate(deleteTarget.id)}
+                onClick={() => deleteTarget && remove.mutate(userIdOf(deleteTarget))}
               >
                 Delete forever
               </Button>

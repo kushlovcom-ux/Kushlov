@@ -22,7 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
 type AdminUserDetail = {
-  user: PublicUser;
+  user: PublicUser & { _id?: string };
   wallet: {
     diamonds: number;
     gold: number;
