@@ -12,6 +12,9 @@ export function useMessages(conversationId: string) {
     initialPageParam: 1,
     getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
     enabled: !!conversationId,
+    // Fallback when Socket.io is unavailable (e.g. Vercel API host).
+    refetchInterval: conversationId ? 3_000 : false,
+    refetchIntervalInBackground: false,
   });
 
   const send = useMutation({

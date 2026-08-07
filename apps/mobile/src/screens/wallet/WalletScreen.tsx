@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlashList } from '@shopify/flash-list';
@@ -48,18 +48,20 @@ export function WalletScreen() {
     user?.role === Role.Host || user?.role === Role.Admin || Boolean(user?.isHostApproved);
 
   const wallet = useQuery({ queryKey: queryKeys.wallet, queryFn: () => walletApi.get() });
-  const packages = useQuery({ queryKey: queryKeys.packages, queryFn: () => paymentsApi.packages() });
+  const packages = useQuery({
+    queryKey: queryKeys.packages,
+    queryFn: async () => {
+      const data = await paymentsApi.packages();
+      if (Array.isArray(data)) return data;
+      return data.packages ?? [];
+    },
+  });
   const tx = useQuery({
     queryKey: queryKeys.diamondTx(1),
     queryFn: () => walletApi.diamondTransactions({ page: 1, limit: 20 }),
   });
 
-  const pkgRaw = packages.data;
-  const pkgList: DiamondPackage[] = Array.isArray(pkgRaw)
-    ? pkgRaw
-    : (pkgRaw as { items?: DiamondPackage[]; packages?: DiamondPackage[] } | undefined)?.packages ??
-      (pkgRaw as { items?: DiamondPackage[] } | undefined)?.items ??
-      [];
+  const pkgList: DiamondPackage[] = packages.data ?? [];
 
   const buy = useMutation({
     mutationFn: async (packageId: string) => {
@@ -165,8 +167,12 @@ export function WalletScreen() {
 
   const txItems: LedgerEntry[] = tx.data?.items ?? [];
 
+  const onRefresh = useCallback(async () => {
+    await Promise.all([wallet.refetch(), packages.refetch(), tx.refetch()]);
+  }, [wallet, packages, tx]);
+
   return (
-    <Screen scroll padded={false}>
+    <Screen scroll padded={false} onRefresh={onRefresh}>
       <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
       <View style={styles.pad}>
         <Header title="Wallet" showBack />
@@ -222,10 +228,10 @@ export function WalletScreen() {
             >
               {pkg.popular ? <Badge label="Popular" tone="orange" /> : null}
               <Text variant="h3" style={{ marginTop: 6 }}>
-                {formatDiamonds(pkg.diamonds + (pkg.bonusDiamonds ?? 0))}◆
+                {formatDiamonds(pkg.diamonds + (pkg.bonusDiamonds ?? pkg.bonus ?? 0))}◆
               </Text>
               <Text muted variant="caption">
-                {formatMoney(pkg.priceInr ?? 0)}
+                {formatMoney(pkg.price ?? pkg.priceInr ?? pkg.priceUsd ?? 0, pkg.currency ?? 'INR')}
               </Text>
             </PressableScale>
           ))}

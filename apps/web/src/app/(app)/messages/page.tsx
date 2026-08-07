@@ -50,6 +50,8 @@ function Messages() {
   const conversations = useQuery({
     queryKey: ['conversations'],
     queryFn: () => unwrap<{ items: Conversation[] }>(api.get('/chat/conversations')),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
   });
 
   useEffect(() => {
@@ -76,6 +78,9 @@ function Messages() {
     queryFn: () =>
       unwrap<{ items: Message[] }>(api.get(`/chat/conversations/${activeId}/messages`)),
     enabled: !!activeId,
+    // Smooth inbox when Socket.io is unavailable (Vercel / disconnected).
+    refetchInterval: activeId ? 3_000 : false,
+    refetchIntervalInBackground: false,
   });
 
   const send = useMutation({
@@ -92,11 +97,14 @@ function Messages() {
 
   useEffect(() => {
     if (!socket) return;
-    const handler = (msg: Message & { conversation: string }) => {
+    const handler = (msg: Message & { conversation?: string }) => {
       qc.invalidateQueries({ queryKey: ['conversations'] });
       qc.invalidateQueries({ queryKey: ['nav-badges'] });
-      if (msg.conversation === activeId) {
+      const convId = msg.conversation != null ? String(msg.conversation) : '';
+      if (activeId && convId === String(activeId)) {
         qc.invalidateQueries({ queryKey: ['messages', activeId] });
+      } else {
+        qc.invalidateQueries({ queryKey: ['messages'] });
       }
     };
     socket.on(SocketEvents.MessageNew, handler);

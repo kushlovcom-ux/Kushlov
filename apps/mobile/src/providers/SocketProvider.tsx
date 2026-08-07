@@ -192,11 +192,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         { id, name: payload.participant?.displayName ?? 'Peer' },
       ]);
     };
-    const onMessage = (payload?: unknown) => {
+    const onMessage = (payload?: { conversation?: string; conversationId?: string }) => {
       qc.invalidateQueries({ queryKey: queryKeys.conversations });
       qc.invalidateQueries({ queryKey: queryKeys.badges });
       qc.invalidateQueries({ queryKey: ['chat', 'messages'] });
-      void payload;
+      const convId = payload?.conversation ?? payload?.conversationId;
+      if (convId) {
+        qc.invalidateQueries({ queryKey: queryKeys.messages(String(convId)) });
+      }
     };
     const onNotification = () => {
       qc.invalidateQueries({ queryKey: queryKeys.notifications });

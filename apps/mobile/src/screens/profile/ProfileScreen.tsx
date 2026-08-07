@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen } from '@/components/common/Screen';
+import { Screen, useScreenRefresh } from '@/components/common/Screen';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
@@ -72,12 +72,18 @@ export function ProfileScreen() {
     user?.role === Role.Host || user?.role === Role.Admin || Boolean(user?.isHostApproved);
   const links = ALL_LINKS.filter((link) => !(link.hostOnlyHide && isHost));
 
+  const onRefresh = useCallback(async () => {
+    await wallet.refetch();
+  }, [wallet]);
+  const { refreshControl } = useScreenRefresh(onRefresh);
+
   return (
     <Screen padded={false}>
       <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        refreshControl={refreshControl}
       >
         <View style={styles.topBar}>
           <Text variant="display">Profile</Text>

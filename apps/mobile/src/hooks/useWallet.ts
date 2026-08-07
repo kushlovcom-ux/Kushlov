@@ -20,7 +20,8 @@ export function useWallet() {
     queryKey: queryKeys.packages,
     queryFn: async () => {
       const data = await paymentsApi.packages();
-      return Array.isArray(data) ? data : data.items ?? [];
+      if (Array.isArray(data)) return data;
+      return data.packages ?? [];
     },
     enabled: !!token,
   });

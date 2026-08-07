@@ -18,7 +18,7 @@ import { Text } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { SkeletonRow } from '@/components/ui/Skeleton';
-import { Screen } from '@/components/common/Screen';
+import { Screen, useScreenRefresh } from '@/components/common/Screen';
 import { SearchBar } from '@/components/common/SearchBar';
 import { UserCard } from '@/components/common/UserCard';
 import { Chip } from '@/design-system';
@@ -78,6 +78,14 @@ export function DiscoverScreen() {
   const listLoading = isSearching ? search.isLoading : browse.isLoading;
   const listError = isSearching ? search.isError : browse.isError;
   const refetchList = () => (isSearching ? search.refetch() : browse.refetch());
+
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
+      location.refetch(),
+      isSearching ? search.refetch() : browse.refetch(),
+    ]);
+  }, [location, isSearching, search, browse]);
+  const { refreshControl } = useScreenRefresh(onRefresh);
 
   useFocusEffect(
     useCallback(() => {
@@ -204,6 +212,7 @@ export function DiscoverScreen() {
             numColumns={2}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 110 }}
+            refreshControl={refreshControl}
             ListEmptyComponent={
               <EmptyState
                 title={isSearching ? 'No matches' : 'No one online nearby'}

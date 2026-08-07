@@ -10,6 +10,6 @@ export function useBadges() {
     queryKey: queryKeys.badges,
     queryFn: () => usersApi.badges(),
     enabled: !!token,
-    refetchInterval: 20_000,
+    refetchInterval: 8_000,
   });
 }

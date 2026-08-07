@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   Image,
   Pressable,
@@ -9,6 +9,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { Text } from '@/components/ui/Text';
@@ -16,7 +17,7 @@ import { SkeletonRow } from '@/components/ui/Skeleton';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { UserCard } from '@/components/common/UserCard';
 import { DiamondBadge } from '@/components/common/DiamondBadge';
-import { Screen } from '@/components/common/Screen';
+import { Screen, useScreenRefresh } from '@/components/common/Screen';
 import { NavBadge } from '@/components/common/NavBadge';
 import {
   Chip,
@@ -44,6 +45,7 @@ function greetingForHour(h: number) {
 
 export function HomeScreen() {
   const c = useThemeColors();
+  const qc = useQueryClient();
   const nav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { user } = useAuth();
   const badges = useBadges();
@@ -72,12 +74,27 @@ export function HomeScreen() {
 
   const storyData: PublicUser[] = useMemo(() => trulyOnline.slice(0, 12), [trulyOnline]);
 
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
+      popular.refetch(),
+      topRated.refetch(),
+      online.refetch(),
+      stats.refetch(),
+      settings.refetch(),
+      wallet.refetch(),
+      badges.refetch(),
+      qc.invalidateQueries({ queryKey: ['users', 'discover'] }),
+    ]);
+  }, [popular, topRated, online, stats, settings, wallet, badges, qc]);
+  const { refreshControl } = useScreenRefresh(onRefresh);
+
   return (
     <Screen padded={false}>
       <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.pad}
+        refreshControl={refreshControl}
       >
         {/* Header */}
         <View style={styles.top}>

@@ -77,7 +77,7 @@ export function SettingsScreen() {
   );
 
   return (
-    <Screen scroll padded={false}>
+    <Screen scroll padded={false} onRefresh={async () => undefined}>
       <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
       <View style={styles.pad}>
         <Header title="Settings" showBack />

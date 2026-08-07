@@ -22,7 +22,8 @@ export function connectSocket(token?: string | null): Socket {
   }
 
   socket = io(env.socketUrl, {
-    transports: ['websocket'],
+    // polling first helps behind some proxies; websocket upgrades when available
+    transports: ['polling', 'websocket'],
     autoConnect: true,
     auth: accessToken ? { token: accessToken } : undefined,
     reconnection: true,

@@ -35,9 +35,10 @@ export const env = {
   apiUrl,
   /** Alias used by the API client */
   apiBase: apiUrl,
+  // Prefer the public site host for sockets (Vercel cannot host Socket.io).
   socketUrl: read(
     'EXPO_PUBLIC_SOCKET_URL',
-    extra.socketUrl ?? 'https://kushlov-server.vercel.app',
+    extra.socketUrl ?? 'https://www.klproind.com',
   ),
   siteUrl: read('EXPO_PUBLIC_SITE_URL', extra.siteUrl ?? 'https://www.klproind.com'),
   googleWebClientId: read(

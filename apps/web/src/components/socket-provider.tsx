@@ -99,6 +99,9 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     next.on(SocketEvents.MessageNew, () => {
       qc.invalidateQueries({ queryKey: ['nav-badges'] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['messages'] });
+      qc.invalidateQueries({ queryKey: ['notifications'] });
     });
 
     next.on(SocketEvents.PresenceOnline, () => {

@@ -16,7 +16,7 @@ export function useNavBadges() {
     queryKey: ['nav-badges'],
     queryFn: () => unwrap<NavBadges>(api.get('/users/me/badges')),
     enabled: Boolean(accessToken),
-    refetchInterval: 60_000,
+    refetchInterval: 8_000,
   });
 
   return data ?? { notifications: 0, messages: 0 };

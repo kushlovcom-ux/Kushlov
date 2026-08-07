@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -20,7 +20,7 @@ import { ErrorView } from '@/components/ui/ErrorView';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Avatar } from '@/components/ui/Avatar';
 import { Header } from '@/components/common/Header';
-import { Screen } from '@/components/common/Screen';
+import { Screen, useScreenRefresh } from '@/components/common/Screen';
 import { StarRating } from '@/components/common/StarRating';
 import { VerifiedBadge } from '@/components/common/VerifiedBadge';
 import { GlassCard, PressableScale } from '@/design-system';
@@ -161,10 +161,19 @@ export function PublicProfileScreen({ navigation, route }: Props) {
     me?.role === Role.User && isHostProfile && Boolean(myId) && myId !== String(userId);
   const avatarUri = u.avatarUrl;
 
+  const onRefresh = useCallback(async () => {
+    await Promise.all([userQ.refetch(), reviewsQ.refetch(), myReview.refetch()]);
+  }, [userQ, reviewsQ, myReview]);
+  const { refreshControl } = useScreenRefresh(onRefresh);
+
   return (
     <Screen padded={false}>
       <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
-      <ScrollView contentContainerStyle={styles.pad} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.pad}
+        showsVerticalScrollIndicator={false}
+        refreshControl={refreshControl}
+      >
         <Header title={u.displayName} showBack />
 
         <View style={styles.hero}>

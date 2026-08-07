@@ -9,6 +9,8 @@ export function useConversations() {
     queryKey: queryKeys.conversations,
     queryFn: () => chatApi.listConversations({ limit: 50 }),
     enabled: !!token,
-    refetchInterval: 20_000,
+    // Keep inbox fresh when sockets are down.
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
   });
 }
