@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Role, type PublicUser, type Paginated } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -139,13 +140,16 @@ export default function AdminUsersPage() {
               {data?.items.map((u) => (
                 <tr key={u.id} className="border-t border-white/5">
                   <td className="p-4">
-                    <div className="flex items-center gap-3">
+                    <Link
+                      href={`/admin/users/${u.id}`}
+                      className="flex items-center gap-3 hover:opacity-90"
+                    >
                       <UserAvatar name={u.displayName} src={u.avatarUrl} className="h-9 w-9" />
                       <div>
                         <p className="font-medium">{u.displayName}</p>
                         <p className="text-xs text-white/40">{u.email}</p>
                       </div>
-                    </div>
+                    </Link>
                   </td>
                   <td className="p-4 capitalize">{u.role}</td>
                   <td className="p-4">
@@ -153,6 +157,12 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="p-4">
                     <div className="flex flex-wrap justify-end gap-2">
+                      <Link
+                        href={`/admin/users/${u.id}`}
+                        className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}
+                      >
+                        Details
+                      </Link>
                       {u.status !== 'active' && (
                         <Button
                           size="sm"

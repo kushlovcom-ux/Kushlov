@@ -74,9 +74,17 @@ export function Button({
     </>
   );
 
+  const flexValue =
+    style && typeof style === 'object' && !Array.isArray(style) && 'flex' in style
+      ? (style as ViewStyle).flex
+      : undefined;
+  const isFlexChild = flexValue != null;
+
   const widthStyle: ViewStyle = {
-    alignSelf: fullWidth ? 'stretch' : 'flex-start',
+    alignSelf: fullWidth || isFlexChild ? 'stretch' : 'flex-start',
     width: fullWidth ? '100%' : undefined,
+    flex: isFlexChild ? flexValue : undefined,
+    minWidth: isFlexChild ? 0 : undefined,
   };
 
   if (variant === 'primary') {
@@ -90,6 +98,7 @@ export function Button({
           styles.shadow,
           { opacity: isDisabled ? 0.5 : pressed ? 0.92 : 1 },
           style,
+          isFlexChild ? { flex: flexValue, minWidth: 0 } : null,
         ]}
       >
         <LinearGradient
@@ -103,7 +112,7 @@ export function Button({
               paddingHorizontal: padH,
               minHeight,
               width: '100%',
-              flex: style && 'flex' in style && style.flex != null ? 1 : undefined,
+              flexGrow: 1,
             },
           ]}
         >

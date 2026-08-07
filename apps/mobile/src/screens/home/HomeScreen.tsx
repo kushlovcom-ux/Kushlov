@@ -9,7 +9,6 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { Text } from '@/components/ui/Text';
@@ -99,7 +98,7 @@ export function HomeScreen() {
           </View>
           <View style={styles.topRight}>
             {wallet.data ? (
-              <Pressable onPress={() => nav.navigate('Wallet')} hitSlop={8}>
+              <Pressable onPress={() => nav.navigate('MainTabs', { screen: 'Wallet' })} hitSlop={8}>
                 <DiamondBadge amount={wallet.data.diamonds} />
               </Pressable>
             ) : null}
@@ -160,7 +159,7 @@ export function HomeScreen() {
           <QuickAction
             icon="radio"
             label="Live"
-            onPress={() => nav.navigate('LiveList')}
+            onPress={() => nav.navigate('MainTabs', { screen: 'Live' })}
           />
           <QuickAction
             icon="heart"
@@ -170,7 +169,7 @@ export function HomeScreen() {
           <QuickAction
             icon="wallet"
             label="Wallet"
-            onPress={() => nav.navigate('Wallet')}
+            onPress={() => nav.navigate('MainTabs', { screen: 'Wallet' })}
           />
           {canGoLive ? (
             <QuickAction
@@ -181,38 +180,38 @@ export function HomeScreen() {
           ) : null}
         </ScrollView>
 
-        {/* Stories / online — fixed height so FlashList does not collapse under Popular hosts */}
+        {/* Stories / online — horizontal ScrollView avoids FlashList height collapse */}
         <SectionHeader
           title="Active now"
           subtitle="People online near you"
           actionLabel="See all"
           onAction={() => nav.navigate('MainTabs', { screen: 'Discover' })}
         />
-        <View style={styles.activeNow}>
-          <FlashList
-            horizontal
-            data={storyData}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: spacing.screen }}
-            keyExtractor={(item: PublicUser) => item.id}
-            renderItem={({ item }) => (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.activeNowContent}
+          style={styles.activeNow}
+        >
+          {storyData.length === 0 ? (
+            loading ? (
+              <SkeletonRow />
+            ) : (
+              <Text variant="caption" muted>
+                No one online yet — check Discover.
+              </Text>
+            )
+          ) : (
+            storyData.map((item) => (
               <StoryRing
+                key={item.id}
                 uri={item.avatarUrl}
                 name={item.displayName}
                 onPress={() => nav.navigate('PublicProfile', { userId: item.id })}
               />
-            )}
-            ListEmptyComponent={
-              loading ? (
-                <SkeletonRow />
-              ) : (
-                <Text variant="caption" muted style={{ paddingHorizontal: spacing.screen }}>
-                  No one online yet — check Discover.
-                </Text>
-              )
-            }
-          />
-        </View>
+            ))
+          )}
+        </ScrollView>
 
         {/* Popular hosts */}
         <View style={styles.section}>
@@ -231,31 +230,29 @@ export function HomeScreen() {
               <ErrorView message="Could not load popular hosts" onRetry={() => popular.refetch()} />
             </View>
           ) : (
-            <View style={styles.popularHosts}>
-              <FlashList
-                horizontal
-                data={popularItems}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: spacing.screen }}
-                keyExtractor={(item: PublicUser) => item.id}
-                renderItem={({ item }) => (
-                  <Pressable
-                    onPress={() => nav.navigate('PublicProfile', { userId: item.id })}
-                    style={[styles.hostChip, { backgroundColor: c.card, borderColor: c.border }]}
-                  >
-                    <Avatar uri={item.avatarUrl} name={item.displayName} size={72} />
-                    <Text variant="captionBold" numberOfLines={1} style={styles.hostName}>
-                      {item.displayName}
-                    </Text>
-                    {item.isOnline ? (
-                      <Chip label="Online" tone="success" />
-                    ) : (
-                      <Chip label="Host" tone="pink" />
-                    )}
-                  </Pressable>
-                )}
-              />
-            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.popularHostsContent}
+            >
+              {popularItems.map((item: PublicUser) => (
+                <Pressable
+                  key={item.id}
+                  onPress={() => nav.navigate('PublicProfile', { userId: item.id })}
+                  style={[styles.hostChip, { backgroundColor: c.card, borderColor: c.border }]}
+                >
+                  <Avatar uri={item.avatarUrl} name={item.displayName} size={72} />
+                  <Text variant="captionBold" numberOfLines={1} style={styles.hostName}>
+                    {item.displayName}
+                  </Text>
+                  {item.isOnline ? (
+                    <Chip label="Online" tone="success" />
+                  ) : (
+                    <Chip label="Host" tone="pink" />
+                  )}
+                </Pressable>
+              ))}
+            </ScrollView>
           )}
         </View>
 
@@ -336,14 +333,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing['2xl'],
   },
   activeNow: {
-    minHeight: 108,
     marginBottom: spacing.md,
+    maxHeight: 110,
+  },
+  activeNowContent: {
+    paddingHorizontal: spacing.screen,
+    alignItems: 'flex-start',
+    minHeight: 100,
   },
   section: {
     marginTop: spacing.xl,
   },
-  popularHosts: {
-    minHeight: 168,
+  popularHostsContent: {
+    paddingHorizontal: spacing.screen,
+    paddingBottom: 4,
   },
   hostChip: {
     width: 118,

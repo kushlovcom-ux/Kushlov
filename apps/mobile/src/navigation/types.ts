@@ -15,6 +15,8 @@ export type MainTabParamList = {
   Discover: undefined;
   Matches: undefined;
   Messages: undefined;
+  Live: undefined;
+  Wallet: undefined;
   Profile: undefined;
 };
 

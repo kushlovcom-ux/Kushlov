@@ -72,7 +72,7 @@ export function PremiumTabBar({ state, descriptors, navigation }: BottomTabBarPr
               <View>
                 <Ionicons
                   name={focused ? icons.active : icons.idle}
-                  size={22}
+                  size={20}
                   color={color}
                 />
                 {badge != null && Number(badge) > 0 ? (
@@ -127,14 +127,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    paddingVertical: 4,
-    minHeight: 48,
+    gap: 1,
+    paddingVertical: 2,
+    minHeight: 44,
   },
   label: {
     textTransform: 'none',
     letterSpacing: 0,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '500',
   },
   dot: {

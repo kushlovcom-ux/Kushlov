@@ -22,6 +22,27 @@ router.get('/badges', ctrl.adminBadges);
 // Users
 router.get('/users', ctrl.listUsers);
 router.get('/online', ctrl.listOnlineUsers);
+router.get('/users/:id', ctrl.getUserAdmin);
+router.patch(
+  '/users/:id',
+  validate({
+    body: z.object({
+      displayName: z.string().min(2).max(60).optional(),
+      username: z.string().min(3).max(30).optional(),
+      email: z.string().email().optional(),
+      bio: z.string().max(500).optional(),
+      gender: z.string().optional(),
+      country: z.string().min(2).max(80).optional(),
+      isHostApproved: z.boolean().optional(),
+      videoPrice: z.number().min(0).optional(),
+      audioPrice: z.number().min(0).optional(),
+      messagePrice: z.number().min(0).optional(),
+      isPopularHost: z.boolean().optional(),
+      popularSortOrder: z.number().min(0).optional(),
+    }),
+  }),
+  ctrl.updateUserAdmin,
+);
 router.patch(
   '/users/:id/status',
   validate({

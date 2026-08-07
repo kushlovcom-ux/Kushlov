@@ -16,6 +16,21 @@ export type SearchUsersParams = {
 export const usersApi = {
   search: (params?: SearchUsersParams) =>
     apiGet<Paginated<PublicUser>>('/users', { params }),
+  /** Name search across connectable users (not limited to ~10 km browse radius). */
+  searchContacts: async (q: string) => {
+    const res = await apiGet<{ items: PublicUser[] }>('/users/me/search-contacts', {
+      params: { q },
+    });
+    return {
+      items: (res.items ?? []).map((u) => {
+        const raw = u as PublicUser & { _id?: string };
+        return {
+          ...raw,
+          id: raw.id || raw._id || '',
+        };
+      }),
+    };
+  },
   topRatedHosts: (params?: { page?: number; limit?: number }) =>
     apiGet<Paginated<PublicUser>>('/users/hosts/top-rated', { params }),
   hosts: (params?: SearchUsersParams) =>

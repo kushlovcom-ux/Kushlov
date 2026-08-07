@@ -9,6 +9,7 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { SkeletonRow } from '@/components/ui/Skeleton';
+import { Text } from '@/components/ui/Text';
 import { callsApi, chatApi, getErrorMessage } from '@/api';
 import { useAuth } from '@/hooks/useAuth';
 import { useMessages } from '@/hooks/useMessages';
@@ -144,13 +145,26 @@ export function ChatScreen({ navigation, route }: Props) {
           <ErrorView message="Could not load messages" onRetry={() => refetch()} />
         ) : (
           <FlatList
+            style={{ flex: 1 }}
             data={messages}
             inverted
             keyExtractor={(m) => m.id}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: 'flex-end',
+              paddingHorizontal: 16,
+              paddingBottom: 8,
+            }}
             onEndReached={() => {
               if (hasNextPage) fetchNextPage();
             }}
+            ListEmptyComponent={
+              <View style={{ paddingVertical: 40, transform: [{ scaleY: -1 }] }}>
+                <Text muted center>
+                  No messages yet. Say hello!
+                </Text>
+              </View>
+            }
             ListHeaderComponent={<TypingIndicator visible={peerTyping} />}
             renderItem={({ item }) => (
               <MessageBubble

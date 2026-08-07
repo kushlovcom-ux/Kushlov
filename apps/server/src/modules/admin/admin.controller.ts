@@ -28,6 +28,7 @@ import {
   Subscription,
   User,
   VerificationRequest,
+  Wallet,
   WithdrawRequest,
 } from '../../models';
 import { recomputeHostRating, serializeReview } from '../../services/review.service';
@@ -46,7 +47,16 @@ import { creditDiamonds } from '../../services/wallet.service';
 // --------------------------------------------------------------------------
 // Dashboard / analytics
 // --------------------------------------------------------------------------
+/** Short TTL cache so dashboard remounts don't re-scan payments every time. */
+let analyticsCache: { at: number; data: Record<string, number> } | null = null;
+const ANALYTICS_TTL_MS = 45_000;
+
 export const analytics = asyncHandler(async (_req: Request, res: Response) => {
+  if (analyticsCache && Date.now() - analyticsCache.at < ANALYTICS_TTL_MS) {
+    return ok(res, analyticsCache.data);
+  }
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 864e5);
   const [
     totalUsers,
     totalHosts,
@@ -69,10 +79,10 @@ export const analytics = asyncHandler(async (_req: Request, res: Response) => {
       { $match: { status: PaymentStatus.Succeeded } },
       { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]),
-    User.countDocuments({ createdAt: { $gte: new Date(Date.now() - 7 * 864e5) } }),
+    User.countDocuments({ createdAt: { $gte: sevenDaysAgo } }),
   ]);
 
-  return ok(res, {
+  const data = {
     totalUsers,
     totalHosts,
     approvedHosts,
@@ -83,7 +93,9 @@ export const analytics = asyncHandler(async (_req: Request, res: Response) => {
     revenue: revenueAgg[0]?.total ?? 0,
     paymentsCount: revenueAgg[0]?.count ?? 0,
     newUsers7d,
-  });
+  };
+  analyticsCache = { at: Date.now(), data };
+  return ok(res, data);
 });
 
 /** GET /admin/badges — lightweight pending-action counts for admin nav badges. */
@@ -128,6 +140,126 @@ export const listUsers = asyncHandler(async (req: Request, res: Response) => {
     User.countDocuments(filter),
   ]);
   return ok(res, buildPaginated(items.map((u) => (u as any).toPublic()), page, limit, total));
+});
+
+/** GET /admin/users/:id — full admin user detail (wallet + location read-only). */
+export const getUserAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const user = await User.findById(req.params.id);
+  if (!user || user.status === AccountStatus.Deleted) {
+    throw ApiError.notFound('User not found');
+  }
+
+  const [wallet, profile] = await Promise.all([
+    Wallet.findOne({ user: user._id }).lean(),
+    Profile.findOne({ user: user._id })
+      .select('city country locationLabel locationUpdatedAt gender dob languages')
+      .lean(),
+  ]);
+
+  const locationLabel =
+    profile?.locationLabel ||
+    [profile?.city, profile?.country].filter(Boolean).join(', ') ||
+    user.country ||
+    'Location not set';
+
+  return ok(res, {
+    user: (user as any).toPublic(),
+    wallet: {
+      diamonds: wallet?.diamonds ?? 0,
+      gold: wallet?.gold ?? 0,
+      totalDiamondsPurchased: wallet?.totalDiamondsPurchased ?? 0,
+      totalGoldEarned: wallet?.totalGoldEarned ?? 0,
+      totalGoldWithdrawn: wallet?.totalGoldWithdrawn ?? 0,
+    },
+    location: {
+      label: locationLabel,
+      city: profile?.city ?? null,
+      country: profile?.country ?? user.country ?? null,
+      updatedAt: profile?.locationUpdatedAt
+        ? new Date(profile.locationUpdatedAt).toISOString()
+        : null,
+    },
+    profile: {
+      bio: user.bio ?? '',
+      gender: profile?.gender ?? user.gender,
+      dob: profile?.dob ? new Date(profile.dob as Date).toISOString() : null,
+      languages: profile?.languages ?? [],
+    },
+  });
+});
+
+/** PATCH /admin/users/:id — update account details (not diamonds, gold, or location). */
+export const updateUserAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const user = await User.findById(req.params.id);
+  if (!user) throw ApiError.notFound('User not found');
+  if (user.role === Role.Admin) throw ApiError.forbidden('Cannot modify an admin account');
+
+  const {
+    displayName,
+    username,
+    email,
+    bio,
+    gender,
+    country,
+    isHostApproved,
+    videoPrice,
+    audioPrice,
+    messagePrice,
+    isPopularHost,
+    popularSortOrder,
+  } = req.body as {
+    displayName?: string;
+    username?: string;
+    email?: string;
+    bio?: string;
+    gender?: string;
+    country?: string;
+    isHostApproved?: boolean;
+    videoPrice?: number;
+    audioPrice?: number;
+    messagePrice?: number;
+    isPopularHost?: boolean;
+    popularSortOrder?: number;
+  };
+
+  if (displayName !== undefined) user.displayName = String(displayName).trim().slice(0, 60);
+  if (username !== undefined) {
+    const next = String(username).trim().toLowerCase().slice(0, 30);
+    if (next.length < 3) throw ApiError.badRequest('Username must be at least 3 characters');
+    const taken = await User.exists({ username: next, _id: { $ne: user._id } });
+    if (taken) throw ApiError.conflict('Username already taken');
+    user.username = next;
+  }
+  if (email !== undefined) {
+    const next = String(email).trim().toLowerCase();
+    if (!next.includes('@')) throw ApiError.badRequest('Invalid email');
+    const taken = await User.exists({ email: next, _id: { $ne: user._id } });
+    if (taken) throw ApiError.conflict('Email already taken');
+    user.email = next;
+  }
+  if (bio !== undefined) user.bio = String(bio).slice(0, 500);
+  if (gender !== undefined) user.gender = gender as any;
+  if (country !== undefined) user.country = String(country).trim().slice(0, 80);
+  if (typeof isHostApproved === 'boolean') user.isHostApproved = isHostApproved;
+  if (typeof videoPrice === 'number' && videoPrice >= 0) user.videoPrice = videoPrice;
+  if (typeof audioPrice === 'number' && audioPrice >= 0) user.audioPrice = audioPrice;
+  if (typeof messagePrice === 'number' && messagePrice >= 0) user.messagePrice = messagePrice;
+  if (typeof isPopularHost === 'boolean') user.isPopularHost = isPopularHost;
+  if (typeof popularSortOrder === 'number' && popularSortOrder >= 0) {
+    user.popularSortOrder = popularSortOrder;
+  }
+
+  await user.save();
+
+  // Keep profile gender/country in sync (location fields untouched).
+  const profile = await Profile.findOne({ user: user._id });
+  if (profile) {
+    if (gender !== undefined) profile.gender = user.gender as any;
+    if (country !== undefined) profile.country = user.country;
+    await profile.save();
+  }
+
+  return ok(res, (user as any).toPublic(), 'User updated');
 });
 
 export const updateUserStatus = asyncHandler(async (req: Request, res: Response) => {

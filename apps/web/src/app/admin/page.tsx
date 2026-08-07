@@ -38,6 +38,8 @@ export default function AdminDashboard() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin-analytics'],
     queryFn: () => unwrap<Analytics>(api.get('/admin/analytics')),
+    staleTime: 45_000,
+    refetchOnWindowFocus: false,
   });
 
   const cards = [

@@ -155,8 +155,10 @@ export function PublicProfileScreen({ navigation, route }: Props) {
 
   const u = userQ.data;
   const age = ageFromDob(u.dob);
-  const isHostProfile = u.role === Role.Host && !!u.isHostApproved;
-  const canReview = me?.role === Role.User && isHostProfile && me.id !== userId;
+  const isHostProfile = u.role === Role.Host || Boolean(u.isHostApproved);
+  const myId = me?.id ? String(me.id) : '';
+  const canReview =
+    me?.role === Role.User && isHostProfile && Boolean(myId) && myId !== String(userId);
   const avatarUri = u.avatarUrl;
 
   return (
@@ -207,23 +209,27 @@ export function PublicProfileScreen({ navigation, route }: Props) {
         ) : null}
 
         <View style={styles.actions}>
-          <Button
-            title="Like"
-            variant="primary"
-            onPress={async () => {
-              setLiking(true);
-              try {
-                await like.mutateAsync();
-              } catch (err) {
-                Alert.alert('Like', getErrorMessage(err));
-              } finally {
-                setLiking(false);
-              }
-            }}
-            loading={liking}
-            style={{ flex: 1 }}
-          />
-          <Button title="Message" variant="primary" onPress={message} style={{ flex: 1 }} />
+          <View style={styles.actionSlot}>
+            <Button
+              title="Like"
+              variant="primary"
+              onPress={async () => {
+                setLiking(true);
+                try {
+                  await like.mutateAsync();
+                } catch (err) {
+                  Alert.alert('Like', getErrorMessage(err));
+                } finally {
+                  setLiking(false);
+                }
+              }}
+              loading={liking}
+              fullWidth
+            />
+          </View>
+          <View style={styles.actionSlot}>
+            <Button title="Message" variant="primary" onPress={message} fullWidth />
+          </View>
         </View>
         <View style={styles.callRow}>
           <PressableScale
@@ -246,63 +252,80 @@ export function PublicProfileScreen({ navigation, route }: Props) {
           </PressableScale>
         </View>
 
-        <Text variant="h3" style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
-          Reviews
-        </Text>
-
-        {canReview ? (
-          <GlassCard style={{ marginBottom: spacing.lg }}>
-            <Text variant="bodyBold" style={{ marginBottom: spacing.sm }}>
-              {myReview.data ? 'Update your review' : 'Leave a review'}
+        {isHostProfile ? (
+          <>
+            <Text variant="h3" style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>
+              Reviews
             </Text>
-            <View style={styles.starsRow}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <Pressable key={n} onPress={() => setRating(n)} hitSlop={6}>
-                  <Text style={{ fontSize: 28, color: n <= rating ? c.premiumGold : c.borderStrong }}>
-                    ★
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <TextInput
-              value={reviewText}
-              onChangeText={setReviewText}
-              placeholder="Share your experience…"
-              placeholderTextColor={c.textMuted}
-              multiline
-              style={[
-                styles.reviewInput,
-                { color: c.text, borderColor: c.border, backgroundColor: c.elevated },
-              ]}
-            />
-            <Button
-              title={myReview.data ? 'Update review' : 'Submit review'}
-              onPress={() => saveReview.mutate()}
-              loading={saveReview.isPending}
-              fullWidth
-              style={{ marginTop: spacing.md }}
-            />
-          </GlassCard>
-        ) : null}
 
-        {(reviewsQ.data?.items ?? []).length === 0 ? (
-          <EmptyState title="No reviews yet" />
-        ) : (
-          (reviewsQ.data?.items ?? []).map((r) => (
-            <View
-              key={r.id}
-              style={[styles.review, { backgroundColor: c.card, borderColor: c.border }]}
-            >
-              <Text variant="bodyBold">{r.reviewer.displayName}</Text>
-              <StarRating rating={r.rating} />
-              {r.text ? (
-                <Text muted style={{ marginTop: 4 }}>
-                  {r.text}
+            {canReview ? (
+              <GlassCard style={{ marginBottom: spacing.lg }}>
+                <Text variant="bodyBold" style={{ marginBottom: spacing.sm }}>
+                  {myReview.data ? 'Update your review' : 'Leave a review'}
                 </Text>
-              ) : null}
-            </View>
-          ))
-        )}
+                <Text muted variant="caption" style={{ marginBottom: spacing.sm }}>
+                  Rate your experience with this host.
+                </Text>
+                <View style={styles.starsRow}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Pressable key={n} onPress={() => setRating(n)} hitSlop={6}>
+                      <Text
+                        style={{
+                          fontSize: 28,
+                          color: n <= rating ? c.premiumGold : c.borderStrong,
+                        }}
+                      >
+                        ★
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={reviewText}
+                  onChangeText={setReviewText}
+                  placeholder="Share your experience…"
+                  placeholderTextColor={c.textMuted}
+                  multiline
+                  style={[
+                    styles.reviewInput,
+                    { color: c.text, borderColor: c.border, backgroundColor: c.elevated },
+                  ]}
+                />
+                <Button
+                  title={myReview.data ? 'Update review' : 'Submit review'}
+                  variant="primary"
+                  onPress={() => saveReview.mutate()}
+                  loading={saveReview.isPending}
+                  fullWidth
+                  style={{ marginTop: spacing.md }}
+                />
+              </GlassCard>
+            ) : me?.role !== Role.User ? (
+              <Text muted style={{ marginBottom: spacing.md }}>
+                Only normal users can leave host reviews.
+              </Text>
+            ) : null}
+
+            {(reviewsQ.data?.items ?? []).length === 0 ? (
+              <EmptyState title="No reviews yet" />
+            ) : (
+              (reviewsQ.data?.items ?? []).map((r) => (
+                <View
+                  key={r.id}
+                  style={[styles.review, { backgroundColor: c.card, borderColor: c.border }]}
+                >
+                  <Text variant="bodyBold">{r.reviewer?.displayName ?? 'User'}</Text>
+                  <StarRating rating={r.rating} />
+                  {r.text ? (
+                    <Text muted style={{ marginTop: 4 }}>
+                      {r.text}
+                    </Text>
+                  ) : null}
+                </View>
+              ))
+            )}
+          </>
+        ) : null}
       </ScrollView>
     </Screen>
   );
@@ -336,8 +359,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actions: { flexDirection: 'row', gap: 10, marginTop: spacing.lg },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: spacing.lg,
+    width: '100%',
+  },
+  actionSlot: {
+    flex: 1,
+    minWidth: 0,
+  },
   callRow: { flexDirection: 'row', gap: 10, marginTop: spacing.md },
   callBtn: {
     flex: 1,

@@ -19,6 +19,7 @@ export function useAdminBadges() {
     queryKey: ['admin-badges'],
     queryFn: () => unwrap<AdminBadges>(api.get('/admin/badges')),
     enabled: user?.role === 'admin',
+    staleTime: 30_000,
     refetchInterval: 60_000,
   });
 

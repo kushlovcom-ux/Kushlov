@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FlashList } from '@shopify/flash-list';
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
-import { GlassCard, PressableScale, SectionHeader } from '@/design-system';
+import { Chip, GlassCard, PressableScale, SectionHeader } from '@/design-system';
 import { apiError, paymentsApi, walletApi } from '@/api';
 import { queryKeys } from '@/constants/queryKeys';
 import { openRazorpayCheckout } from '@/services/razorpay';
@@ -23,12 +23,27 @@ import { Role, type DiamondPackage, type LedgerEntry } from '@/types';
 import { formatDiamonds, formatMoney } from '@/utils/format';
 import { radius, spacing } from '@/theme';
 
+const WITHDRAW_METHODS = [
+  { id: 'upi', label: 'UPI' },
+  { id: 'bank_transfer', label: 'Bank Transfer' },
+  { id: 'net_banking', label: 'Net Banking' },
+] as const;
+
+type WithdrawMethod = (typeof WITHDRAW_METHODS)[number]['id'];
+
 export function WalletScreen() {
   const c = useThemeColors();
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
   const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [upi, setUpi] = useState('');
+  const [method, setMethod] = useState<WithdrawMethod>('upi');
+  const [dest, setDest] = useState({
+    accountHolder: '',
+    accountNumber: '',
+    ifsc: '',
+    bankName: '',
+    upiId: '',
+  });
   const canUseGold =
     user?.role === Role.Host || user?.role === Role.Admin || Boolean(user?.isHostApproved);
 
@@ -76,17 +91,54 @@ export function WalletScreen() {
     onError: (e) => Alert.alert('Payment', apiError(e)),
   });
 
+  const destination = useMemo(() => {
+    if (method === 'upi') {
+      return {
+        accountHolder: dest.accountHolder.trim(),
+        upiId: dest.upiId.trim(),
+      };
+    }
+    return {
+      accountHolder: dest.accountHolder.trim(),
+      bankName: dest.bankName.trim(),
+      accountNumber: dest.accountNumber.trim(),
+      ifsc: dest.ifsc.trim().toUpperCase(),
+    };
+  }, [dest, method]);
+
   const withdraw = useMutation({
-    mutationFn: () =>
-      walletApi.withdraw({
-        goldAmount: Number(withdrawAmount),
-        method: 'upi',
-        destination: { upiId: upi },
-      }),
+    mutationFn: () => {
+      const goldAmount = Number(withdrawAmount);
+      if (!Number.isFinite(goldAmount) || goldAmount <= 0) {
+        throw new Error('Enter a valid gold amount.');
+      }
+      if (!dest.accountHolder.trim()) {
+        throw new Error('Enter the account holder name.');
+      }
+      if (method === 'upi' && !dest.upiId.trim()) {
+        throw new Error('Enter your UPI ID.');
+      }
+      if (method !== 'upi') {
+        if (!dest.bankName.trim() || !dest.accountNumber.trim() || !dest.ifsc.trim()) {
+          throw new Error('Enter bank name, account number, and IFSC.');
+        }
+      }
+      return walletApi.withdraw({
+        goldAmount,
+        method,
+        destination,
+      });
+    },
     onSuccess: () => {
       Alert.alert('Requested', 'Withdrawal submitted for review.');
       setWithdrawAmount('');
-      setUpi('');
+      setDest({
+        accountHolder: '',
+        accountNumber: '',
+        ifsc: '',
+        bankName: '',
+        upiId: '',
+      });
       qc.invalidateQueries({ queryKey: queryKeys.wallet });
     },
     onError: (e) => Alert.alert('Withdraw', apiError(e)),
@@ -184,10 +236,29 @@ export function WalletScreen() {
 
         {canUseGold ? (
           <>
-            <SectionHeader title="Withdraw gold" subtitle="UPI payouts after review" flush />
+            <SectionHeader
+              title="Withdraw gold"
+              subtitle="UPI, bank transfer, or net banking"
+              flush
+            />
             <GlassCard style={{ marginBottom: spacing.lg }}>
+              <Text variant="captionBold" muted style={{ marginBottom: spacing.sm }}>
+                Payout method
+              </Text>
+              <View style={styles.methodRow}>
+                {WITHDRAW_METHODS.map((m) => (
+                  <Chip
+                    key={m.id}
+                    label={m.label}
+                    selected={method === m.id}
+                    onPress={() => setMethod(m.id)}
+                  />
+                ))}
+              </View>
+
+              <View style={{ height: spacing.md }} />
               <Input
-                label="Amount"
+                label="Amount (gold)"
                 keyboardType="numeric"
                 value={withdrawAmount}
                 onChangeText={setWithdrawAmount}
@@ -195,19 +266,59 @@ export function WalletScreen() {
               />
               <View style={{ height: spacing.md }} />
               <Input
-                label="UPI ID"
-                value={upi}
-                onChangeText={setUpi}
-                placeholder="name@upi"
-                autoCapitalize="none"
+                label="Account holder name"
+                value={dest.accountHolder}
+                onChangeText={(v) => setDest((d) => ({ ...d, accountHolder: v }))}
+                placeholder="Name on account"
+                autoCapitalize="words"
               />
+
+              {method === 'upi' ? (
+                <>
+                  <View style={{ height: spacing.md }} />
+                  <Input
+                    label="UPI ID"
+                    value={dest.upiId}
+                    onChangeText={(v) => setDest((d) => ({ ...d, upiId: v }))}
+                    placeholder="name@upi"
+                    autoCapitalize="none"
+                  />
+                </>
+              ) : (
+                <>
+                  <View style={{ height: spacing.md }} />
+                  <Input
+                    label="Bank name"
+                    value={dest.bankName}
+                    onChangeText={(v) => setDest((d) => ({ ...d, bankName: v }))}
+                    placeholder="Bank name"
+                  />
+                  <View style={{ height: spacing.md }} />
+                  <Input
+                    label="Account number"
+                    value={dest.accountNumber}
+                    onChangeText={(v) => setDest((d) => ({ ...d, accountNumber: v }))}
+                    placeholder="Account number"
+                    keyboardType="number-pad"
+                  />
+                  <View style={{ height: spacing.md }} />
+                  <Input
+                    label="IFSC code"
+                    value={dest.ifsc}
+                    onChangeText={(v) => setDest((d) => ({ ...d, ifsc: v.toUpperCase() }))}
+                    placeholder="IFSC"
+                    autoCapitalize="characters"
+                  />
+                </>
+              )}
+
+              <View style={{ height: spacing['2xl'] }} />
               <Button
                 title="Request withdrawal"
-                variant="outline"
+                variant="primary"
                 onPress={() => withdraw.mutate()}
                 loading={withdraw.isPending}
                 fullWidth
-                style={{ marginTop: spacing.lg }}
               />
             </GlassCard>
           </>
@@ -253,6 +364,11 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.xl,
     borderWidth: 1.5,
+  },
+  methodRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   tx: {
     flexDirection: 'row',

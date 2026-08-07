@@ -55,6 +55,8 @@ function MainTabs() {
           tabBarBadge: msgCount > 0 ? msgCount : undefined,
         }}
       />
+      <Tab.Screen name="Live" component={LiveListScreen} options={{ title: 'Live' }} />
+      <Tab.Screen name="Wallet" component={WalletScreen} options={{ title: 'Wallet' }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
