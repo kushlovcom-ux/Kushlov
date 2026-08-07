@@ -106,20 +106,22 @@ router.get(
   }),
 );
 
-/** GET /settings/popular-hosts — admin-curated popular hosts for the landing page. */
+/** GET /settings/popular-hosts — admin-curated popular people (users + hosts) for the homepage. */
 router.get(
   '/popular-hosts',
   asyncHandler(async (_req, res) => {
-    const hosts = await User.find({
-      role: Role.Host,
-      isHostApproved: true,
+    const people = await User.find({
       isPopularHost: true,
       status: 'active',
+      $or: [
+        { role: Role.User },
+        { role: Role.Host, isHostApproved: true },
+      ],
     })
       .sort({ popularSortOrder: 1, averageRating: -1, totalReviews: -1 })
       .limit(24);
     return ok(res, {
-      items: hosts.map((h) => (h as any).toPublic()),
+      items: people.map((h) => (h as any).toPublic()),
     });
   }),
 );

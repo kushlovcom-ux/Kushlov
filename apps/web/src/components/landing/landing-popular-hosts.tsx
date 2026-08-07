@@ -28,10 +28,10 @@ export function LandingPopularHosts() {
           <Sparkles className="h-4 w-4" /> Featured
         </p>
         <h2 className="mt-2 text-3xl font-bold md:text-4xl">
-          Popular <span className="text-gradient">hosts</span>
+          <span className="text-gradient">Popular</span>
         </h2>
         <p className="mx-auto mt-3 max-w-lg text-white/55">
-          Meet standout verified hosts hand-picked by our team — ready to chat, call, and go live.
+          Meet standout people hand-picked by our team — ready to chat, call, and connect.
         </p>
       </div>
 
@@ -81,7 +81,7 @@ export function LandingPopularHosts() {
       <div className="mt-10 text-center">
         <Link href="/discover">
           <Button size="lg" variant="secondary">
-            Discover more hosts
+            Discover more
           </Button>
         </Link>
       </div>

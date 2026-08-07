@@ -47,7 +47,7 @@ export default function AdminHostsPricingPage() {
       popularSortOrder?: number;
     }) => api.patch(`/admin/hosts/${id}/popular`, { isPopularHost, popularSortOrder }),
     onSuccess: () => {
-      toast.success('Popular host updated');
+      toast.success('Popular updated');
       qc.invalidateQueries({ queryKey: ['admin-hosts'] });
       qc.invalidateQueries({ queryKey: ['popular-hosts'] });
     },
@@ -67,7 +67,7 @@ export default function AdminHostsPricingPage() {
     <div>
       <PageHeader
         title="Host pricing"
-        subtitle="Set gold prices per host and choose who appears in Popular Hosts on the homepage"
+        subtitle="Set gold prices per host and choose who appears in Popular on the homepage"
         action={
           <Input
             value={q}

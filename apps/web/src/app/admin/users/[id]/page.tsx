@@ -228,6 +228,33 @@ export default function AdminUserDetailPage() {
               </div>
             </div>
 
+            {(u.role === Role.User || isHost) && (
+              <div className="mt-6 space-y-4 border-t border-white/10 pt-5">
+                <p className="text-sm font-medium text-white/80">Homepage</p>
+                <div className="flex items-center justify-between rounded-xl border border-white/10 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium">Popular</p>
+                    <p className="text-xs text-white/45">
+                      Show this {isHost ? 'host' : 'user'} in Popular on web and app home
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.isPopularHost}
+                    onCheckedChange={(v) => set('isPopularHost', v)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Popular sort order</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={form.popularSortOrder}
+                    onChange={(e) => set('popularSortOrder', Number(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+            )}
+
             {isHost ? (
               <div className="mt-6 space-y-4 border-t border-white/10 pt-5">
                 <p className="text-sm font-medium text-white/80">Host settings</p>
@@ -241,26 +268,7 @@ export default function AdminUserDetailPage() {
                     onCheckedChange={(v) => set('isHostApproved', v)}
                   />
                 </div>
-                <div className="flex items-center justify-between rounded-xl border border-white/10 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium">Popular host</p>
-                    <p className="text-xs text-white/45">Show in Popular Hosts</p>
-                  </div>
-                  <Switch
-                    checked={form.isPopularHost}
-                    onCheckedChange={(v) => set('isPopularHost', v)}
-                  />
-                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Popular sort order</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={form.popularSortOrder}
-                      onChange={(e) => set('popularSortOrder', Number(e.target.value) || 0)}
-                    />
-                  </div>
                   <div className="space-y-2">
                     <Label>Video price (gold)</Label>
                     <Input

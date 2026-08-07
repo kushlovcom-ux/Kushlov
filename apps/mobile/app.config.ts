@@ -151,6 +151,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
       'expo-font',
+      'expo-image',
+      'expo-sharing',
     ],
     extra: {
       eas: {

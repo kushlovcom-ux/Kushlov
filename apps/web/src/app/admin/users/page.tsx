@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/app/page-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -72,6 +73,16 @@ export default function AdminUsersPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  const setPopular = useMutation({
+    mutationFn: ({ id, isPopularHost }: { id: string; isPopularHost: boolean }) =>
+      api.patch(`/admin/hosts/${id}/popular`, { isPopularHost }),
+    onSuccess: () => {
+      toast.success('Popular updated');
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
   const statusVariant = (s: string) =>
     s === 'active' ? 'success' : s === 'banned' ? 'destructive' : 'warning';
 
@@ -99,7 +110,7 @@ export default function AdminUsersPage() {
     <div>
       <PageHeader
         title="Users"
-        subtitle="Click Open details to view wallet, location, and edit profile fields"
+        subtitle="Open details to edit profile. Toggle Popular to feature users on web and app home."
         action={
           <Input
             value={q}
@@ -135,19 +146,22 @@ export default function AdminUsersPage() {
                 <th className="p-4">User</th>
                 <th className="p-4">Role</th>
                 <th className="p-4">Status</th>
+                <th className="p-4">Popular</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={4} className="p-4">
+                  <td colSpan={5} className="p-4">
                     <Skeleton className="h-10 w-full" />
                   </td>
                 </tr>
               )}
               {data?.items.map((u) => {
                 const id = userIdOf(u);
+                const canMarkPopular =
+                  u.role === Role.User || (u.role === Role.Host && u.isHostApproved);
                 return (
                   <tr
                     key={id || u.email}
@@ -169,6 +183,19 @@ export default function AdminUsersPage() {
                     <td className="p-4 capitalize">{u.role}</td>
                     <td className="p-4">
                       <Badge variant={statusVariant(u.status) as any}>{u.status}</Badge>
+                    </td>
+                    <td className="p-4">
+                      {canMarkPopular ? (
+                        <Switch
+                          checked={!!u.isPopularHost}
+                          disabled={setPopular.isPending}
+                          onCheckedChange={(v) =>
+                            setPopular.mutate({ id, isPopularHost: v })
+                          }
+                        />
+                      ) : (
+                        <span className="text-xs text-white/35">—</span>
+                      )}
                     </td>
                     <td className="p-4">
                       <div className="flex flex-wrap justify-end gap-2">
@@ -224,7 +251,7 @@ export default function AdminUsersPage() {
               })}
               {!isLoading && (data?.items.length ?? 0) === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-10 text-center text-white/40">
+                  <td colSpan={5} className="p-10 text-center text-white/40">
                     No accounts found.
                   </td>
                 </tr>

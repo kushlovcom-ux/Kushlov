@@ -213,10 +213,10 @@ export function HomeScreen() {
           )}
         </ScrollView>
 
-        {/* Popular hosts */}
+        {/* Popular */}
         <View style={styles.section}>
           <SectionHeader
-            title="Popular hosts"
+            title="Popular"
             subtitle="Hand-picked for you"
             actionLabel="Explore"
             onAction={() => nav.navigate('MainTabs', { screen: 'Discover' })}
@@ -227,7 +227,7 @@ export function HomeScreen() {
             </View>
           ) : popular.isError ? (
             <View style={{ paddingHorizontal: spacing.screen }}>
-              <ErrorView message="Could not load popular hosts" onRetry={() => popular.refetch()} />
+              <ErrorView message="Could not load popular" onRetry={() => popular.refetch()} />
             </View>
           ) : (
             <ScrollView

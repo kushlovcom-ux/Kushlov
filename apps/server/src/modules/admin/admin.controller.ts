@@ -244,7 +244,10 @@ export const updateUserAdmin = asyncHandler(async (req: Request, res: Response) 
   if (typeof videoPrice === 'number' && videoPrice >= 0) user.videoPrice = videoPrice;
   if (typeof audioPrice === 'number' && audioPrice >= 0) user.audioPrice = audioPrice;
   if (typeof messagePrice === 'number' && messagePrice >= 0) user.messagePrice = messagePrice;
-  if (typeof isPopularHost === 'boolean') user.isPopularHost = isPopularHost;
+  if (typeof isPopularHost === 'boolean') {
+    user.isPopularHost = isPopularHost;
+    if (!isPopularHost) user.popularSortOrder = 0;
+  }
   if (typeof popularSortOrder === 'number' && popularSortOrder >= 0) {
     user.popularSortOrder = popularSortOrder;
   }
@@ -643,12 +646,18 @@ export const updateHostPricing = asyncHandler(async (req: Request, res: Response
   return ok(res, (user as any).toPublic(), 'Host pricing updated');
 });
 
-/** PATCH /admin/hosts/:id/popular — mark/unmark a host as popular for the landing page. */
+/** PATCH /admin/hosts/:id/popular — mark/unmark a user or host as popular on the homepage. */
 export const updateHostPopular = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.params.id);
   if (!user) throw ApiError.notFound('User not found');
-  if (user.role !== Role.Host || !user.isHostApproved) {
-    throw ApiError.badRequest('Only approved hosts can be marked popular');
+  if (user.role === Role.Admin) {
+    throw ApiError.badRequest('Admin accounts cannot be marked popular');
+  }
+  if (user.role === Role.Host && !user.isHostApproved) {
+    throw ApiError.badRequest('Only approved hosts (or normal users) can be marked popular');
+  }
+  if (user.role !== Role.User && user.role !== Role.Host) {
+    throw ApiError.badRequest('Only normal users or hosts can be marked popular');
   }
 
   const { isPopularHost, popularSortOrder } = req.body as {
@@ -659,7 +668,7 @@ export const updateHostPopular = asyncHandler(async (req: Request, res: Response
   if (popularSortOrder != null) user.popularSortOrder = Math.max(0, popularSortOrder);
   if (!user.isPopularHost) user.popularSortOrder = 0;
   await user.save();
-  return ok(res, (user as any).toPublic(), 'Popular host updated');
+  return ok(res, (user as any).toPublic(), 'Popular profile updated');
 });
 
 /** GET /admin/reviews — moderate host reviews. */
