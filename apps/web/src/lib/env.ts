@@ -1,7 +1,44 @@
+/** Hosted API that stays up when the VPS PM2 process behind nginx is down. */
+const HOSTED_API_URL = 'https://kushlov-server.vercel.app';
+
+/** Production site hosts that historically used same-origin `/api` via nginx → :5000. */
+const SAME_ORIGIN_SITE_HOSTS = new Set([
+  'klproind.com',
+  'www.klproind.com',
+  'genzone.cloud',
+  'www.genzone.cloud',
+]);
+
+/**
+ * When NEXT_PUBLIC_API_URL points at the public site (same-origin nginx proxy)
+ * but the local Express process is down, browsers get 502s. Route those builds
+ * to the working Vercel API instead (CORS + cookie SameSite=none already allow it).
+ */
+function resolveApiUrl(configured: string): string {
+  try {
+    const host = new URL(configured).hostname.toLowerCase();
+    if (SAME_ORIGIN_SITE_HOSTS.has(host)) return HOSTED_API_URL;
+  } catch {
+    /* keep configured */
+  }
+  return configured;
+}
+
+const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
+const apiUrl = resolveApiUrl(configuredApiUrl);
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+// Keep sockets on the public site host when possible — Vercel cannot host Socket.io.
 const socketUrl =
   process.env.NEXT_PUBLIC_SOCKET_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  'http://localhost:5000';
+  (SAME_ORIGIN_SITE_HOSTS.has(hostnameOf(configuredApiUrl)) ? configuredApiUrl : apiUrl);
 
 /**
  * Vercel serverless functions cannot host a persistent WebSocket/Socket.io
@@ -22,7 +59,7 @@ function computeSocketEnabled(url: string): boolean {
 
 /** Client-safe environment configuration (all values are public). */
 export const clientEnv = {
-  apiUrl: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000',
+  apiUrl,
   socketUrl,
   socketEnabled: computeSocketEnabled(socketUrl),
   livekitUrl: process.env.NEXT_PUBLIC_LIVEKIT_URL ?? '',
