@@ -1,12 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
@@ -39,6 +42,24 @@ type ChatMsg = {
   message: string;
 };
 
+function chatIdOf(m: ChatMsg & { _id?: string }): string | undefined {
+  return m.id ?? m._id;
+}
+
+function mergeChat(prev: ChatMsg[], incoming: ChatMsg[]): ChatMsg[] {
+  const seen = new Set(prev.map((m) => m.id).filter(Boolean) as string[]);
+  const next = [...prev];
+  for (const raw of incoming) {
+    const id = chatIdOf(raw);
+    const message = raw.message?.trim();
+    if (!message) continue;
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    next.push({ id, user: raw.user, message });
+  }
+  return next;
+}
+
 function hostIdOf(live: {
   hostId?: string;
   host?: string | { id?: string; _id?: string };
@@ -62,11 +83,13 @@ function coHostIdOf(live: {
 export function LiveRoomScreen({ navigation, route }: Props) {
   const { liveId, coliveToken, livekitUrl: handoffUrl } = route.params;
   const c = useThemeColors();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const socket = useSocket();
   const settings = useSettings();
   const [chat, setChat] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const lastChatIdRef = useRef<string | undefined>(undefined);
   const [viewers, setViewers] = useState(0);
   const [showViewers, setShowViewers] = useState(false);
   const [showColive, setShowColive] = useState(false);
@@ -182,6 +205,45 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     };
   }, [live.data, liveId, isHost, isCoHost, coliveToken]);
 
+  const appendChat = useCallback((incoming: ChatMsg | ChatMsg[]) => {
+    const list = Array.isArray(incoming) ? incoming : [incoming];
+    setMessages((prev) => {
+      const next = mergeChat(prev, list);
+      const last = next[next.length - 1]?.id;
+      if (last) lastChatIdRef.current = last;
+      return next;
+    });
+  }, []);
+
+  // HTTP poll — REST chat is saved on Vercel while Socket.io may live on the VPS.
+  useEffect(() => {
+    if (!liveId) return;
+    let cancelled = false;
+
+    const pull = async () => {
+      try {
+        const after = lastChatIdRef.current;
+        const data = await liveApi.listChat(liveId, {
+          after,
+          limit: after ? 50 : 40,
+        });
+        if (!cancelled && data.messages?.length) {
+          appendChat(data.messages);
+        }
+      } catch {
+        /* ignore transient poll errors */
+      }
+    };
+
+    void pull();
+    const ms = socket.connected ? 5_000 : 2_500;
+    const timer = setInterval(() => void pull(), ms);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [liveId, socket.connected, appendChat]);
+
   useEffect(() => {
     const joinRoom = () => {
       socket.emit(SocketEvents.LiveJoin, { liveId });
@@ -193,13 +255,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
 
     const offChat = socket.on(SocketEvents.LiveChat, (...args: unknown[]) => {
       const m = args[0] as ChatMsg & { _id?: string; id?: string };
-      if (m?.message) {
-        setMessages((prev) => {
-          const id = m.id ?? m._id;
-          if (id && prev.some((x) => x.id === id)) return prev;
-          return [...prev, { id, user: m.user, message: m.message }];
-        });
-      }
+      if (m?.message) appendChat(m);
     });
     const offCount = socket.on(SocketEvents.LiveViewerCount, (...args: unknown[]) => {
       const p = args[0] as { viewerCount?: number };
@@ -232,7 +288,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
       offColiveLeave();
       // Do NOT HTTP-leave here — that runs on every listener rebind and drops viewers.
     };
-  }, [liveId, socket, navigation, isHost, isCoHost, user?.id, socket.connected]);
+  }, [liveId, socket, navigation, isHost, isCoHost, user?.id, socket.connected, appendChat]);
 
   const leave = async () => {
     try {
@@ -251,18 +307,10 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     setChat('');
     try {
       const created = await liveApi.chat(liveId, msg);
-      const payload = created as ChatMsg & { _id?: string; id?: string };
-      setMessages((prev) => {
-        const id = payload.id ?? payload._id;
-        if (id && prev.some((m) => m.id === id)) return prev;
-        return [
-          ...prev,
-          {
-            id,
-            user: payload.user ?? { displayName: user?.displayName },
-            message: payload.message ?? msg,
-          },
-        ];
+      appendChat({
+        id: created.id ?? created._id,
+        user: created.user ?? { displayName: user?.displayName },
+        message: created.message ?? msg,
       });
     } catch (err) {
       setChat(msg);
@@ -300,7 +348,11 @@ export function LiveRoomScreen({ navigation, route }: Props) {
 
   return (
     <Screen padded={false}>
-      <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#000' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
       <Header
         title={live.data?.title ?? 'Live'}
         onBack={() => navigation.goBack()}
@@ -362,11 +414,56 @@ export function LiveRoomScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        <View style={styles.chatOverlay} pointerEvents="box-none">
+        {!canPublish ? (
+          <View style={styles.chatOverlay} pointerEvents="box-none">
+            <FlatList
+              data={messages}
+              keyExtractor={(item, i) => item.id ?? String(i)}
+              style={{ maxHeight: 150 }}
+              renderItem={({ item }) => (
+                <View style={styles.chatBubble}>
+                  <Text>
+                    <Text color={c.pink} variant="bodyBold">
+                      {item.user?.displayName ?? 'User'}:{' '}
+                    </Text>
+                    <Text color="#fff">{item.message}</Text>
+                  </Text>
+                </View>
+              )}
+            />
+            <View style={styles.chatRow}>
+              <View style={{ flex: 1 }}>
+                <Input
+                  value={chat}
+                  onChangeText={setChat}
+                  placeholder={
+                    chatCost > 0 ? `Say something… (${chatCost}♦/msg)` : 'Say something…'
+                  }
+                />
+              </View>
+              <Button title="Send" size="sm" onPress={sendChat} />
+              <Button
+                title="Like"
+                size="sm"
+                variant="secondary"
+                onPress={() => liveApi.like(liveId).catch(() => undefined)}
+              />
+            </View>
+          </View>
+        ) : null}
+      </View>
+
+      {canPublish ? (
+        <View
+          style={[
+            styles.chatDock,
+            { paddingBottom: Math.max(insets.bottom, spacing.sm) },
+          ]}
+        >
           <FlatList
             data={messages}
             keyExtractor={(item, i) => item.id ?? String(i)}
-            style={{ maxHeight: 150 }}
+            style={styles.chatDockList}
             renderItem={({ item }) => (
               <View style={styles.chatBubble}>
                 <Text>
@@ -380,13 +477,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
           />
           <View style={styles.chatRow}>
             <View style={{ flex: 1 }}>
-              <Input
-                value={chat}
-                onChangeText={setChat}
-                placeholder={
-                  !canPublish && chatCost > 0 ? `Say something… (${chatCost}♦/msg)` : 'Say something…'
-                }
-              />
+              <Input value={chat} onChangeText={setChat} placeholder="Say something…" />
             </View>
             <Button title="Send" size="sm" onPress={sendChat} />
             <Button
@@ -396,13 +487,10 @@ export function LiveRoomScreen({ navigation, route }: Props) {
               onPress={() => liveApi.like(liveId).catch(() => undefined)}
             />
           </View>
-        </View>
-      </View>
-
-      {canPublish ? (
-        <View style={{ paddingHorizontal: spacing.md, gap: 8 }}>
-          <FaceFilterPublisher room={room} />
-          <FilterSelector />
+          <View style={{ gap: 8, marginTop: spacing.sm }}>
+            <FaceFilterPublisher room={room} />
+            <FilterSelector />
+          </View>
         </View>
       ) : null}
 
@@ -463,7 +551,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
-      </View>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -492,6 +580,15 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     maxHeight: '48%',
     justifyContent: 'flex-end',
+  },
+  chatDock: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    backgroundColor: '#000',
+    gap: 4,
+  },
+  chatDockList: {
+    maxHeight: 96,
   },
   chatBubble: {
     backgroundColor: 'rgba(0,0,0,0.45)',

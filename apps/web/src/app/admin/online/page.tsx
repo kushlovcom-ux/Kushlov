@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { MapPin } from 'lucide-react';
 import { Role } from '@kushlov/types';
@@ -24,9 +25,29 @@ interface OnlineUser {
 
 type RoleFilter = 'all' | 'user' | 'host';
 
-export default function AdminOnlinePage() {
+function AdminOnlinePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [q, setQ] = useState('');
-  const [role, setRole] = useState<RoleFilter>('all');
+  const roleFromUrl = searchParams.get('role');
+  const [role, setRole] = useState<RoleFilter>(
+    roleFromUrl === 'user' || roleFromUrl === 'host' ? roleFromUrl : 'all',
+  );
+
+  useEffect(() => {
+    const r = searchParams.get('role');
+    if (r === 'user' || r === 'host') setRole(r);
+    else setRole('all');
+  }, [searchParams]);
+
+  const applyRole = (next: RoleFilter) => {
+    setRole(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === 'all') params.delete('role');
+    else params.set('role', next);
+    const qs = params.toString();
+    router.replace(qs ? `/admin/online?${qs}` : '/admin/online');
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-online', q, role],
@@ -76,7 +97,7 @@ export default function AdminOnlinePage() {
             size="sm"
             variant={role === f.id ? 'default' : 'secondary'}
             className={cn(role === f.id && 'bg-brand-gradient')}
-            onClick={() => setRole(f.id)}
+            onClick={() => applyRole(f.id)}
           >
             {f.label}
             {role === f.id && data != null && (
@@ -134,5 +155,19 @@ export default function AdminOnlinePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function AdminOnlinePageRoute() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6">
+          <Skeleton className="h-64 w-full rounded-2xl" />
+        </div>
+      }
+    >
+      <AdminOnlinePage />
+    </Suspense>
   );
 }

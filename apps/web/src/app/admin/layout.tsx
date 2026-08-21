@@ -18,6 +18,7 @@ import {
   Star,
   DollarSign,
   Gem,
+  IndianRupee,
 } from 'lucide-react';
 import { Logo } from '@kushlov/ui';
 import { cn } from '@/lib/utils';
@@ -35,6 +36,7 @@ const nav = [
   { href: '/admin/verifications', label: 'Host Verifications', icon: ShieldCheck },
   { href: '/admin/reports', label: 'Reports', icon: Flag },
   { href: '/admin/payments', label: 'Payments', icon: CreditCard },
+  { href: '/admin/revenue', label: 'Revenue', icon: IndianRupee },
   { href: '/admin/diamonds', label: 'Send diamonds', icon: Gem },
   { href: '/admin/withdrawals', label: 'Withdrawals', icon: Banknote },
   { href: '/admin/gifts', label: 'Gifts', icon: Gift },

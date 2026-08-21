@@ -51,9 +51,15 @@ export function GoLiveScreen({ navigation }: Props) {
         Start a stream for your audience. Host approval required.
       </Text>
       <Input label="Title" value={title} onChangeText={setTitle} placeholder="Tonight with…" />
-      <View style={{ height: spacing.md }} />
-      <Button title={thumb ? 'Change thumbnail' : 'Add thumbnail'} variant="primary" onPress={pickThumb} />
-      <Button title="Start live" onPress={start} loading={loading} style={{ marginTop: spacing.xl }} />
+      <View style={{ gap: spacing.lg, marginTop: spacing.xl }}>
+        <Button
+          title={thumb ? 'Change thumbnail' : 'Add thumbnail'}
+          variant="secondary"
+          fullWidth
+          onPress={pickThumb}
+        />
+        <Button title="Start live" fullWidth onPress={start} loading={loading} />
+      </View>
     </Screen>
   );
 }

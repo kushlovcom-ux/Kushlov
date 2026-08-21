@@ -135,6 +135,11 @@ export function PublicProfileScreen({ navigation, route }: Props) {
     }
   };
 
+  const onRefresh = useCallback(async () => {
+    await Promise.all([userQ.refetch(), reviewsQ.refetch(), myReview.refetch()]);
+  }, [userQ, reviewsQ, myReview]);
+  const { refreshControl } = useScreenRefresh(onRefresh);
+
   if (userQ.isLoading) {
     return (
       <Screen>
@@ -160,11 +165,6 @@ export function PublicProfileScreen({ navigation, route }: Props) {
   const canReview =
     me?.role === Role.User && isHostProfile && Boolean(myId) && myId !== String(userId);
   const avatarUri = u.avatarUrl;
-
-  const onRefresh = useCallback(async () => {
-    await Promise.all([userQ.refetch(), reviewsQ.refetch(), myReview.refetch()]);
-  }, [userQ, reviewsQ, myReview]);
-  const { refreshControl } = useScreenRefresh(onRefresh);
 
   return (
     <Screen padded={false}>

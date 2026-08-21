@@ -41,7 +41,7 @@ import { notify } from '../../services/notification.service';
 import { uploadBuffer } from '../../services/media.service';
 import { closeRoom } from '../../services/livekit.service';
 import { purgeUserCompletely } from '../../services/user-purge.service';
-import { PRESENCE_ONLINE_MS, sweepStalePresence } from '../../services/presence.service';
+import { PRESENCE_ONLINE_MS, sweepStalePresence, onlineUserFilter } from '../../services/presence.service';
 import { creditDiamonds } from '../../services/wallet.service';
 
 // --------------------------------------------------------------------------
@@ -57,10 +57,17 @@ export const analytics = asyncHandler(async (_req: Request, res: Response) => {
   }
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 864e5);
+  const notDeleted = { status: { $ne: AccountStatus.Deleted } };
+  const onlineFilter = onlineUserFilter();
+  await sweepStalePresence();
+
   const [
     totalUsers,
+    totalNormalUsers,
     totalHosts,
     approvedHosts,
+    onlineNormalUsers,
+    onlineHostUsers,
     liveNow,
     pendingVerifications,
     openReports,
@@ -68,9 +75,12 @@ export const analytics = asyncHandler(async (_req: Request, res: Response) => {
     revenueAgg,
     newUsers7d,
   ] = await Promise.all([
-    User.countDocuments({ role: Role.User }),
-    User.countDocuments({ role: Role.Host }),
-    User.countDocuments({ role: Role.Host, isHostApproved: true }),
+    User.countDocuments({ ...notDeleted, role: { $in: [Role.User, Role.Host] } }),
+    User.countDocuments({ ...notDeleted, role: Role.User }),
+    User.countDocuments({ ...notDeleted, role: Role.Host }),
+    User.countDocuments({ ...notDeleted, role: Role.Host, isHostApproved: true }),
+    User.countDocuments({ ...notDeleted, role: Role.User, ...onlineFilter }),
+    User.countDocuments({ ...notDeleted, role: Role.Host, ...onlineFilter }),
     LiveStream.countDocuments({ status: LiveStatus.Live }),
     VerificationRequest.countDocuments({ status: VerificationStatus.Pending }),
     Report.countDocuments({ status: ReportStatus.Open }),
@@ -79,13 +89,16 @@ export const analytics = asyncHandler(async (_req: Request, res: Response) => {
       { $match: { status: PaymentStatus.Succeeded } },
       { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]),
-    User.countDocuments({ createdAt: { $gte: sevenDaysAgo } }),
+    User.countDocuments({ ...notDeleted, createdAt: { $gte: sevenDaysAgo } }),
   ]);
 
   const data = {
     totalUsers,
+    totalNormalUsers,
     totalHosts,
     approvedHosts,
+    onlineNormalUsers,
+    onlineHostUsers,
     liveNow,
     pendingVerifications,
     openReports,
@@ -431,7 +444,7 @@ export const listPayments = asyncHandler(async (req: Request, res: Response) => 
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('user', 'displayName username email'),
+      .populate('user', 'displayName username email role avatarUrl'),
     Payment.countDocuments(filter),
   ]);
   return ok(res, buildPaginated(items, page, limit, total));

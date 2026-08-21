@@ -146,6 +146,10 @@ export function WalletScreen() {
     onError: (e) => Alert.alert('Withdraw', apiError(e)),
   });
 
+  const onRefresh = useCallback(async () => {
+    await Promise.all([wallet.refetch(), packages.refetch(), tx.refetch()]);
+  }, [wallet, packages, tx]);
+
   if (wallet.isLoading || packages.isLoading) {
     return (
       <Screen>
@@ -166,10 +170,6 @@ export function WalletScreen() {
   }
 
   const txItems: LedgerEntry[] = tx.data?.items ?? [];
-
-  const onRefresh = useCallback(async () => {
-    await Promise.all([wallet.refetch(), packages.refetch(), tx.refetch()]);
-  }, [wallet, packages, tx]);
 
   return (
     <Screen scroll padded={false} onRefresh={onRefresh}>

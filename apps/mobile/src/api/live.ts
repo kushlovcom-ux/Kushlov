@@ -46,6 +46,15 @@ export const liveApi = {
       message: string;
       user?: { displayName?: string; avatarUrl?: string };
     }>(`/live/${id}/chat`, { message }),
+  listChat: (id: string, params?: { after?: string; limit?: number }) =>
+    apiGet<{
+      messages: Array<{
+        _id?: string;
+        id?: string;
+        message: string;
+        user?: { displayName?: string; avatarUrl?: string };
+      }>;
+    }>(`/live/${id}/chat`, { params }),
   like: (id: string) => apiPost<{ likeCount: number }>(`/live/${id}/like`),
   gift: (id: string, giftId: string) =>
     apiPost<{ ok: boolean }>(`/live/${id}/gift`, { giftId }),

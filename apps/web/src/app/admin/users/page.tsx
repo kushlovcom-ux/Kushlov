@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Eye } from 'lucide-react';
@@ -29,13 +29,32 @@ function userIdOf(u: PublicUser & { _id?: string }): string {
   return u.id || u._id || '';
 }
 
-export default function AdminUsersPage() {
+function AdminUsersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const [q, setQ] = useState('');
-  const [role, setRole] = useState<RoleFilter>('all');
+  const roleFromUrl = searchParams.get('role');
+  const [role, setRole] = useState<RoleFilter>(
+    roleFromUrl === 'user' || roleFromUrl === 'host' ? roleFromUrl : 'all',
+  );
   const [deleteTarget, setDeleteTarget] = useState<PublicUser | null>(null);
   const [confirmText, setConfirmText] = useState('');
+
+  useEffect(() => {
+    const r = searchParams.get('role');
+    if (r === 'user' || r === 'host') setRole(r);
+    else setRole('all');
+  }, [searchParams]);
+
+  const applyRole = (next: RoleFilter) => {
+    setRole(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === 'all') params.delete('role');
+    else params.set('role', next);
+    const qs = params.toString();
+    router.replace(qs ? `/admin/users?${qs}` : '/admin/users');
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users', q, role],
@@ -128,7 +147,7 @@ export default function AdminUsersPage() {
             size="sm"
             variant={role === f.id ? 'default' : 'secondary'}
             className={cn(role === f.id && 'bg-brand-gradient')}
-            onClick={() => setRole(f.id)}
+            onClick={() => applyRole(f.id)}
           >
             {f.label}
             {role === f.id && data != null && (
@@ -312,5 +331,19 @@ export default function AdminUsersPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function AdminUsersPageRoute() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6">
+          <Skeleton className="h-64 w-full rounded-2xl" />
+        </div>
+      }
+    >
+      <AdminUsersPage />
+    </Suspense>
   );
 }
