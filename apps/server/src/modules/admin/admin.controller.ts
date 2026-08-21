@@ -583,9 +583,19 @@ export const deleteGift = asyncHandler(async (req: Request, res: Response) => {
 // --------------------------------------------------------------------------
 export const listAllLive = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
+  const { status } = req.query as Record<string, string>;
+  const filter: Record<string, unknown> = {};
+  if (status === LiveStatus.Live || status === LiveStatus.Ended || status === LiveStatus.Scheduled) {
+    filter.status = status;
+  }
   const [items, total] = await Promise.all([
-    LiveStream.find().sort({ createdAt: -1 }).skip(skip).limit(limit).populate('host', 'displayName username'),
-    LiveStream.countDocuments(),
+    LiveStream.find(filter)
+      .sort({ startedAt: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('host', 'displayName username avatarUrl role')
+      .populate('coHost', 'displayName username avatarUrl role'),
+    LiveStream.countDocuments(filter),
   ]);
   return ok(res, buildPaginated(items, page, limit, total));
 });

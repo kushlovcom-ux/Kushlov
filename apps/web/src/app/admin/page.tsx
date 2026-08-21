@@ -112,6 +112,7 @@ export default function AdminDashboard() {
       value: formatCompact(data?.liveNow ?? 0),
       icon: Radio,
       color: 'text-red-400',
+      href: '/admin/live',
     },
     {
       label: 'New users (7d)',

@@ -19,6 +19,7 @@ import {
   DollarSign,
   Gem,
   IndianRupee,
+  Radio,
 } from 'lucide-react';
 import { Logo } from '@kushlov/ui';
 import { cn } from '@/lib/utils';
@@ -33,6 +34,7 @@ const nav = [
   { href: '/admin/hosts', label: 'Host Pricing', icon: DollarSign },
   { href: '/admin/reviews', label: 'Reviews', icon: Star },
   { href: '/admin/online', label: 'Online now', icon: CircleDot },
+  { href: '/admin/live', label: 'Live now', icon: Radio },
   { href: '/admin/verifications', label: 'Host Verifications', icon: ShieldCheck },
   { href: '/admin/reports', label: 'Reports', icon: Flag },
   { href: '/admin/payments', label: 'Payments', icon: CreditCard },
