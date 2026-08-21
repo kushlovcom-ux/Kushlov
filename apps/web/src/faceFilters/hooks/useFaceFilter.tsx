@@ -69,7 +69,7 @@ export function FaceFilterProvider({ children }: { children: ReactNode }) {
   const setActiveFilterId = useCallback((id: FaceFilterId) => {
     setActiveFilterIdState(id);
     setSettings((prev) => {
-      const next = { ...prev, lastFilterId: id };
+      const next = { ...prev, lastFilterId: id, enabled: id === 'none' ? prev.enabled : true };
       saveSettings(next);
       return next;
     });

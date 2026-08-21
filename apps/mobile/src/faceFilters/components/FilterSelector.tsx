@@ -8,10 +8,7 @@ import {
   View,
 } from 'react-native';
 import { FACE_FILTER_CATALOG, FILTER_CATEGORIES } from '../catalog';
-import {
-  selectEffectiveFilterId,
-  useFaceFilterStore,
-} from '../hooks/useFaceFilter';
+import { useFaceFilterStore } from '../hooks/useFaceFilter';
 import type { FaceFilterCategory, FaceFilterId } from '../types';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { spacing } from '@/theme';
@@ -27,8 +24,9 @@ export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
   const panelOpen = useFaceFilterStore((s) => s.panelOpen);
   const setPanelOpen = useFaceFilterStore((s) => s.setPanelOpen);
   const settings = useFaceFilterStore((s) => s.settings);
-  const activeFilterId = useFaceFilterStore(selectEffectiveFilterId);
+  const activeFilterId = useFaceFilterStore((s) => s.activeFilterId);
   const setActiveFilterId = useFaceFilterStore((s) => s.setActiveFilterId);
+  const setEnabled = useFaceFilterStore((s) => s.setEnabled);
   const toggleFavorite = useFaceFilterStore((s) => s.toggleFavorite);
   const setEnabled = useFaceFilterStore((s) => s.setEnabled);
   const faceDetected = useFaceFilterStore((s) => s.faceDetected);
@@ -116,7 +114,10 @@ export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
                 return (
                   <Pressable
                     key={f.id}
-                    onPress={() => setActiveFilterId(f.id as FaceFilterId)}
+                    onPress={() => {
+                      if (f.id !== 'none') setEnabled(true);
+                      setActiveFilterId(f.id as FaceFilterId);
+                    }}
                     onLongPress={() => {
                       if (f.id !== 'none') toggleFavorite(f.id as FaceFilterId);
                     }}

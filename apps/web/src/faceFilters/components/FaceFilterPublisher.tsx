@@ -36,7 +36,7 @@ export function FaceFilterPublisher() {
       if (!ctrlRef.current) {
         try {
           ctrlRef.current = await startProcessedVideoTrack(localParticipant, {
-            mirrored: true,
+            mirrored: false,
             maxFps: 30,
           });
         } catch {

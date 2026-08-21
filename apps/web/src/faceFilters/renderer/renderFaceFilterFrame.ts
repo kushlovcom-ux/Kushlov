@@ -1,4 +1,5 @@
 import type { FaceBox, FaceFilterDef } from '../types';
+import { layoutFilter } from '../layout';
 
 /** Draw camera frame + privacy FX / sticker onto canvas (normalized face box 0–1). */
 export function renderFaceFilterFrame(
@@ -21,28 +22,29 @@ export function renderFaceFilterFrame(
 
   if (!filter || !box) return;
 
-  const fx = box.cx * w;
-  const fy = box.cy * h;
-  const fw = box.width * w * filter.scale;
-  const fh = box.height * h * filter.scale;
-  const yOff = (filter.yOffset ?? 0) * box.height * h;
+  const layout = layoutFilter(box, filter, w, h);
 
   if (filter.privacy) {
-    const x = fx - fw / 2;
-    const y = fy - fh / 2 + yOff;
-    applyPrivacy(ctx, x, y, fw, fh, filter.privacy);
+    applyPrivacy(
+      ctx,
+      layout.x - layout.w / 2,
+      layout.y - layout.h / 2,
+      layout.w,
+      layout.h,
+      filter.privacy,
+      layout.rotation,
+    );
   }
 
   if (filter.emoji && filter.emoji !== '✕' && !filter.beauty) {
     ctx.save();
-    ctx.translate(fx, fy + yOff);
-    ctx.rotate((box.rotation * Math.PI) / 180);
-    const size = Math.max(fw, fh);
-    ctx.font = `${Math.round(size * 0.95)}px serif`;
+    ctx.translate(layout.x, layout.y);
+    ctx.rotate((layout.rotation * Math.PI) / 180);
+    ctx.font = `${Math.round(layout.fontSize)}px "Segoe UI Emoji", "Apple Color Emoji", serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = 10;
     ctx.fillText(filter.emoji, 0, 0);
     ctx.restore();
   }
@@ -55,32 +57,39 @@ function applyPrivacy(
   w: number,
   h: number,
   mode: 'pixel' | 'mosaic' | 'blur' | 'solid',
+  rotation = 0,
 ) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
   const ix = Math.max(0, Math.floor(x));
   const iy = Math.max(0, Math.floor(y));
   const iw = Math.max(1, Math.floor(w));
   const ih = Math.max(1, Math.floor(h));
 
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+
   if (mode === 'solid') {
     ctx.fillStyle = '#111';
-    ctx.beginPath();
-    ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
     ctx.fill();
-    return;
-  }
-
-  if (mode === 'blur') {
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.filter = 'blur(14px)';
-    ctx.drawImage(ctx.canvas, ix, iy, iw, ih, ix, iy, iw, ih);
     ctx.restore();
     return;
   }
 
-  // pixel / mosaic
+  ctx.clip();
+  ctx.rotate((-rotation * Math.PI) / 180);
+  ctx.translate(-cx, -cy);
+
+  if (mode === 'blur') {
+    ctx.filter = 'blur(16px)';
+    ctx.drawImage(ctx.canvas, ix, iy, iw, ih, ix - 8, iy - 8, iw + 16, ih + 16);
+    ctx.restore();
+    return;
+  }
+
   const block = mode === 'mosaic' ? 14 : 10;
   try {
     const img = ctx.getImageData(ix, iy, iw, ih);
@@ -106,4 +115,5 @@ function applyPrivacy(
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(ix, iy, iw, ih);
   }
+  ctx.restore();
 }

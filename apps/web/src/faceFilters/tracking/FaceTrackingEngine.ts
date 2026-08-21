@@ -1,4 +1,5 @@
 import type { FaceBox, FaceLandmarkPoint } from '../types';
+import { DEFAULT_FACE_BOX, enrichFaceBox, smoothBox } from '../layout';
 
 type Landmarker = {
   detectForVideo: (
@@ -35,52 +36,16 @@ export function getFaceLandmarker() {
   return landmarkerPromise;
 }
 
-export const DEFAULT_FACE_BOX: FaceBox = {
-  cx: 0.5,
-  cy: 0.36,
-  width: 0.42,
-  height: 0.48,
-  rotation: 0,
-};
+export { DEFAULT_FACE_BOX };
 
 export function boxFromLandmarks(
   landmarks: FaceLandmarkPoint[],
   mirrored = false,
 ): FaceBox {
-  let minX = 1;
-  let minY = 1;
-  let maxX = 0;
-  let maxY = 0;
-  const pts = landmarks.map((p) => ({
-    x: mirrored ? 1 - p.x : p.x,
-    y: p.y,
-    z: p.z,
-  }));
-  for (const p of pts) {
-    minX = Math.min(minX, p.x);
-    maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y);
-    maxY = Math.max(maxY, p.y);
-  }
-  const rightEye = landmarks[33];
-  const leftEye = landmarks[263];
-  let rotation = 0;
-  if (rightEye && leftEye) {
-    const rx = mirrored ? 1 - rightEye.x : rightEye.x;
-    const lx = mirrored ? 1 - leftEye.x : leftEye.x;
-    rotation = (Math.atan2(leftEye.y - rightEye.y, lx - rx) * 180) / Math.PI;
-  }
-  return {
-    cx: (minX + maxX) / 2,
-    cy: (minY + maxY) / 2,
-    width: Math.max(0.12, maxX - minX),
-    height: Math.max(0.14, maxY - minY),
-    rotation,
-    landmarks: pts,
-  };
+  return enrichFaceBox(landmarks, mirrored);
 }
 
-/** Abstract tracking engine — swap MediaPipe later without UI changes. */
+/** MediaPipe tracker with Snapchat-style smoothing. */
 export class FaceTrackingEngine {
   private lastTs = 0;
   private lastBox: FaceBox | null = null;
@@ -93,7 +58,7 @@ export class FaceTrackingEngine {
       return this.lastBox;
     }
     const now = performance.now();
-    if (now - this.lastTs < 28) return this.lastBox;
+    if (now - this.lastTs < 24) return this.lastBox;
     this.lastTs = now;
     try {
       const result = landmarker.detectForVideo(video, now);
@@ -102,7 +67,8 @@ export class FaceTrackingEngine {
         this.lastBox = null;
         return null;
       }
-      this.lastBox = boxFromLandmarks(face, mirrored);
+      const next = boxFromLandmarks(face, mirrored);
+      this.lastBox = smoothBox(this.lastBox, next, 0.45);
       return this.lastBox;
     } catch {
       return this.lastBox;

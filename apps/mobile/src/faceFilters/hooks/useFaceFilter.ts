@@ -61,7 +61,12 @@ export const useFaceFilterStore = create<FaceFilterStore>((set, get) => ({
     set({ hydrated: true });
   },
   setActiveFilterId: (id) => {
-    const settings = { ...get().settings, lastFilterId: id };
+    const prev = get().settings;
+    const settings = {
+      ...prev,
+      lastFilterId: id,
+      enabled: id === 'none' ? prev.enabled : true,
+    };
     set({ activeFilterId: id, settings });
     void persist(settings);
   },

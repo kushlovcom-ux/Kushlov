@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import type { Participant } from 'livekit-client';
 import { getFilterDef } from '../catalog';
+import { heuristicFaceBox, layoutFilter } from '../layout';
 import { FACE_FILTER_ATTR } from '../types';
 import { useFaceFilterStore, selectEffectiveFilterId } from '../hooks/useFaceFilter';
 
@@ -11,8 +12,8 @@ type OverlayProps = {
 };
 
 /**
- * Client-side face sticker / privacy mask when bitstream processing is unavailable.
- * Remotes render this from LiveKit attributes; local uses the active filter store.
+ * Snapchat-style sticker locked to a face region (eyes / forehead / mouth / full face).
+ * Uses a selfie heuristic box when native ML tracking is unavailable.
  */
 export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) {
   const filter = getFilterDef(filterId);
@@ -24,53 +25,61 @@ export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) 
   };
 
   const layout = useMemo(() => {
-    if (!filter || size.w < 8 || size.h < 8) return null;
-    const fw = size.w * 0.42 * filter.scale;
-    const fh = size.h * 0.48 * filter.scale;
-    const cx = size.w * (mirrored ? 0.5 : 0.5);
-    const cy = size.h * (0.34 + (filter.yOffset ?? 0) * 0.5);
-    return {
-      left: cx - fw / 2,
-      top: cy - fh / 2,
-      width: fw,
-      height: fh,
-      fontSize: Math.min(fw, fh) * 0.9,
-    };
+    if (!filter || filter.beauty || size.w < 8 || size.h < 8) return null;
+    const box = heuristicFaceBox();
+    if (mirrored && box.eyes) {
+      box.eyes = { ...box.eyes, cx: 1 - box.eyes.cx };
+    }
+    return layoutFilter(box, filter, size.w, size.h);
   }, [filter, size.w, size.h, mirrored]);
 
-  if (!filter || !layout) return null;
+  if (!filter) return null;
 
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={onLayout}>
+  if (filter.beauty) {
+    return (
+      <View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255, 200, 220, 0.08)' }]}
+      />
+    );
+  }
+
+  if (!layout) return null;
+
+  const sticker = (
+    <View
+      style={{
+        position: 'absolute',
+        left: layout.x - layout.w / 2,
+        top: layout.y - layout.h / 2,
+        width: layout.w,
+        height: layout.h,
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: [{ rotate: `${layout.rotation}deg` }],
+      }}
+    >
       {filter.privacy ? (
         <View
           style={{
-            position: 'absolute',
-            left: layout.left,
-            top: layout.top,
-            width: layout.width,
-            height: layout.height,
-            borderRadius: layout.width / 2,
+            ...StyleSheet.absoluteFillObject,
+            borderRadius: Math.min(layout.w, layout.h) / 2,
             backgroundColor:
               filter.privacy === 'solid'
                 ? '#111'
                 : filter.privacy === 'blur'
-                  ? 'rgba(255,255,255,0.25)'
+                  ? 'rgba(255,255,255,0.28)'
                   : 'rgba(0,0,0,0.45)',
           }}
         />
       ) : null}
-      {!filter.beauty && filter.emoji ? (
+      {filter.emoji ? (
         <Text
+          allowFontScaling={false}
           style={{
-            position: 'absolute',
-            left: layout.left,
-            top: layout.top,
-            width: layout.width,
-            height: layout.height,
             fontSize: layout.fontSize,
             textAlign: 'center',
-            lineHeight: layout.height,
+            includeFontPadding: false,
             textShadowColor: 'rgba(0,0,0,0.45)',
             textShadowOffset: { width: 0, height: 2 },
             textShadowRadius: 6,
@@ -79,25 +88,22 @@ export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) 
           {filter.emoji}
         </Text>
       ) : null}
-      {filter.beauty ? (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: 'rgba(255, 200, 220, 0.08)' },
-          ]}
-        />
-      ) : null}
+    </View>
+  );
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={onLayout}>
+      {sticker}
     </View>
   );
 }
 
 export function useParticipantFaceFilter(participant: Participant | null | undefined) {
-  const [filterId, setFilterId] = useState(
+  const [filterId, setFilterId] = React.useState(
     () => participant?.attributes?.[FACE_FILTER_ATTR] || '',
   );
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!participant) {
       setFilterId('');
       return;
