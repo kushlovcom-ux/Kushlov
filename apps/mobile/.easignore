@@ -39,3 +39,7 @@ packages/*/dist/**
 docs/**
 .cursor/**
 *.canvas.tsx
+
+# EAS defaults to Yarn when no lockfile is in the app directory.
+!pnpm-lock.yaml
+!.npmrc

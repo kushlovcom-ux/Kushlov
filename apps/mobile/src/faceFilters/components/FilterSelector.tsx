@@ -28,7 +28,6 @@ export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
   const setActiveFilterId = useFaceFilterStore((s) => s.setActiveFilterId);
   const setEnabled = useFaceFilterStore((s) => s.setEnabled);
   const toggleFavorite = useFaceFilterStore((s) => s.toggleFavorite);
-  const setEnabled = useFaceFilterStore((s) => s.setEnabled);
   const faceDetected = useFaceFilterStore((s) => s.faceDetected);
   const hydrate = useFaceFilterStore((s) => s.hydrate);
   const hydrated = useFaceFilterStore((s) => s.hydrated);

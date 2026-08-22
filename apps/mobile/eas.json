@@ -4,7 +4,11 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "base": {
+      "pnpm": "11.10.0"
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
       "env": {
@@ -28,6 +32,7 @@
       }
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
@@ -50,6 +55,7 @@
       }
     },
     "production": {
+      "extends": "base",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "338864282655-tqtkmddmqc3jci2pjaaqd6hgo841jjt2.apps.googleusercontent.com",
@@ -69,6 +75,7 @@
       }
     },
     "production-apk": {
+      "extends": "base",
       "autoIncrement": true,
       "distribution": "internal",
       "env": {
