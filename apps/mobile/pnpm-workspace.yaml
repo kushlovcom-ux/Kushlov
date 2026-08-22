@@ -1,0 +1,12 @@
+# EAS runs pnpm in this directory as a standalone project (no monorepo root).
+# pnpm 11 reads allowBuilds from this file; without it, frozen install fails with
+# ERR_PNPM_IGNORED_BUILDS for packages that still ship lifecycle scripts.
+nodeLinker: hoisted
+strictDepBuilds: false
+allowBuilds:
+  "@firebase/util": true
+  protobufjs: true
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  "@tailwindcss/oxide": true

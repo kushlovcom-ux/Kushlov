@@ -42,4 +42,5 @@ docs/**
 
 # EAS defaults to Yarn when no lockfile is in the app directory.
 !pnpm-lock.yaml
+!pnpm-workspace.yaml
 !.npmrc
