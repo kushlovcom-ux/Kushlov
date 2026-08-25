@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["KushlovFaceTrackModule"]
+  },
+  "android": {
+    "modules": ["com.kushlov.facetrack.KushlovFaceTrackModule"]
+  }
+}

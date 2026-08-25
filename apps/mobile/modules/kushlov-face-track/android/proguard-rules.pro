@@ -1,0 +1,4 @@
+-keep class com.kushlov.facetrack.** { *; }
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_face.** { *; }
+-dontwarn com.google.mlkit.**

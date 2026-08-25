@@ -92,6 +92,33 @@ export function heuristicFaceBox(): FaceBox {
   return withHeuristicAnchors(box);
 }
 
+/** Build a FaceBox from a detector rectangle (normalized 0–1) plus optional anchors. */
+export function boxFromDetection(input: {
+  cx: number;
+  cy: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  eyes?: FaceBox['eyes'];
+  forehead?: FaceBox['forehead'];
+  mouth?: FaceBox['mouth'];
+  nose?: FaceBox['nose'];
+}): FaceBox {
+  const width = Math.max(0.12, Math.min(0.95, input.width));
+  const height = Math.max(0.14, Math.min(0.95, input.height));
+  return withHeuristicAnchors({
+    cx: Math.max(0.05, Math.min(0.95, input.cx)),
+    cy: Math.max(0.05, Math.min(0.95, input.cy)),
+    width,
+    height,
+    rotation: input.rotation ?? 0,
+    eyes: input.eyes,
+    forehead: input.forehead,
+    mouth: input.mouth,
+    nose: input.nose,
+  });
+}
+
 export function withHeuristicAnchors(box: FaceBox): FaceBox {
   return {
     ...box,

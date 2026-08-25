@@ -1,0 +1,29 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+android {
+  namespace "com.kushlov.facetrack"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+    consumerProguardFiles "proguard-rules.pro"
+  }
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+}
+
+dependencies {
+  def webrtc = rootProject.subprojects.find { it.name.contains("react-native-webrtc") }
+  if (webrtc != null) {
+    compileOnly webrtc
+  } else {
+    throw new GradleException(
+      "kushlov-face-track requires @livekit/react-native-webrtc to be autolinked"
+    )
+  }
+  implementation "com.google.mlkit:face-detection:16.1.7"
+}

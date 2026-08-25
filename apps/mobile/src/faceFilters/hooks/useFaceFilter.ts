@@ -22,6 +22,8 @@ type FaceFilterStore = {
   /** identity → filter id from LiveKit attributes / data packets */
   remoteFilters: Record<string, string>;
   remoteBoxes: Record<string, FaceBox>;
+  /** Live local detector box (null = no face this frame). */
+  localFaceBox: FaceBox | null;
   hydrate: () => Promise<void>;
   setActiveFilterId: (id: FaceFilterId) => void;
   toggleFavorite: (id: FaceFilterId) => void;
@@ -29,6 +31,7 @@ type FaceFilterStore = {
   setPanelOpen: (v: boolean) => void;
   setFaceDetected: (v: boolean) => void;
   setLowBattery: (v: boolean) => void;
+  setLocalFaceBox: (box: FaceBox | null) => void;
   setRemoteFilter: (identity: string, id: string, box?: FaceBox | null) => void;
   clearRemoteFilters: () => void;
 };
@@ -46,10 +49,11 @@ export const useFaceFilterStore = create<FaceFilterStore>((set, get) => ({
   settings: defaults,
   activeFilterId: 'none',
   panelOpen: false,
-  faceDetected: true,
+  faceDetected: false,
   lowBattery: false,
   remoteFilters: {},
   remoteBoxes: {},
+  localFaceBox: null,
   hydrate: async () => {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -98,6 +102,7 @@ export const useFaceFilterStore = create<FaceFilterStore>((set, get) => ({
   setPanelOpen: (panelOpen) => set({ panelOpen }),
   setFaceDetected: (faceDetected) => set({ faceDetected }),
   setLowBattery: (lowBattery) => set({ lowBattery }),
+  setLocalFaceBox: (localFaceBox) => set({ localFaceBox }),
   setRemoteFilter: (identity, id, box) => {
     const key = String(identity || '');
     if (!key) return;

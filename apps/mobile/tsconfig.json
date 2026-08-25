@@ -5,6 +5,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "kushlov-face-track": [
+        "./modules/kushlov-face-track/src/index.ts"
       ]
     },
     "types": [

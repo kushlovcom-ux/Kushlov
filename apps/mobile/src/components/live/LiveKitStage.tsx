@@ -8,6 +8,7 @@ import {
   useParticipantFaceBox,
 } from '@/faceFilters/components/FaceFilterOverlay';
 import { FaceFilterRoomSync } from '@/faceFilters/components/FaceFilterRoomSync';
+import { useFaceFilterStore } from '@/faceFilters/hooks/useFaceFilter';
 import { getLiveKitRn, preloadLiveKitNative } from '@/services/livekit';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { Room } from 'livekit-client';
@@ -379,6 +380,7 @@ function ParticipantVideoTile({
   const participant = (trackRef as { participant: Participant }).participant;
   const filterId = useLocalOrRemoteFaceFilter(participant);
   const remoteBox = useParticipantFaceBox(isLocal ? null : participant);
+  const localBox = useFaceFilterStore((s) => (isLocal ? s.localFaceBox : null));
   let role: string | undefined;
   try {
     role = participant.metadata
@@ -408,7 +410,7 @@ function ParticipantVideoTile({
         <FaceFilterOverlay
           filterId={filterId}
           mirrored={isLocal}
-          faceBox={isLocal ? undefined : remoteBox}
+          faceBox={isLocal ? localBox : remoteBox}
         />
       </View>
       {multi || pip ? (

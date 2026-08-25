@@ -1,0 +1,15 @@
+{
+  "name": "kushlov-face-track",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "react-native": "src/index.ts",
+  "description": "LiveKit WebRTC face tracking via VideoFrameProcessor + ML Kit / Vision",
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

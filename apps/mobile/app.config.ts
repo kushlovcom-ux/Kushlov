@@ -105,6 +105,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             extraProguardRules: [
               '-keep class com.razorpay.** { *; }',
               '-keep class com.google.android.gms.** { *; }',
+              '-keep class com.google.mlkit.** { *; }',
+              '-keep class com.kushlov.facetrack.** { *; }',
               '-keep class io.livekit.** { *; }',
               '-dontwarn com.razorpay.**',
               '-dontwarn org.webrtc.**',

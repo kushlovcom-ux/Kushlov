@@ -14,6 +14,7 @@ module.exports = function (api) {
           root: ['./'],
           alias: {
             '@': './src',
+            'kushlov-face-track': './modules/kushlov-face-track/src/index.ts',
           },
           extensions: [
             '.ios.js',

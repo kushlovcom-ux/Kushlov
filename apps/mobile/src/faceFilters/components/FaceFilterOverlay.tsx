@@ -3,6 +3,7 @@ import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Participant } from 'livekit-client';
+import { isFaceTrackNativeAvailable } from 'kushlov-face-track';
 import { getFilterDef } from '../catalog';
 import { heuristicFaceBox, layoutFilter, layoutFilterLayers, parseFaceBox } from '../layout';
 import { FACE_FILTER_ATTR, FACE_FILTER_BOX_ATTR, type FaceBox, type FaceFilterDef } from '../types';
@@ -41,28 +42,37 @@ export function FaceFilterOverlay({ filterId, mirrored = false, faceBox }: Overl
     setSize((prev) => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
   };
 
-  const box = useMemo(() => {
-    const next = faceBox ?? heuristicFaceBox();
-    if (!mirrored) return next;
-    return {
-      ...next,
-      cx: 1 - next.cx,
-      rotation: -next.rotation,
-      eyes: next.eyes ? { ...next.eyes, cx: 1 - next.eyes.cx } : next.eyes,
-      forehead: next.forehead ? { ...next.forehead, cx: 1 - next.forehead.cx } : next.forehead,
-      mouth: next.mouth ? { ...next.mouth, cx: 1 - next.mouth.cx } : next.mouth,
-      nose: next.nose ? { ...next.nose, cx: 1 - next.nose.cx } : next.nose,
-    };
+  const resolved = useMemo(() => {
+    if (faceBox) return faceBox;
+    // Local tiles with native tracking wait for a real face instead of a fixed box.
+    if (mirrored && isFaceTrackNativeAvailable()) return null;
+    return heuristicFaceBox();
   }, [faceBox, mirrored]);
 
+  const box = useMemo(() => {
+    if (!resolved) return null;
+    if (!mirrored) return resolved;
+    return {
+      ...resolved,
+      cx: 1 - resolved.cx,
+      rotation: -resolved.rotation,
+      eyes: resolved.eyes ? { ...resolved.eyes, cx: 1 - resolved.eyes.cx } : resolved.eyes,
+      forehead: resolved.forehead
+        ? { ...resolved.forehead, cx: 1 - resolved.forehead.cx }
+        : resolved.forehead,
+      mouth: resolved.mouth ? { ...resolved.mouth, cx: 1 - resolved.mouth.cx } : resolved.mouth,
+      nose: resolved.nose ? { ...resolved.nose, cx: 1 - resolved.nose.cx } : resolved.nose,
+    };
+  }, [resolved, mirrored]);
+
   const layers = useMemo(() => {
-    if (!filter || filter.beauty || filter.background || size.w < 8 || size.h < 8) return [];
+    if (!box || !filter || filter.beauty || filter.background || size.w < 8 || size.h < 8) return [];
     if (filter.layers?.length) return layoutFilterLayers(box, filter, size.w, size.h);
     return [];
   }, [filter, box, size.w, size.h]);
 
   const privacyLayout = useMemo(() => {
-    if (!filter?.privacy || size.w < 8 || size.h < 8) return null;
+    if (!box || !filter?.privacy || size.w < 8 || size.h < 8) return null;
     return layoutFilter(box, filter, size.w, size.h);
   }, [filter, box, size.w, size.h]);
 
