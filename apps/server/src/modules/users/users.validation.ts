@@ -30,6 +30,10 @@ export const updateProfileSchema = z.object({
     .optional(),
 });
 
+export const registerPushTokenSchema = z.object({
+  token: z.string().min(20).max(200),
+});
+
 export const updateLocationSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),

@@ -73,6 +73,8 @@ export const usersApi = {
   updateLocation: (body: { lat: number; lng: number; city?: string; country?: string }) =>
     apiPost<UserLocation>('/users/me/location', body),
   pingPresence: () => apiPost<{ ok: boolean }>('/users/me/presence'),
+  registerPushToken: (token: string) =>
+    apiPost<{ ok: boolean }>('/users/me/push-token', { token }),
   uploadAvatar: async (uri: string, mimeType = 'image/jpeg', name = 'avatar.jpg') => {
     const form = new FormData();
     form.append('file', { uri, type: mimeType, name } as unknown as Blob);

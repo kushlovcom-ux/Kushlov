@@ -39,6 +39,7 @@ export function GoogleSignInButton() {
       toast.error('Google sign-in is not configured. Add NEXT_PUBLIC_FIREBASE_* vars and restart the dev server.');
       return;
     }
+    if (loading || googleLogin.isPending) return;
     setLoading(true);
     try {
       await googleLogin.mutateAsync();

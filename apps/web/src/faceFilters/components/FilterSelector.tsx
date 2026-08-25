@@ -69,7 +69,7 @@ export function FilterSelector({ className }: { className?: string }) {
           </Button>
         </div>
       </div>
-      {!faceDetected && activeFilterId !== 'none' ? (
+      {!faceDetected && activeFilterId !== 'none' && !String(activeFilterId).startsWith('bg') ? (
         <p className="text-center text-[11px] text-amber-300">Face not detected — retrying…</p>
       ) : null}
       <div className="flex flex-wrap gap-1">
@@ -95,7 +95,10 @@ export function FilterSelector({ className }: { className?: string }) {
               key={f.id}
               type="button"
               title={f.name}
-              onClick={() => setActiveFilterId(f.id as FaceFilterId)}
+              onClick={() => {
+                setActiveFilterId(f.id as FaceFilterId);
+                setPanelOpen(false);
+              }}
               className={cn(
                 'relative flex flex-col items-center gap-1 rounded-xl border p-2 text-center',
                 on ? 'border-brand-pink bg-brand-pink/20' : 'border-white/10 bg-white/5',

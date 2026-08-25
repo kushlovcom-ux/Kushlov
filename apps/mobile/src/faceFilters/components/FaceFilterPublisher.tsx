@@ -20,52 +20,28 @@ type Props = {
 export function FaceFilterPublisher({ room }: Props) {
   const filterId = useFaceFilterStore(selectEffectiveFilterId);
   const setFaceDetected = useFaceFilterStore((s) => s.setFaceDetected);
-  const setLowBattery = useFaceFilterStore((s) => s.setLowBattery);
   const ctrlRef = useRef<ProcessedTrackController | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // Soft-load expo-battery when present (EAS builds may include it later).
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const battery = require('expo-battery');
-        const level = await battery.getBatteryLevelAsync?.();
-        const lowPower = await battery.isLowPowerModeEnabledAsync?.();
-        if (!cancelled && (lowPower || (typeof level === 'number' && level >= 0 && level < 0.15))) {
-          setLowBattery(true);
-        }
-      } catch {
-        /* package optional */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [setLowBattery]);
+  const startingRef = useRef<Promise<ProcessedTrackController> | null>(null);
 
   useEffect(() => {
     if (!room) return;
     let cancelled = false;
 
     const run = async () => {
-      if (filterId === 'none') {
-        if (ctrlRef.current) {
-          await ctrlRef.current.stop();
-          ctrlRef.current = null;
+      try {
+        if (!ctrlRef.current) {
+          if (!startingRef.current) {
+            startingRef.current = startProcessedVideoTrack(room);
+          }
+          ctrlRef.current = await startingRef.current;
         }
-        return;
+        if (cancelled) return;
+        // Attribute + overlay apply immediately; do not tear down on "none".
+        void ctrlRef.current.setFilter(filterId);
+        setFaceDetected(true);
+      } catch {
+        startingRef.current = null;
       }
-      if (!ctrlRef.current) {
-        try {
-          ctrlRef.current = await startProcessedVideoTrack(room);
-        } catch {
-          return;
-        }
-      }
-      if (cancelled) return;
-      await ctrlRef.current.setFilter(filterId);
-      setFaceDetected(ctrlRef.current.faceDetected());
     };
 
     void run();
@@ -78,8 +54,9 @@ export function FaceFilterPublisher({ room }: Props) {
     return () => {
       void ctrlRef.current?.stop();
       ctrlRef.current = null;
+      startingRef.current = null;
     };
-  }, []);
+  }, [room]);
 
   return null;
 }

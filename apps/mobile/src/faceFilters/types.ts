@@ -7,7 +7,8 @@ export type FaceFilterCategory =
   | 'beauty'
   | 'animals'
   | 'masks'
-  | 'trending';
+  | 'trending'
+  | 'backgrounds';
 
 export type FaceFilterId =
   | 'none'
@@ -27,7 +28,13 @@ export type FaceFilterId =
   | 'heartGlasses'
   | 'rainbowGlasses'
   | 'smoothSkin'
-  | 'beauty';
+  | 'beauty'
+  | 'bgBlur'
+  | 'bgDim'
+  | 'bgSunset'
+  | 'bgNight'
+  | 'bgStudio'
+  | 'bgNeon';
 
 export type FaceLandmarkPoint = { x: number; y: number; z?: number };
 
@@ -56,6 +63,8 @@ export type FaceFilterDef = {
   anchor?: FilterAnchor;
   privacy?: 'pixel' | 'mosaic' | 'blur' | 'solid';
   beauty?: boolean;
+  /** Full-frame scene grade / virtual-background wash. */
+  background?: 'blur' | 'dim' | 'sunset' | 'night' | 'studio' | 'neon';
 };
 
 export type FaceFilterSettings = {

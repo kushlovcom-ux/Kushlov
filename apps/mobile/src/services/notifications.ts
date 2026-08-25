@@ -6,7 +6,9 @@ import { env } from '@/config/env';
 export const CALL_NOTIFICATION_CATEGORY = 'incoming_call';
 export const CALL_ACTION_ACCEPT = 'accept';
 export const CALL_ACTION_DECLINE = 'decline';
-export const CALLS_CHANNEL_ID = 'calls';
+/** New channel id so Android 8+ picks up the custom ringtone (channel sound is immutable). */
+export const CALLS_CHANNEL_ID = 'incoming_calls';
+const CALL_SOUND = 'incoming-call.wav';
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
@@ -34,16 +36,18 @@ export async function setupCallNotifications(): Promise<void> {
       await Notifications.setNotificationChannelAsync(CALLS_CHANNEL_ID, {
         name: 'Incoming calls',
         importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 400, 200, 400],
+        vibrationPattern: [0, 400, 200, 400, 200, 400],
         lightColor: '#22c55e',
-        sound: 'default',
+        sound: 'incoming-call',
+        enableVibrate: true,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
+        name: 'Messages & activity',
+        importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#ec4899',
+        sound: 'default',
       });
     }
 
@@ -69,7 +73,13 @@ export async function ensureNotificationPermissions(): Promise<boolean> {
   if (!Device.isDevice) return false;
   const { status: existing } = await Notifications.getPermissionsAsync();
   if (existing === 'granted') return true;
-  const { status } = await Notifications.requestPermissionsAsync();
+  const { status } = await Notifications.requestPermissionsAsync({
+    ios: {
+      allowAlert: true,
+      allowBadge: true,
+      allowSound: true,
+    },
+  });
   return status === 'granted';
 }
 
@@ -139,7 +149,7 @@ export async function presentIncomingCallNotification(
           interrupt: payload.interrupt === true,
         },
         categoryIdentifier: CALL_NOTIFICATION_CATEGORY,
-        sound: true,
+        sound: Platform.OS === 'ios' ? 'defaultRingtone' : CALL_SOUND,
         ...(Platform.OS === 'android'
           ? {
               channelId: CALLS_CHANNEL_ID,

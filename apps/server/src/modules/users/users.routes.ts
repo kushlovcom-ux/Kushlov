@@ -4,7 +4,12 @@ import { validate } from '../../middleware/validate';
 import { uploadImage, uploadMedia } from '../../middleware/upload';
 import { searchLimiter } from '../../middleware/rateLimit';
 import * as ctrl from './users.controller';
-import { updateMeSchema, updateProfileSchema, updateLocationSchema } from './users.validation';
+import {
+  updateMeSchema,
+  updateProfileSchema,
+  updateLocationSchema,
+  registerPushTokenSchema,
+} from './users.validation';
 
 const router = Router();
 router.use(authenticate);
@@ -21,6 +26,7 @@ router.get('/me/profile', ctrl.getMyProfile);
 router.get('/me/location', ctrl.getMyLocation);
 router.post('/me/location', validate({ body: updateLocationSchema }), ctrl.updateMyLocation);
 router.post('/me/presence', ctrl.pingPresence);
+router.post('/me/push-token', validate({ body: registerPushTokenSchema }), ctrl.registerPushToken);
 router.patch('/me/profile', validate({ body: updateProfileSchema }), ctrl.updateMyProfile);
 router.post('/me/avatar', uploadImage.single('file'), ctrl.uploadAvatar);
 router.post('/me/cover', uploadImage.single('file'), ctrl.uploadCover);

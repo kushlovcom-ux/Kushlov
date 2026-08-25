@@ -124,6 +124,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         {
           icon: './assets/adaptive-icon.png',
           color: '#ec4899',
+          sounds: ['./assets/sounds/incoming-call.wav'],
+          defaultChannel: 'default',
+        },
+      ],
+      [
+        'expo-audio',
+        {
+          enableBackgroundPlayback: true,
+          microphonePermission:
+            'Kushlov needs microphone access for audio/video calls and live streams.',
         },
       ],
       [

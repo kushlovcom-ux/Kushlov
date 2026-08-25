@@ -20,6 +20,11 @@ export function renderFaceFilterFrame(
     ctx.restore();
   }
 
+  if (filter?.background) {
+    applyBackground(ctx, w, h, filter.background);
+    return;
+  }
+
   if (!filter || !box) return;
 
   const layout = layoutFilter(box, filter, w, h);
@@ -115,5 +120,47 @@ function applyPrivacy(
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(ix, iy, iw, ih);
   }
+  ctx.restore();
+}
+
+function applyBackground(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  mode: NonNullable<FaceFilterDef['background']>,
+) {
+  ctx.save();
+  if (mode === 'blur') {
+    ctx.filter = 'blur(18px) brightness(0.78)';
+    ctx.drawImage(ctx.canvas, 0, 0, w, h);
+    ctx.filter = 'none';
+    const fade = ctx.createRadialGradient(w * 0.5, h * 0.42, w * 0.12, w * 0.5, h * 0.45, w * 0.72);
+    fade.addColorStop(0, 'rgba(0,0,0,0)');
+    fade.addColorStop(1, 'rgba(8,8,16,0.55)');
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    return;
+  }
+
+  const grd = ctx.createLinearGradient(0, 0, w, h);
+  if (mode === 'dim') {
+    grd.addColorStop(0, 'rgba(0,0,0,0.28)');
+    grd.addColorStop(1, 'rgba(0,0,0,0.62)');
+  } else if (mode === 'sunset') {
+    grd.addColorStop(0, 'rgba(255,126,95,0.42)');
+    grd.addColorStop(1, 'rgba(80,20,60,0.5)');
+  } else if (mode === 'night') {
+    grd.addColorStop(0, 'rgba(10,22,56,0.48)');
+    grd.addColorStop(1, 'rgba(2,6,18,0.72)');
+  } else if (mode === 'studio') {
+    grd.addColorStop(0, 'rgba(255,255,255,0.16)');
+    grd.addColorStop(1, 'rgba(18,18,24,0.5)');
+  } else {
+    grd.addColorStop(0, 'rgba(236,72,153,0.38)');
+    grd.addColorStop(1, 'rgba(34,211,238,0.32)');
+  }
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, w, h);
   ctx.restore();
 }

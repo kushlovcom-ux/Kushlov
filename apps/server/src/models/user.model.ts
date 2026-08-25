@@ -45,6 +45,9 @@ export interface IUser extends Document {
   passwordResetExpires?: Date;
   lastLoginAt?: Date;
 
+  /** Expo push token for background/killed-state device notifications. */
+  expoPushToken?: string;
+
   // presence
   isOnline: boolean;
   lastSeenAt?: Date;
@@ -120,6 +123,8 @@ const userSchema = new Schema<IUser>(
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
     lastLoginAt: Date,
+
+    expoPushToken: { type: String, select: false, trim: true },
 
     isOnline: { type: Boolean, default: false },
     lastSeenAt: Date,

@@ -71,6 +71,9 @@ export async function startProcessedVideoTrack(
       if (filterId === 'none') {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         detected = true;
+      } else if (filter?.background) {
+        detected = true;
+        renderFaceFilterFrame(ctx, video, null, filter);
       } else {
         const box = await engine.detect(video, mirrored);
         detected = !!box;

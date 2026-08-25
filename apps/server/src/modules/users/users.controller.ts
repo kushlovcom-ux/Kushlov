@@ -20,6 +20,16 @@ import { grantWelcomeGiftIfEligible } from '../../services/welcome-gift.service'
 import { PRESENCE_ONLINE_MS, sweepStalePresence, touchPresence } from '../../services/presence.service';
 import { getBusyUserIds } from '../../services/call-busy.service';
 
+/** POST /users/me/push-token — store Expo push token for closed-app notifications. */
+export const registerPushToken = asyncHandler(async (req: Request, res: Response) => {
+  const token = String(req.body.token ?? '').trim();
+  if (!token.startsWith('ExponentPushToken')) {
+    throw ApiError.badRequest('Invalid Expo push token');
+  }
+  await User.findByIdAndUpdate(req.user!.id, { $set: { expoPushToken: token } });
+  return ok(res, { ok: true });
+});
+
 /** POST /users/me/presence — heartbeat so Online Now / Discover stay accurate on Vercel. */
 export const pingPresence = asyncHandler(async (req: Request, res: Response) => {
   await touchPresence(req.user!.id);

@@ -55,7 +55,7 @@ export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
         <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>✨ {triggerLabel}</Text>
       </Pressable>
 
-      <Modal visible={panelOpen} transparent animationType="slide" onRequestClose={() => setPanelOpen(false)}>
+      <Modal visible={panelOpen} transparent animationType="fade" onRequestClose={() => setPanelOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setPanelOpen(false)}>
           <Pressable
             style={[styles.sheet, { backgroundColor: c.card, borderColor: c.border }]}
@@ -79,7 +79,7 @@ export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
               </View>
             </View>
 
-            {!faceDetected && activeFilterId !== 'none' ? (
+            {!faceDetected && activeFilterId !== 'none' && !activeFilterId.startsWith('bg') ? (
               <Text style={{ color: '#fbbf24', fontSize: 12, textAlign: 'center', marginBottom: 8 }}>
                 Face not detected — retrying…
               </Text>
@@ -116,6 +116,7 @@ export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
                     onPress={() => {
                       if (f.id !== 'none') setEnabled(true);
                       setActiveFilterId(f.id as FaceFilterId);
+                      setPanelOpen(false);
                     }}
                     onLongPress={() => {
                       if (f.id !== 'none') toggleFavorite(f.id as FaceFilterId);

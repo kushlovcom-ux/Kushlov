@@ -1,13 +1,14 @@
 import type { FaceFilterCategory, FaceFilterDef, FaceFilterId } from './types';
 
 export const FILTER_CATEGORIES: { id: FaceFilterCategory; label: string }[] = [
+  { id: 'trending', label: 'Trending' },
+  { id: 'backgrounds', label: 'Background' },
   { id: 'privacy', label: 'Privacy' },
   { id: 'glasses', label: 'Glasses' },
   { id: 'funny', label: 'Funny' },
   { id: 'beauty', label: 'Beauty' },
   { id: 'animals', label: 'Animals' },
   { id: 'masks', label: 'Masks' },
-  { id: 'trending', label: 'Trending' },
 ];
 
 export const FACE_FILTER_CATALOG: FaceFilterDef[] = [
@@ -29,6 +30,12 @@ export const FACE_FILTER_CATALOG: FaceFilterDef[] = [
   { id: 'crown', name: 'Crown', category: 'trending', emoji: '👑', scale: 1.2, yOffset: -0.06, anchor: 'forehead' },
   { id: 'smoothSkin', name: 'Smooth Skin', category: 'beauty', emoji: '✨', scale: 1, beauty: true, anchor: 'face' },
   { id: 'beauty', name: 'Beauty Filter', category: 'beauty', emoji: '💄', scale: 1, beauty: true, anchor: 'face' },
+  { id: 'bgBlur', name: 'Blur room', category: 'backgrounds', emoji: '🌁', scale: 1, background: 'blur' },
+  { id: 'bgDim', name: 'Dim studio', category: 'backgrounds', emoji: '🌑', scale: 1, background: 'dim' },
+  { id: 'bgSunset', name: 'Sunset', category: 'backgrounds', emoji: '🌇', scale: 1, background: 'sunset' },
+  { id: 'bgNight', name: 'Night city', category: 'backgrounds', emoji: '🌃', scale: 1, background: 'night' },
+  { id: 'bgStudio', name: 'Soft studio', category: 'backgrounds', emoji: '💡', scale: 1, background: 'studio' },
+  { id: 'bgNeon', name: 'Neon club', category: 'backgrounds', emoji: '💜', scale: 1, background: 'neon' },
 ];
 
 export function getFilterDef(id: FaceFilterId | string | null | undefined): FaceFilterDef | null {

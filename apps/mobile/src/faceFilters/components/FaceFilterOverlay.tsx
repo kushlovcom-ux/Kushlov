@@ -1,14 +1,28 @@
 import React, { useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { Participant } from 'livekit-client';
 import { getFilterDef } from '../catalog';
 import { heuristicFaceBox, layoutFilter } from '../layout';
-import { FACE_FILTER_ATTR } from '../types';
+import { FACE_FILTER_ATTR, type FaceFilterDef } from '../types';
 import { useFaceFilterStore, selectEffectiveFilterId } from '../hooks/useFaceFilter';
 
 type OverlayProps = {
   filterId: string | null | undefined;
   mirrored?: boolean;
+};
+
+const BG_GRADIENT: Record<
+  NonNullable<FaceFilterDef['background']>,
+  readonly [string, string, ...string[]]
+> = {
+  blur: ['rgba(16,16,24,0.25)', 'rgba(8,8,16,0.55)'],
+  dim: ['rgba(0,0,0,0.28)', 'rgba(0,0,0,0.62)'],
+  sunset: ['rgba(255,126,95,0.42)', 'rgba(80,20,60,0.5)'],
+  night: ['rgba(10,22,56,0.48)', 'rgba(2,6,18,0.72)'],
+  studio: ['rgba(255,255,255,0.16)', 'rgba(18,18,24,0.5)'],
+  neon: ['rgba(236,72,153,0.38)', 'rgba(34,211,238,0.32)'],
 };
 
 /**
@@ -17,15 +31,16 @@ type OverlayProps = {
  */
 export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) {
   const filter = getFilterDef(filterId);
-  const [size, setSize] = useState({ w: 0, h: 0 });
+  const [size, setSize] = useState({ w: 360, h: 640 });
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
-    setSize({ w: width, h: height });
+    if (width < 8 || height < 8) return;
+    setSize((prev) => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
   };
 
   const layout = useMemo(() => {
-    if (!filter || filter.beauty || size.w < 8 || size.h < 8) return null;
+    if (!filter || filter.beauty || filter.background || size.w < 8 || size.h < 8) return null;
     const box = heuristicFaceBox();
     if (mirrored && box.eyes) {
       box.eyes = { ...box.eyes, cx: 1 - box.eyes.cx };
@@ -35,18 +50,7 @@ export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) 
 
   if (!filter) return null;
 
-  if (filter.beauty) {
-    return (
-      <View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255, 200, 220, 0.08)' }]}
-      />
-    );
-  }
-
-  if (!layout) return null;
-
-  const sticker = (
+  const sticker = layout ? (
     <View
       style={{
         position: 'absolute',
@@ -89,10 +93,24 @@ export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) 
         </Text>
       ) : null}
     </View>
-  );
+  ) : null;
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={onLayout}>
+      {filter.background === 'blur' ? (
+        <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} />
+      ) : null}
+      {filter.background ? (
+        <LinearGradient
+          colors={BG_GRADIENT[filter.background]}
+          start={{ x: 0.15, y: 0 }}
+          end={{ x: 0.85, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
+      {filter.beauty ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255, 200, 220, 0.08)' }]} />
+      ) : null}
       {sticker}
     </View>
   );

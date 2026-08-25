@@ -9,7 +9,7 @@ const defaults: FaceFilterSettings = {
   lastFilterId: 'none',
   favorites: [],
   beautyDefault: false,
-  disableOnLowBattery: true,
+  disableOnLowBattery: false,
 };
 
 type FaceFilterStore = {

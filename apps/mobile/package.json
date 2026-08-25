@@ -33,6 +33,7 @@
     "babel-preset-expo": "~57.0.0",
     "date-fns": "^4.4.0",
     "expo": "~57.0.15",
+    "expo-audio": "~57.0.4",
     "expo-blur": "~57.0.2",
     "expo-build-properties": "~57.0.13",
     "expo-clipboard": "~57.0.1",

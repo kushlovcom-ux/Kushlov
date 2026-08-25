@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { NotificationType, SocketEvents } from '@kushlov/types';
 import { Notification } from '../models';
 import { emitToUser } from '../socket/io';
+import { sendExpoPush } from './push.service';
 
 /** Persist a notification and push it in realtime to the recipient. */
 export async function notify(params: {
@@ -28,6 +29,14 @@ export async function notify(params: {
     body: notification.body,
     data: notification.data,
     createdAt: notification.createdAt,
+  });
+
+  void sendExpoPush({
+    userId: params.userId.toString(),
+    type: params.type,
+    title: params.title,
+    body: params.body,
+    data: params.data,
   });
 
   return notification;

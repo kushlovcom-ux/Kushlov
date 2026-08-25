@@ -21,7 +21,13 @@ import { ensureWallet } from '../../services/wallet.service';
 import { grantWelcomeGiftIfEligible } from '../../services/welcome-gift.service';
 import { sendMail, passwordResetEmail } from '../../utils/mailer';
 import { env } from '../../config/env';
-import { getFirebaseAuth, isFirebaseConfigured } from '../../config/firebase';
+import { logger } from '../../config/logger';
+import {
+  describeFirebaseTokenProblem,
+  isFirebaseConfigured,
+  peekJwtPayload,
+  verifyFirebaseIdToken,
+} from '../../config/firebase';
 import { generateUniqueUsername } from '../../services/username.service';
 
 function issueTokens(user: { id: string; role: Role; tokenVersion: number }) {
@@ -89,19 +95,84 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, { user: (user as any).toPublic(), ...tokens }, 'Logged in');
 });
 
+function extractGoogleLoginToken(req: Request): string {
+  const fromBody = typeof req.body?.idToken === 'string' ? req.body.idToken.trim() : '';
+  if (fromBody && fromBody !== 'undefined' && fromBody !== 'null') return fromBody;
+
+  const header = req.headers.authorization;
+  if (typeof header === 'string' && header.startsWith('Bearer ')) {
+    const fromHeader = header.slice('Bearer '.length).trim();
+    if (fromHeader && fromHeader !== 'undefined' && fromHeader !== 'null') return fromHeader;
+  }
+  return '';
+}
+
+function publicFirebaseVerifyMessage(err: unknown, token: string): string {
+  const precheck = describeFirebaseTokenProblem(token);
+  if (precheck) return precheck;
+  const code = (err as { code?: string })?.code ?? '';
+  const msg = err instanceof Error ? err.message : '';
+  if (code === 'auth/id-token-expired' || /expired/i.test(msg)) {
+    return 'Authentication session expired';
+  }
+  if (/audience|project/i.test(msg) || code === 'auth/argument-error') {
+    const claims = peekJwtPayload(token);
+    if (claims?.aud && env.FIREBASE_PROJECT_ID && String(claims.aud) !== env.FIREBASE_PROJECT_ID) {
+      return 'Firebase project configuration mismatch';
+    }
+  }
+  return 'Firebase ID token verification failed';
+}
+
 /** POST /auth/google — verify Firebase ID token and issue app JWT session. */
 export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
   if (!isFirebaseConfigured()) {
     throw ApiError.internal('Google sign-in is not configured on the server');
   }
 
-  const { idToken, country } = req.body as { idToken: string; country?: string };
+  const { country } = req.body as { idToken?: string; country?: string };
+  const idToken = extractGoogleLoginToken(req);
+  if (!idToken) {
+    throw ApiError.unauthorized('Firebase ID token is missing');
+  }
+
+  const obvious = describeFirebaseTokenProblem(idToken);
+  if (obvious) {
+    logger.warn(
+      {
+        reason: obvious,
+        tokenIss: peekJwtPayload(idToken)?.iss,
+        tokenAud: peekJwtPayload(idToken)?.aud,
+        adminProjectId: env.FIREBASE_PROJECT_ID,
+      },
+      'Rejected Google login token before verifyIdToken',
+    );
+    throw ApiError.unauthorized(obvious);
+  }
+
   let decoded;
   try {
-    const auth = await getFirebaseAuth();
-    decoded = await auth.verifyIdToken(idToken, true);
-  } catch {
-    throw ApiError.unauthorized('Invalid or expired Google token');
+    decoded = await verifyFirebaseIdToken(idToken);
+  } catch (err) {
+    const firebaseMessage = err instanceof Error ? err.message : String(err);
+    const claims = peekJwtPayload(idToken);
+    logger.warn(
+      {
+        code: (err as { code?: string })?.code,
+        firebaseMessage,
+        tokenIss: claims?.iss,
+        tokenAud: claims?.aud,
+        adminProjectId: env.FIREBASE_PROJECT_ID,
+      },
+      'Firebase ID token verification failed',
+    );
+    if (
+      /not configured|private key|PEM|credential/i.test(firebaseMessage) &&
+      !(err as { code?: string })?.code?.startsWith('auth/')
+    ) {
+      throw ApiError.internal('Google authentication failed');
+    }
+    throw ApiError.unauthorized(publicFirebaseVerifyMessage(err, idToken));
   }
 
   const uid = decoded.uid;

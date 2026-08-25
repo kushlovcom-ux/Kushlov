@@ -21,6 +21,7 @@ import { dismissIncomingCallNotification } from '@/services/notifications';
 import { useCallStore } from '@/store/call';
 import { CallStatus, CallType } from '@/types';
 import { formatDuration } from '@/utils/format';
+import { useCallRingtone } from '@/hooks/useCallRingtone';
 import { haptics } from '@/utils/haptics';
 import { spacing } from '@/theme';
 import type { Room } from 'livekit-client';
@@ -43,6 +44,7 @@ export function CallOverlay() {
   const [nativeOk, setNativeOk] = useState<boolean | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
   const endingRef = useRef(false);
+  useCallRingtone(Boolean(incoming));
 
   const onRoom = useCallback((r: Room | null) => {
     setRoom(r);

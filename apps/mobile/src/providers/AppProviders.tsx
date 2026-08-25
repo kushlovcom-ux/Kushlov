@@ -10,12 +10,21 @@ import { useThemeStore } from '@/store/theme';
 import { useIsDark } from '@/hooks/useThemeColors';
 import { usePresence } from '@/hooks/usePresence';
 import { useIncomingCallWatcher } from '@/hooks/useIncomingCallWatcher';
+import { usePushTokenSync } from '@/hooks/usePushTokenSync';
+import { useFaceFilterStore } from '@/faceFilters/hooks/useFaceFilter';
 
 function ThemeBridge({ children }: { children: React.ReactNode }) {
   const syncSystem = useThemeStore((s) => s.syncSystem);
   const dark = useIsDark();
   usePresence();
   useIncomingCallWatcher();
+  usePushTokenSync();
+  const hydrateFilters = useFaceFilterStore((s) => s.hydrate);
+  const filtersHydrated = useFaceFilterStore((s) => s.hydrated);
+
+  useEffect(() => {
+    if (!filtersHydrated) void hydrateFilters();
+  }, [filtersHydrated, hydrateFilters]);
 
   useEffect(() => {
     const sub = Appearance.addChangeListener(() => syncSystem());

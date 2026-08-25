@@ -12,9 +12,22 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+function isAuthCredentialUrl(url: string): boolean {
+  return (
+    url.includes('/auth/google') ||
+    url.includes('/auth/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/refresh')
+  );
+}
+
 api.interceptors.request.use((config) => {
+  const url = `${config.baseURL ?? ''}${config.url ?? ''}`;
   const token = useAuthStore.getState().accessToken;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  // Login/register/google send their own credentials — never a stale app JWT.
+  if (token && !isAuthCredentialUrl(url)) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   // Let the browser set multipart boundary — forcing Content-Type breaks uploads.
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
     if (config.headers && typeof config.headers === 'object') {
@@ -91,8 +104,8 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const url = original?.url ?? '';
 
-    // Never try to refresh the refresh endpoint itself.
-    if (status === 401 && original && !original._retry && !url.includes('/auth/refresh')) {
+    // Never try to refresh credential-exchange endpoints (login/google) or refresh itself.
+    if (status === 401 && original && !original._retry && !isAuthCredentialUrl(url)) {
       original._retry = true;
       const token = await refreshAccessTokenSingleFlight();
       if (token) {

@@ -49,11 +49,17 @@ export function useGoogleLogin() {
   const router = useRouter();
   return useMutation({
     mutationFn: async () => {
-      const idToken = await signInWithGooglePopup();
-      const res = await api.post('/auth/google', {
-        idToken,
-        country: user?.country ?? DEFAULT_COUNTRY,
-      });
+      const firebaseIdToken = await signInWithGooglePopup();
+      const res = await api.post(
+        '/auth/google',
+        {
+          idToken: firebaseIdToken,
+          country: user?.country ?? DEFAULT_COUNTRY,
+        },
+        {
+          headers: { Authorization: `Bearer ${firebaseIdToken}` },
+        },
+      );
       return res.data.data as AuthResult;
     },
     onSuccess: (data) => {
@@ -71,7 +77,15 @@ export function useGoogleLogin() {
         toast.error('Network error. Check your connection and try again.');
         return;
       }
-      toast.error(apiError(err));
+      if (code === 'auth/unauthorized-domain') {
+        toast.error('This domain is not authorized for Google sign-in. Add it in Firebase Authentication → Settings → Authorized domains.');
+        return;
+      }
+      if (code === 'auth/popup-blocked') {
+        toast.error('Google sign-in popup was blocked. Allow popups for this site and try again.');
+        return;
+      }
+      toast.error(apiError(err) || 'Google authentication failed');
     },
   });
 }
