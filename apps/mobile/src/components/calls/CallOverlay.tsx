@@ -316,10 +316,10 @@ export function CallOverlay() {
         <Text variant="caption" color={c.pink}>
           Incoming {isVideo ? 'video' : 'audio'} call
         </Text>
-        <Avatar uri={peer?.avatarUrl} name={peer?.displayName} size={96} />
+        <Avatar uri={peer?.avatarUrl} name={peer?.displayName} size={120} />
         <Text variant="h2">{peer?.displayName ?? 'Someone'}</Text>
         <Text muted style={{ textAlign: 'center', marginBottom: spacing.sm }}>
-          {isVideo ? 'Wants to video call you' : 'Wants to audio call you'}
+          {isVideo ? 'Video call' : 'Audio call'}
         </Text>
         <View style={styles.actions}>
           <View style={styles.actionCol}>

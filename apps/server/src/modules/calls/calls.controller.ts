@@ -236,6 +236,8 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
         callId: interrupt._id.toString(),
         callType: type,
         targetCallId: ongoing.call._id.toString(),
+        callerName: caller?.displayName,
+        callerAvatar: caller?.avatarUrl,
       },
     });
 
@@ -350,6 +352,8 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
         kind: 'incoming_call',
         callId: call._id.toString(),
         callType: type,
+        callerName: caller?.displayName,
+        callerAvatar: caller?.avatarUrl,
       },
     });
   }
@@ -1005,6 +1009,8 @@ export const inviteToCall = asyncHandler(async (req: Request, res: Response) => 
       kind: 'incoming_call',
       callId: call._id.toString(),
       callType: type,
+      callerName: from?.displayName,
+      callerAvatar: from?.avatarUrl,
     },
   });
 

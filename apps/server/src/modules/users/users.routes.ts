@@ -9,6 +9,7 @@ import {
   updateProfileSchema,
   updateLocationSchema,
   registerPushTokenSchema,
+  clearPushTokenSchema,
 } from './users.validation';
 
 const router = Router();
@@ -27,6 +28,7 @@ router.get('/me/location', ctrl.getMyLocation);
 router.post('/me/location', validate({ body: updateLocationSchema }), ctrl.updateMyLocation);
 router.post('/me/presence', ctrl.pingPresence);
 router.post('/me/push-token', validate({ body: registerPushTokenSchema }), ctrl.registerPushToken);
+router.post('/me/push-token/clear', validate({ body: clearPushTokenSchema }), ctrl.clearPushToken);
 router.patch('/me/profile', validate({ body: updateProfileSchema }), ctrl.updateMyProfile);
 router.post('/me/avatar', uploadImage.single('file'), ctrl.uploadAvatar);
 router.post('/me/cover', uploadImage.single('file'), ctrl.uploadCover);

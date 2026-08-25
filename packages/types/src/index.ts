@@ -282,6 +282,8 @@ export const SocketEvents = {
   MessageDelete: 'message:delete',
   TypingStart: 'typing:start',
   TypingStop: 'typing:stop',
+  ChatFocus: 'chat:focus',
+  ChatBlur: 'chat:blur',
   // calls
   CallInvite: 'call:invite',
   CallWaiting: 'call:waiting',

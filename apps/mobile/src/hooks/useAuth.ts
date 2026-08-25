@@ -3,6 +3,7 @@ import { authApi, type LoginInput, type RegisterInput } from '@/api/auth';
 import { getErrorMessage } from '@/api/client';
 import { queryKeys } from '@/constants/queryKeys';
 import { signOutFirebase } from '@/services/firebase';
+import { clearStoredPushToken } from '@/hooks/usePushTokenSync';
 import { connectSocket, disconnectSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/auth';
 
@@ -52,6 +53,11 @@ export function useAuth() {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
+      try {
+        await clearStoredPushToken();
+      } catch {
+        /* still log out */
+      }
       try {
         await authApi.logout();
       } catch {

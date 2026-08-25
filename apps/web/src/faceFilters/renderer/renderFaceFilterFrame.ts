@@ -1,5 +1,6 @@
 import type { FaceBox, FaceFilterDef } from '../types';
-import { layoutFilter } from '../layout';
+import { layoutFilter, layoutFilterLayers } from '../layout';
+import { drawFilterLayer } from './drawFilterLayers';
 
 /** Draw camera frame + privacy FX / sticker onto canvas (normalized face box 0–1). */
 export function renderFaceFilterFrame(
@@ -39,6 +40,13 @@ export function renderFaceFilterFrame(
       filter.privacy,
       layout.rotation,
     );
+  }
+
+  if (filter.layers?.length) {
+    for (const layer of layoutFilterLayers(box, filter, w, h)) {
+      drawFilterLayer(ctx, layer.kind, layer);
+    }
+    return;
   }
 
   if (filter.emoji && filter.emoji !== '✕' && !filter.beauty) {

@@ -72,21 +72,21 @@ export function FilterSelector({ className }: { className?: string }) {
       {!faceDetected && activeFilterId !== 'none' && !String(activeFilterId).startsWith('bg') ? (
         <p className="text-center text-[11px] text-amber-300">Face not detected — retrying…</p>
       ) : null}
-      <div className="flex flex-wrap gap-1">
+      <div className="flex gap-1 overflow-x-auto pb-1">
         {FILTER_CATEGORIES.map((c) => (
           <Button
             key={c.id}
             type="button"
             size="sm"
             variant={category === c.id ? 'default' : 'secondary'}
-            className="h-7 px-2 text-[10px]"
+            className="h-7 shrink-0 px-2 text-[10px]"
             onClick={() => setCategory(c.id)}
           >
             {c.label}
           </Button>
         ))}
       </div>
-      <div className="grid grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-5">
+      <div className="flex gap-3 overflow-x-auto pb-1 pt-1">
         {items.map((f) => {
           const on = activeFilterId === f.id;
           const fav = settings.favorites.includes(f.id);
@@ -99,17 +99,23 @@ export function FilterSelector({ className }: { className?: string }) {
                 setActiveFilterId(f.id as FaceFilterId);
                 setPanelOpen(false);
               }}
-              className={cn(
-                'relative flex flex-col items-center gap-1 rounded-xl border p-2 text-center',
-                on ? 'border-brand-pink bg-brand-pink/20' : 'border-white/10 bg-white/5',
-              )}
+              className="relative flex w-16 shrink-0 flex-col items-center gap-1"
             >
-              <span className="text-xl leading-none">{f.id === 'none' ? '✕' : f.emoji}</span>
-              <span className="line-clamp-2 text-[9px] text-white/70">{f.name}</span>
+              <span
+                className={cn(
+                  'flex h-14 w-14 items-center justify-center rounded-full border text-2xl transition',
+                  on
+                    ? 'scale-110 border-2 border-white bg-brand-pink/80'
+                    : 'border-white/25 bg-black/50',
+                )}
+              >
+                {f.id === 'none' ? '✕' : f.emoji}
+              </span>
+              <span className="line-clamp-1 w-16 text-center text-[9px] text-white/70">{f.name}</span>
               {f.id !== 'none' ? (
                 <button
                   type="button"
-                  className="absolute right-1 top-1"
+                  className="absolute right-0 top-0"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleFavorite(f.id as FaceFilterId);

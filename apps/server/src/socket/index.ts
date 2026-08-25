@@ -11,6 +11,7 @@ import { pruneCallsForUser } from '../services/call-lifecycle.service';
 import { isIdentityInRoom } from '../services/livekit.service';
 import { setIO } from './io';
 import { createSocketThrottle } from './throttle';
+import { clearChatFocus, setChatFocus } from '../services/chat-focus.service';
 
 interface AuthedSocket extends Socket {
   userId?: string;
@@ -76,6 +77,13 @@ export function initSocket(httpServer: HttpServer): IOServer {
       if (to) io.to(`user:${to}`).emit(SocketEvents.TypingStop, { conversationId, from: userId });
     });
 
+    socket.on(SocketEvents.ChatFocus, ({ conversationId }) => {
+      setChatFocus(socket.id, userId, String(conversationId ?? ''));
+    });
+    socket.on(SocketEvents.ChatBlur, () => {
+      clearChatFocus(socket.id);
+    });
+
     socket.on(SocketEvents.MessageSend, async (payload, ack) => {
       if (!allowMessage(userId)) {
         logger.warn(
@@ -121,6 +129,7 @@ export function initSocket(httpServer: HttpServer): IOServer {
     });
 
     socket.on('disconnect', async () => {
+      clearChatFocus(socket.id);
       const remaining = Math.max(0, (connectionCounts.get(userId) ?? 1) - 1);
       if (remaining === 0) {
         connectionCounts.delete(userId);

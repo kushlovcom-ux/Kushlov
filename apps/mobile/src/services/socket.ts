@@ -52,3 +52,9 @@ export function emitTyping(conversationId: string, isTyping: boolean) {
     conversationId,
   });
 }
+
+export function emitChatFocus(conversationId: string | null) {
+  if (!socket?.connected) return;
+  if (conversationId) socket.emit(SocketEvents.ChatFocus, { conversationId });
+  else socket.emit(SocketEvents.ChatBlur);
+}

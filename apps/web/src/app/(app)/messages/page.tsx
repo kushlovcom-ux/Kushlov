@@ -96,6 +96,23 @@ function Messages() {
   });
 
   useEffect(() => {
+    if (!socket || !activeId) return;
+    const emitFocus = () => socket.emit(SocketEvents.ChatFocus, { conversationId: activeId });
+    emitFocus();
+    socket.on('connect', emitFocus);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') emitFocus();
+      else socket.emit(SocketEvents.ChatBlur);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      socket.off('connect', emitFocus);
+      socket.emit(SocketEvents.ChatBlur);
+    };
+  }, [socket, activeId]);
+
+  useEffect(() => {
     if (!socket) return;
     const handler = (msg: Message & { conversation?: string }) => {
       qc.invalidateQueries({ queryKey: ['conversations'] });

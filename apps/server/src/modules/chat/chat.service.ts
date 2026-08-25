@@ -4,6 +4,7 @@ import { Block, Conversation, Message, MessageCredit, User } from '../../models'
 import { ApiError } from '../../utils/ApiError';
 import { emitToUser } from '../../socket/io';
 import { notify } from '../../services/notification.service';
+import { isUserFocusedOnChat } from '../../services/chat-focus.service';
 import { assertUsersCanConnect } from '../../services/location.service';
 import { spendDiamonds } from '../../services/wallet.service';
 import { peerKindForRoles, resolveMessageBilling, type CallPeerKind } from '../../services/pricing.service';
@@ -141,19 +142,37 @@ export async function createMessage(input: CreateMessageInput) {
   await conversation.save();
 
   const populated = await message.populate('sender', 'displayName username avatarUrl');
+  const senderDoc = populated.sender as unknown as {
+    displayName?: string;
+    _id?: { toString(): string };
+  };
+  const senderName = senderDoc?.displayName || 'Someone';
+  const preview =
+    input.text?.replace(/\s+/g, ' ').trim().slice(0, 120) ||
+    (input.type === MessageType.Image
+      ? 'Sent a photo'
+      : input.type === MessageType.Voice
+        ? 'Sent a voice note'
+        : 'Sent you an attachment');
 
   for (const participant of conversation.participants) {
     const id = participant.toString();
     if (id !== input.senderId) {
       emitToUser(id, SocketEvents.MessageNew, populated);
-      await notify({
-        userId: id,
-        actor: input.senderId,
-        type: NotificationType.Message,
-        title: 'New message',
-        body: input.text?.slice(0, 80) ?? 'Sent you an attachment',
-        data: { conversationId: conversation._id.toString() },
-      });
+      if (!isUserFocusedOnChat(id, conversation._id.toString())) {
+        await notify({
+          userId: id,
+          actor: input.senderId,
+          type: NotificationType.Message,
+          title: senderName,
+          body: preview,
+          data: {
+            kind: 'message',
+            conversationId: conversation._id.toString(),
+            senderId: input.senderId,
+          },
+        });
+      }
     }
   }
 

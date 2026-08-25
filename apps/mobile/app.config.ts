@@ -61,6 +61,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         'MODIFY_AUDIO_SETTINGS',
         'BLUETOOTH',
         'BLUETOOTH_CONNECT',
+        'USE_FULL_SCREEN_INTENT',
+        'WAKE_LOCK',
       ],
       intentFilters: [
         {

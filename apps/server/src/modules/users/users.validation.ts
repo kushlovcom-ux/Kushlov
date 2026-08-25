@@ -32,6 +32,12 @@ export const updateProfileSchema = z.object({
 
 export const registerPushTokenSchema = z.object({
   token: z.string().min(20).max(200),
+  platform: z.enum(['ios', 'android', 'web']).optional(),
+  deviceId: z.string().min(4).max(80).optional(),
+});
+
+export const clearPushTokenSchema = z.object({
+  token: z.string().min(20).max(200).optional(),
 });
 
 export const updateLocationSchema = z.object({

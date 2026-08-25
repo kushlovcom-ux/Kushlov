@@ -11,6 +11,7 @@ import { useIsDark } from '@/hooks/useThemeColors';
 import { usePresence } from '@/hooks/usePresence';
 import { useIncomingCallWatcher } from '@/hooks/useIncomingCallWatcher';
 import { usePushTokenSync } from '@/hooks/usePushTokenSync';
+import { useNotificationNavigation } from '@/hooks/useNotificationNavigation';
 import { useFaceFilterStore } from '@/faceFilters/hooks/useFaceFilter';
 
 function ThemeBridge({ children }: { children: React.ReactNode }) {
@@ -19,6 +20,7 @@ function ThemeBridge({ children }: { children: React.ReactNode }) {
   usePresence();
   useIncomingCallWatcher();
   usePushTokenSync();
+  useNotificationNavigation();
   const hydrateFilters = useFaceFilterStore((s) => s.hydrate);
   const filtersHydrated = useFaceFilterStore((s) => s.hydrated);
 

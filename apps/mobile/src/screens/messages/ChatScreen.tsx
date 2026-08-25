@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
+import { Alert, AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '@/components/common/Header';
@@ -15,7 +15,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMessages } from '@/hooks/useMessages';
 import { useCallStore } from '@/store/call';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import { emitTyping, getSocket } from '@/services/socket';
+import { emitTyping, emitChatFocus, getSocket } from '@/services/socket';
+import { setActiveConversationId } from '@/services/chatFocus';
 import { CallType, SocketEvents } from '@/types';
 import type { AppStackScreenProps } from '@/navigation/types';
 
@@ -37,6 +38,29 @@ export function ChatScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     markRead.mutate();
+  }, [conversationId]);
+
+  useEffect(() => {
+    setActiveConversationId(conversationId);
+    emitChatFocus(conversationId);
+    const socket = getSocket();
+    const onConnect = () => emitChatFocus(conversationId);
+    socket?.on('connect', onConnect);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setActiveConversationId(conversationId);
+        emitChatFocus(conversationId);
+      } else {
+        setActiveConversationId(null);
+        emitChatFocus(null);
+      }
+    });
+    return () => {
+      sub.remove();
+      socket?.off('connect', onConnect);
+      setActiveConversationId(null);
+      emitChatFocus(null);
+    };
   }, [conversationId]);
 
   useEffect(() => {

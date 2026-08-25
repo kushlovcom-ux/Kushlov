@@ -4,6 +4,7 @@ import { Text } from '@/components/ui/Text';
 import {
   FaceFilterOverlay,
   useLocalOrRemoteFaceFilter,
+  useParticipantFaceBox,
 } from '@/faceFilters/components/FaceFilterOverlay';
 import { ensureLiveKitNative } from '@/services/livekit';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -235,6 +236,7 @@ function ParticipantVideoTile({
 }) {
   const participant = (trackRef as { participant: Participant }).participant;
   const filterId = useLocalOrRemoteFaceFilter(participant);
+  const remoteBox = useParticipantFaceBox(isLocal ? null : participant);
   let role: string | undefined;
   try {
     role = participant.metadata
@@ -255,7 +257,11 @@ function ParticipantVideoTile({
         mirror={isLocal}
         zOrder={isLocal ? 1 : 0}
       />
-      <FaceFilterOverlay filterId={filterId} mirrored={isLocal} />
+      <FaceFilterOverlay
+        filterId={filterId}
+        mirrored={isLocal}
+        faceBox={isLocal ? undefined : remoteBox}
+      />
       {multi ? (
         <View style={styles.labelRow}>
           {roleBadge ? (

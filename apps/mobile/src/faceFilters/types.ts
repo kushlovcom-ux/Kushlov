@@ -29,6 +29,11 @@ export type FaceFilterId =
   | 'rainbowGlasses'
   | 'smoothSkin'
   | 'beauty'
+  | 'laserEyes'
+  | 'animeEyes'
+  | 'clownNose'
+  | 'flowerCrown'
+  | 'devilHorns'
   | 'bgBlur'
   | 'bgDim'
   | 'bgSunset'
@@ -39,6 +44,36 @@ export type FaceFilterId =
 export type FaceLandmarkPoint = { x: number; y: number; z?: number };
 
 export type FilterAnchor = 'face' | 'eyes' | 'forehead' | 'mouth' | 'nose';
+
+export type FilterLayerKind =
+  | 'sunglasses'
+  | 'aviator'
+  | 'heartGlasses'
+  | 'rainbowGlasses'
+  | 'animeEyes'
+  | 'laserEyes'
+  | 'medicalMask'
+  | 'mustache'
+  | 'dogEars'
+  | 'dogNose'
+  | 'catEars'
+  | 'catNose'
+  | 'catWhiskers'
+  | 'bunnyEars'
+  | 'crown'
+  | 'flowerCrown'
+  | 'devilHorns'
+  | 'clownNose'
+  | 'robotVisor'
+  | 'robotJaw'
+  | 'anonMask';
+
+export type FilterLayer = {
+  kind: FilterLayerKind;
+  anchor: FilterAnchor;
+  scale?: number;
+  yOffset?: number;
+};
 
 export type FaceBox = {
   cx: number;
@@ -61,10 +96,12 @@ export type FaceFilterDef = {
   scale: number;
   yOffset?: number;
   anchor?: FilterAnchor;
+  rotationEnabled?: boolean;
   privacy?: 'pixel' | 'mosaic' | 'blur' | 'solid';
   beauty?: boolean;
-  /** Full-frame scene grade / virtual-background wash. */
   background?: 'blur' | 'dim' | 'sunset' | 'night' | 'studio' | 'neon';
+  /** Landmark-locked vector parts. New filters only need entries here. */
+  layers?: FilterLayer[];
 };
 
 export type FaceFilterSettings = {
@@ -77,3 +114,5 @@ export type FaceFilterSettings = {
 
 /** LiveKit attribute key — remotes can overlay when bitstream processing is unavailable. */
 export const FACE_FILTER_ATTR = 'kushlovFaceFilter';
+/** Compact serialized FaceBox so remotes can lock overlays to the publisher's landmarks. */
+export const FACE_FILTER_BOX_ATTR = 'kushlovFaceBox';

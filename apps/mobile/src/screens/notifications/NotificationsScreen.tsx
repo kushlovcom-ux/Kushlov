@@ -25,11 +25,21 @@ export function NotificationsScreen({ navigation }: Props) {
 
   const onPress = async (n: (typeof items)[number]) => {
     markRead.mutate(n.id);
-    const data = n.data as { kind?: string; callId?: string; callType?: string } | undefined;
+    const data = n.data as {
+      kind?: string;
+      callId?: string;
+      callType?: string;
+      conversationId?: string;
+    } | undefined;
     const isCall =
       n.type === NotificationType.Call ||
       data?.kind === 'incoming_call' ||
       /call/i.test(n.title ?? '');
+
+    if (data?.kind === 'message' && data.conversationId) {
+      navigation.navigate('Chat', { conversationId: String(data.conversationId) });
+      return;
+    }
 
     if (!isCall) return;
 

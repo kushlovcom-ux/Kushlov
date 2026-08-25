@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,15 +13,12 @@ import { useThemeColors } from '@/hooks/useThemeColors';
 import { spacing } from '@/theme';
 
 type Props = {
-  /** Compact trigger shown in call/live chrome */
   triggerLabel?: string;
 };
 
-/** Bottom-sheet filter picker matching web catalog. */
+/** Snapchat-style circular filter carousel under the camera. */
 export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
   const c = useThemeColors();
-  const panelOpen = useFaceFilterStore((s) => s.panelOpen);
-  const setPanelOpen = useFaceFilterStore((s) => s.setPanelOpen);
   const settings = useFaceFilterStore((s) => s.settings);
   const activeFilterId = useFaceFilterStore((s) => s.activeFilterId);
   const setActiveFilterId = useFaceFilterStore((s) => s.setActiveFilterId);
@@ -32,6 +28,7 @@ export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
   const hydrate = useFaceFilterStore((s) => s.hydrate);
   const hydrated = useFaceFilterStore((s) => s.hydrated);
   const [category, setCategory] = useState<FaceFilterCategory>('trending');
+  const [open, setOpen] = useState(true);
 
   useEffect(() => {
     if (!hydrated) void hydrate();
@@ -46,174 +43,171 @@ export function FilterSelector({ triggerLabel = 'Filters' }: Props) {
     return FACE_FILTER_CATALOG.filter((f) => f.category === category || f.id === 'none');
   }, [category, settings.favorites]);
 
-  return (
-    <>
-      <Pressable
-        onPress={() => setPanelOpen(true)}
-        style={[styles.trigger, { backgroundColor: c.elevated, borderColor: c.border }]}
-      >
-        <Text style={{ color: c.text, fontSize: 13, fontWeight: '600' }}>✨ {triggerLabel}</Text>
-      </Pressable>
+  const active = FACE_FILTER_CATALOG.find((f) => f.id === activeFilterId);
 
-      <Modal visible={panelOpen} transparent animationType="fade" onRequestClose={() => setPanelOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setPanelOpen(false)}>
-          <Pressable
-            style={[styles.sheet, { backgroundColor: c.card, borderColor: c.border }]}
-            onPress={() => undefined}
+  return (
+    <View style={styles.wrap}>
+      <View style={styles.topRow}>
+        <Pressable onPress={() => setOpen((v) => !v)} style={[styles.trigger, { backgroundColor: c.elevated }]}>
+          <Text style={{ color: c.text, fontSize: 13, fontWeight: '700' }}>
+            ✨ {active && active.id !== 'none' ? active.name : triggerLabel}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setEnabled(!settings.enabled)}
+          style={[styles.badge, { backgroundColor: settings.enabled ? c.primary : c.danger }]}
+        >
+          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
+            {settings.enabled ? 'On' : 'Off'}
+          </Text>
+        </Pressable>
+      </View>
+
+      {!faceDetected && activeFilterId !== 'none' && !activeFilterId.startsWith('bg') ? (
+        <Text style={styles.warn}>Face not detected — retrying…</Text>
+      ) : null}
+
+      {open ? (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.cats}
           >
-            <View style={styles.sheetHeader}>
-              <Text style={{ color: c.text, fontWeight: '700', fontSize: 16 }}>Face filters</Text>
-              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            {FILTER_CATEGORIES.map((cat) => {
+              const on = category === cat.id;
+              return (
                 <Pressable
-                  onPress={() => setEnabled(!settings.enabled)}
+                  key={cat.id}
+                  onPress={() => setCategory(cat.id)}
                   style={[
-                    styles.badge,
-                    { backgroundColor: settings.enabled ? c.primary : c.danger },
+                    styles.catChip,
+                    { backgroundColor: on ? c.primary : 'rgba(0,0,0,0.45)', borderColor: c.border },
                   ]}
                 >
-                  <Text style={{ color: '#fff', fontSize: 11 }}>{settings.enabled ? 'On' : 'Off'}</Text>
+                  <Text style={{ color: on ? '#fff' : '#fff', fontSize: 12, fontWeight: '600' }}>
+                    {cat.label}
+                  </Text>
                 </Pressable>
-                <Pressable onPress={() => setPanelOpen(false)}>
-                  <Text style={{ color: c.textMuted, fontSize: 14 }}>Close</Text>
-                </Pressable>
-              </View>
-            </View>
+              );
+            })}
+          </ScrollView>
 
-            {!faceDetected && activeFilterId !== 'none' && !activeFilterId.startsWith('bg') ? (
-              <Text style={{ color: '#fbbf24', fontSize: 12, textAlign: 'center', marginBottom: 8 }}>
-                Face not detected — retrying…
-              </Text>
-            ) : null}
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cats}>
-              {FILTER_CATEGORIES.map((cat) => {
-                const on = category === cat.id;
-                return (
-                  <Pressable
-                    key={cat.id}
-                    onPress={() => setCategory(cat.id)}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.row}
+          >
+            {items.map((f) => {
+              const on = activeFilterId === f.id;
+              const fav = settings.favorites.includes(f.id);
+              return (
+                <Pressable
+                  key={f.id}
+                  onPress={() => {
+                    if (f.id !== 'none') setEnabled(true);
+                    setActiveFilterId(f.id as FaceFilterId);
+                  }}
+                  onLongPress={() => {
+                    if (f.id !== 'none') toggleFavorite(f.id as FaceFilterId);
+                  }}
+                  style={styles.thumbWrap}
+                >
+                  <View
                     style={[
-                      styles.catChip,
+                      styles.thumb,
                       {
-                        backgroundColor: on ? c.primary : c.elevated,
-                        borderColor: c.border,
+                        borderColor: on ? '#fff' : 'rgba(255,255,255,0.25)',
+                        borderWidth: on ? 3 : 1,
+                        transform: [{ scale: on ? 1.08 : 1 }],
+                        backgroundColor: on ? `${c.primary}CC` : 'rgba(12,12,16,0.72)',
                       },
                     ]}
                   >
-                    <Text style={{ color: on ? '#fff' : c.textMuted, fontSize: 11 }}>{cat.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            <ScrollView contentContainerStyle={styles.grid}>
-              {items.map((f) => {
-                const on = activeFilterId === f.id;
-                const fav = settings.favorites.includes(f.id);
-                return (
-                  <Pressable
-                    key={f.id}
-                    onPress={() => {
-                      if (f.id !== 'none') setEnabled(true);
-                      setActiveFilterId(f.id as FaceFilterId);
-                      setPanelOpen(false);
-                    }}
-                    onLongPress={() => {
-                      if (f.id !== 'none') toggleFavorite(f.id as FaceFilterId);
-                    }}
-                    style={[
-                      styles.cell,
-                      {
-                        borderColor: on ? c.primary : c.border,
-                        backgroundColor: on ? `${c.primary}33` : c.elevated,
-                      },
-                    ]}
-                  >
-                    <Text style={{ fontSize: 26 }}>{f.id === 'none' ? '✕' : f.emoji}</Text>
-                    <Text style={{ color: c.textMuted, fontSize: 10, textAlign: 'center' }} numberOfLines={2}>
-                      {f.name}
-                    </Text>
-                    {fav ? (
-                      <Text style={styles.star}>★</Text>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <Text style={{ color: c.textMuted, fontSize: 10, textAlign: 'center', marginTop: 4 }}>
-              Long-press to favorite
-            </Text>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </>
+                    <Text style={{ fontSize: 28 }}>{f.id === 'none' ? '✕' : f.emoji}</Text>
+                  </View>
+                  <Text numberOfLines={1} style={styles.thumbLabel}>
+                    {f.name}
+                  </Text>
+                  {fav ? <Text style={styles.star}>★</Text> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: {
+    paddingHorizontal: spacing.sm,
+    gap: 8,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
+  },
   trigger: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  backdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  sheet: {
-    maxHeight: '62%',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
   },
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
   },
+  warn: {
+    color: '#fbbf24',
+    fontSize: 12,
+    textAlign: 'center',
+  },
   cats: {
     flexDirection: 'row',
-    gap: 6,
-    paddingBottom: spacing.sm,
+    gap: 8,
+    paddingHorizontal: 4,
   },
   catChip: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  row: {
+    paddingHorizontal: 8,
+    paddingBottom: 4,
+    gap: 12,
+    alignItems: 'center',
   },
-  cell: {
-    width: '22%',
-    minWidth: 68,
+  thumbWrap: {
+    width: 76,
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderRadius: 14,
-    borderWidth: 1,
     position: 'relative',
+  },
+  thumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbLabel: {
+    color: '#fff',
+    fontSize: 10,
+    textAlign: 'center',
+    width: 76,
   },
   star: {
     position: 'absolute',
-    top: 4,
-    right: 6,
-    fontSize: 10,
+    top: 0,
+    right: 4,
+    fontSize: 11,
     color: '#fbbf24',
   },
 });

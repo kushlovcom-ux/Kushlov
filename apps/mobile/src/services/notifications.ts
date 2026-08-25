@@ -1,18 +1,42 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { env } from '@/config/env';
+import { getActiveConversationId } from './chatFocus';
 
 export const CALL_NOTIFICATION_CATEGORY = 'incoming_call';
 export const CALL_ACTION_ACCEPT = 'accept';
 export const CALL_ACTION_DECLINE = 'decline';
-/** New channel id so Android 8+ picks up the custom ringtone (channel sound is immutable). */
-export const CALLS_CHANNEL_ID = 'incoming_calls';
-const CALL_SOUND = 'incoming_call.wav';
+/** New channel id — Android 8+ channel sound is immutable. Uses the OS default ringtone. */
+export const CALLS_CHANNEL_ID = 'incoming_calls_sys';
+export const MESSAGES_CHANNEL_ID = 'messages';
+export const DEFAULT_CHANNEL_ID = 'default';
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    const isCall = notification.request.content.data?.kind === 'incoming_call';
+    const data = notification.request.content.data as {
+      kind?: string;
+      conversationId?: string;
+    };
+    const appActive = AppState.currentState === 'active';
+    const inThisChat =
+      data?.kind === 'message' &&
+      appActive &&
+      Boolean(data.conversationId) &&
+      data.conversationId === getActiveConversationId();
+    const callHandledInApp = data?.kind === 'incoming_call' && appActive;
+
+    if (inThisChat || callHandledInApp) {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: true,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+
+    const isCall = data?.kind === 'incoming_call';
     return {
       shouldShowAlert: true,
       shouldPlaySound: true,
@@ -21,14 +45,14 @@ Notifications.setNotificationHandler({
       shouldShowList: true,
       priority: isCall
         ? Notifications.AndroidNotificationPriority.MAX
-        : Notifications.AndroidNotificationPriority.DEFAULT,
+        : Notifications.AndroidNotificationPriority.HIGH,
     };
   },
 });
 
 let categoriesReady = false;
 
-/** Android call channel + Accept/Decline notification actions. */
+/** Android call/message channels + Accept/Decline actions. */
 export async function setupCallNotifications(): Promise<void> {
   if (categoriesReady) return;
   try {
@@ -38,13 +62,26 @@ export async function setupCallNotifications(): Promise<void> {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 400, 200, 400, 200, 400],
         lightColor: '#22c55e',
-        sound: 'incoming_call',
+        sound: 'default',
         enableVibrate: true,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: true,
+        audioAttributes: {
+          usage: Notifications.AndroidAudioUsage.NOTIFICATION_RINGTONE,
+          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        },
       });
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Messages & activity',
+      await Notifications.setNotificationChannelAsync(MESSAGES_CHANNEL_ID, {
+        name: 'Messages',
         importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 180, 80, 180],
+        lightColor: '#ec4899',
+        sound: 'default',
+        enableVibrate: true,
+      });
+      await Notifications.setNotificationChannelAsync(DEFAULT_CHANNEL_ID, {
+        name: 'Activity',
+        importance: Notifications.AndroidImportance.DEFAULT,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#ec4899',
         sound: 'default',
@@ -122,7 +159,7 @@ export type IncomingCallNotifyPayload = {
   interrupt?: boolean;
 };
 
-/** Local ringing notification with Accept / Decline actions. */
+/** Local ringing notification with Accept / Decline — used when the app is backgrounded. */
 export async function presentIncomingCallNotification(
   payload: IncomingCallNotifyPayload,
 ): Promise<string | null> {
@@ -138,6 +175,7 @@ export async function presentIncomingCallNotification(
         title: payload.interrupt
           ? `Call waiting · ${kind.toLowerCase()}`
           : `Incoming ${kind.toLowerCase()} call`,
+        subtitle: payload.callerName,
         body: payload.interrupt
           ? `${payload.callerName ?? 'Someone'} is calling (waiting)`
           : `${payload.callerName ?? 'Someone'} is calling you`,
@@ -146,15 +184,17 @@ export async function presentIncomingCallNotification(
           callId: payload.callId,
           callType: payload.callType,
           callerName: payload.callerName,
+          callerAvatar: payload.callerAvatar,
           interrupt: payload.interrupt === true,
         },
         categoryIdentifier: CALL_NOTIFICATION_CATEGORY,
-        sound: Platform.OS === 'ios' ? 'defaultRingtone' : CALL_SOUND,
+        sound: Platform.OS === 'ios' ? 'defaultRingtone' : 'default',
         ...(Platform.OS === 'android'
           ? {
               channelId: CALLS_CHANNEL_ID,
               priority: Notifications.AndroidNotificationPriority.MAX,
               sticky: true,
+              autoDismiss: false,
             }
           : {
               interruptionLevel: 'timeSensitive' as const,

@@ -47,6 +47,13 @@ export interface IUser extends Document {
 
   /** Expo push token for background/killed-state device notifications. */
   expoPushToken?: string;
+  /** Multiple logged-in devices. */
+  expoPushDevices?: Array<{
+    token: string;
+    platform?: string;
+    deviceId?: string;
+    updatedAt: Date;
+  }>;
 
   // presence
   isOnline: boolean;
@@ -125,6 +132,18 @@ const userSchema = new Schema<IUser>(
     lastLoginAt: Date,
 
     expoPushToken: { type: String, select: false, trim: true },
+    expoPushDevices: {
+      type: [
+        {
+          token: { type: String, required: true, trim: true },
+          platform: { type: String, trim: true },
+          deviceId: { type: String, trim: true },
+          updatedAt: { type: Date, default: Date.now },
+        },
+      ],
+      select: false,
+      default: [],
+    },
 
     isOnline: { type: Boolean, default: false },
     lastSeenAt: Date,

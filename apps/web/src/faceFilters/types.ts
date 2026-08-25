@@ -29,6 +29,11 @@ export type FaceFilterId =
   | 'rainbowGlasses'
   | 'smoothSkin'
   | 'beauty'
+  | 'laserEyes'
+  | 'animeEyes'
+  | 'clownNose'
+  | 'flowerCrown'
+  | 'devilHorns'
   | 'bgBlur'
   | 'bgDim'
   | 'bgSunset'
@@ -39,6 +44,36 @@ export type FaceFilterId =
 export type FaceLandmarkPoint = { x: number; y: number; z?: number };
 
 export type FilterAnchor = 'face' | 'eyes' | 'forehead' | 'mouth' | 'nose';
+
+export type FilterLayerKind =
+  | 'sunglasses'
+  | 'aviator'
+  | 'heartGlasses'
+  | 'rainbowGlasses'
+  | 'animeEyes'
+  | 'laserEyes'
+  | 'medicalMask'
+  | 'mustache'
+  | 'dogEars'
+  | 'dogNose'
+  | 'catEars'
+  | 'catNose'
+  | 'catWhiskers'
+  | 'bunnyEars'
+  | 'crown'
+  | 'flowerCrown'
+  | 'devilHorns'
+  | 'clownNose'
+  | 'robotVisor'
+  | 'robotJaw'
+  | 'anonMask';
+
+export type FilterLayer = {
+  kind: FilterLayerKind;
+  anchor: FilterAnchor;
+  scale?: number;
+  yOffset?: number;
+};
 
 export type FaceBox = {
   cx: number;
@@ -64,10 +99,11 @@ export type FaceFilterDef = {
   yOffset?: number;
   /** Where the sticker locks — Snapchat-style */
   anchor?: FilterAnchor;
+  rotationEnabled?: boolean;
   privacy?: 'pixel' | 'mosaic' | 'blur' | 'solid';
   beauty?: boolean;
-  /** Full-frame scene grade / virtual-background wash. */
   background?: 'blur' | 'dim' | 'sunset' | 'night' | 'studio' | 'neon';
+  layers?: FilterLayer[];
 };
 
 export type FaceFilterSettings = {
@@ -80,3 +116,4 @@ export type FaceFilterSettings = {
 
 /** LiveKit attribute key — used when clients sync filter selection without bitstream replace. */
 export const FACE_FILTER_ATTR = 'kushlovFaceFilter';
+export const FACE_FILTER_BOX_ATTR = 'kushlovFaceBox';

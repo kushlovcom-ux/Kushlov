@@ -438,6 +438,8 @@ export const SocketEvents = {
   MessageDelete: 'message:delete',
   TypingStart: 'typing:start',
   TypingStop: 'typing:stop',
+  ChatFocus: 'chat:focus',
+  ChatBlur: 'chat:blur',
   CallInvite: 'call:invite',
   CallWaiting: 'call:waiting',
   CallAccept: 'call:accept',

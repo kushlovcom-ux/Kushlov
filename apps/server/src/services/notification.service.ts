@@ -12,6 +12,7 @@ export async function notify(params: {
   body?: string;
   actor?: string | Types.ObjectId;
   data?: Record<string, unknown>;
+  push?: boolean;
 }) {
   const notification = await Notification.create({
     user: params.userId,
@@ -31,13 +32,15 @@ export async function notify(params: {
     createdAt: notification.createdAt,
   });
 
-  void sendExpoPush({
-    userId: params.userId.toString(),
-    type: params.type,
-    title: params.title,
-    body: params.body,
-    data: params.data,
-  });
+  if (params.push !== false) {
+    void sendExpoPush({
+      userId: params.userId.toString(),
+      type: params.type,
+      title: params.title,
+      body: params.body,
+      data: params.data,
+    });
+  }
 
   return notification;
 }

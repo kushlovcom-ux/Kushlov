@@ -36,16 +36,20 @@ export function useIncomingCallWatcher() {
       callType: string,
       callerName?: string,
       interrupt?: boolean,
+      callerAvatar?: string,
     ) => {
       if (notifiedId.current === callId) return;
       notifiedId.current = callId;
       haptics.medium();
-      await presentIncomingCallNotification({
-        callId,
-        callType,
-        callerName,
-        interrupt,
-      });
+      if (AppState.currentState !== 'active') {
+        await presentIncomingCallNotification({
+          callId,
+          callType,
+          callerName,
+          callerAvatar,
+          interrupt,
+        });
+      }
     };
 
     const syncIncoming = async () => {
@@ -71,6 +75,7 @@ export function useIncomingCallWatcher() {
           String(next.type),
           next.caller?.displayName,
           Boolean(next.interrupt),
+          next.caller?.avatarUrl,
         );
       } catch {
         // soft fail
@@ -82,6 +87,21 @@ export function useIncomingCallWatcher() {
 
     const onAppState = (state: AppStateStatus) => {
       if (state === 'active') void syncIncoming();
+      if (state !== 'active') {
+        const incoming = useCallStore.getState().incoming;
+        if (incoming?.id) {
+          void presentIncomingCallNotification({
+            callId: incoming.id,
+            callType: String(incoming.type),
+            callerName: incoming.caller?.displayName,
+            callerAvatar: incoming.caller?.avatarUrl,
+            interrupt: Boolean(incoming.interrupt),
+          });
+        }
+      } else {
+        const incoming = useCallStore.getState().incoming;
+        if (incoming?.id) void dismissIncomingCallNotification(incoming.id);
+      }
     };
     const sub = AppState.addEventListener('change', onAppState);
 
@@ -94,6 +114,7 @@ export function useIncomingCallWatcher() {
           String(state.incoming?.type ?? 'audio'),
           state.incoming?.caller?.displayName,
           Boolean(state.incoming?.interrupt),
+          state.incoming?.caller?.avatarUrl,
         );
       }
       if (!nextId && prevIncomingId) {

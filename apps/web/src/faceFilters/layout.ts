@@ -1,4 +1,4 @@
-import type { FaceBox, FaceFilterDef, FaceLandmarkPoint } from './types';
+import type { FaceBox, FaceFilterDef, FaceLandmarkPoint, FilterLayer } from './types';
 
 /** MediaPipe Face Landmarker indices */
 export const LM = {
@@ -13,9 +13,9 @@ export const LM = {
 
 export const DEFAULT_FACE_BOX: FaceBox = {
   cx: 0.5,
-  cy: 0.42,
-  width: 0.38,
-  height: 0.5,
+  cy: 0.44,
+  width: 0.5,
+  height: 0.64,
   rotation: 0,
 };
 
@@ -53,7 +53,7 @@ export function enrichFaceBox(
     eyes = {
       cx: (left.x + right.x) / 2,
       cy: (left.y + right.y) / 2,
-      width: Math.max(0.18, dist * 2.55),
+      width: Math.max(0.22, dist * 2.7),
     };
   }
 
@@ -180,26 +180,26 @@ export function layoutFilter(
     nx = b.eyes.cx;
     ny = b.eyes.cy + extraY;
     w = (b.eyes.width || b.width) * viewW * scale;
-    h = w * 0.48;
+    h = w * 0.55;
   } else if (anchor === 'forehead' && b.forehead) {
     nx = b.forehead.cx;
     ny = b.forehead.cy + extraY;
-    w = faceWpx * 0.82 * scale;
-    h = w * 0.58;
+    w = faceWpx * 1.05 * scale;
+    h = w * 0.72;
   } else if (anchor === 'mouth' && b.mouth) {
     nx = b.mouth.cx;
     ny = b.mouth.cy + extraY;
-    w = faceWpx * 0.78 * scale;
-    h = w * 0.62;
+    w = faceWpx * 0.92 * scale;
+    h = w * 0.7;
   } else if (anchor === 'nose' && b.nose) {
     nx = b.nose.cx;
     ny = b.nose.cy + extraY;
-    w = faceWpx * 0.5 * scale;
-    h = w * 0.72;
+    w = faceWpx * 0.42 * scale;
+    h = w;
   } else {
     ny = b.cy + extraY;
-    w = faceWpx * 1.06 * scale;
-    h = faceHpx * 1.04 * scale;
+    w = faceWpx * 1.12 * scale;
+    h = faceHpx * 1.1 * scale;
   }
 
   return {
@@ -207,7 +207,83 @@ export function layoutFilter(
     y: ny * viewH,
     w,
     h,
-    rotation: b.rotation,
-    fontSize: Math.max(18, Math.min(w, h) * (anchor === 'eyes' ? 1.08 : 0.9)),
+    rotation: filter.rotationEnabled === false ? 0 : b.rotation,
+    fontSize: Math.max(36, (anchor === 'eyes' ? w : Math.min(w, h)) * 0.92),
   };
+}
+
+export type PlacedLayer = FilterLayout & { kind: FilterLayer['kind'] };
+
+/** Place every catalog layer on the current face box. */
+export function layoutFilterLayers(
+  box: FaceBox,
+  filter: FaceFilterDef,
+  viewW: number,
+  viewH: number,
+): PlacedLayer[] {
+  const layers = filter.layers;
+  if (!layers?.length) {
+    return [{ ...layoutFilter(box, filter, viewW, viewH), kind: 'sunglasses' }];
+  }
+  return layers.map((layer) => {
+    const synthetic: FaceFilterDef = {
+      ...filter,
+      anchor: layer.anchor,
+      scale: layer.scale ?? filter.scale,
+      yOffset: layer.yOffset ?? filter.yOffset,
+    };
+    return { ...layoutFilter(box, synthetic, viewW, viewH), kind: layer.kind };
+  });
+}
+
+function round4(n: number) {
+  return Math.round(n * 10000) / 10000;
+}
+
+/** Compact LiveKit attribute payload. */
+export function serializeFaceBox(box: FaceBox): string {
+  return JSON.stringify({
+    cx: round4(box.cx),
+    cy: round4(box.cy),
+    w: round4(box.width),
+    h: round4(box.height),
+    r: round4(box.rotation),
+    e: box.eyes
+      ? [round4(box.eyes.cx), round4(box.eyes.cy), round4(box.eyes.width)]
+      : undefined,
+    f: box.forehead ? [round4(box.forehead.cx), round4(box.forehead.cy)] : undefined,
+    m: box.mouth ? [round4(box.mouth.cx), round4(box.mouth.cy)] : undefined,
+    n: box.nose ? [round4(box.nose.cx), round4(box.nose.cy)] : undefined,
+  });
+}
+
+export function parseFaceBox(raw: string | null | undefined): FaceBox | null {
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as {
+      cx?: number;
+      cy?: number;
+      w?: number;
+      h?: number;
+      r?: number;
+      e?: number[];
+      f?: number[];
+      m?: number[];
+      n?: number[];
+    };
+    if (typeof p.cx !== 'number' || typeof p.cy !== 'number') return null;
+    return withHeuristicAnchors({
+      cx: p.cx,
+      cy: p.cy,
+      width: typeof p.w === 'number' ? p.w : 0.45,
+      height: typeof p.h === 'number' ? p.h : 0.58,
+      rotation: typeof p.r === 'number' ? p.r : 0,
+      eyes: p.e?.length === 3 ? { cx: p.e[0], cy: p.e[1], width: p.e[2] } : undefined,
+      forehead: p.f?.length === 2 ? { cx: p.f[0], cy: p.f[1] } : undefined,
+      mouth: p.m?.length === 2 ? { cx: p.m[0], cy: p.m[1] } : undefined,
+      nose: p.n?.length === 2 ? { cx: p.n[0], cy: p.n[1] } : undefined,
+    });
+  } catch {
+    return null;
+  }
 }

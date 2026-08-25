@@ -26,7 +26,50 @@ export const registerPushToken = asyncHandler(async (req: Request, res: Response
   if (!token.startsWith('ExponentPushToken')) {
     throw ApiError.badRequest('Invalid Expo push token');
   }
-  await User.findByIdAndUpdate(req.user!.id, { $set: { expoPushToken: token } });
+  const platform = typeof req.body.platform === 'string' ? req.body.platform : undefined;
+  const deviceId = typeof req.body.deviceId === 'string' ? req.body.deviceId : undefined;
+  const user = await User.findById(req.user!.id).select('+expoPushToken +expoPushDevices');
+  if (!user) throw ApiError.notFound('User not found');
+
+  const now = new Date();
+  const devices = (user.expoPushDevices ?? [])
+    .filter((d) => d.token && d.token !== token && (!deviceId || d.deviceId !== deviceId))
+    .map((d) => ({
+      token: d.token,
+      platform: d.platform,
+      deviceId: d.deviceId,
+      updatedAt: d.updatedAt,
+    }));
+  devices.push({ token, platform, deviceId, updatedAt: now });
+  await User.findByIdAndUpdate(req.user!.id, {
+    $set: {
+      expoPushToken: token,
+      expoPushDevices: devices.slice(-8),
+    },
+  });
+  return ok(res, { ok: true });
+});
+
+/** POST /users/me/push-token/clear — drop this device after logout. */
+export const clearPushToken = asyncHandler(async (req: Request, res: Response) => {
+  const token = String(req.body.token ?? '').trim();
+  const user = await User.findById(req.user!.id).select('+expoPushToken +expoPushDevices');
+  if (!user) throw ApiError.notFound('User not found');
+  if (token) {
+    const remaining = (user.expoPushDevices ?? []).filter((d) => d.token !== token);
+    await User.findByIdAndUpdate(req.user!.id, {
+      $set: {
+        expoPushDevices: remaining,
+        expoPushToken:
+          user.expoPushToken === token ? remaining.at(-1)?.token : user.expoPushToken,
+      },
+    });
+  } else {
+    await User.findByIdAndUpdate(req.user!.id, {
+      $unset: { expoPushToken: 1 },
+      $set: { expoPushDevices: [] },
+    });
+  }
   return ok(res, { ok: true });
 });
 

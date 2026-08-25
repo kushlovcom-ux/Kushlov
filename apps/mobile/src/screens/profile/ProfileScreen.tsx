@@ -12,6 +12,7 @@ import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
 import { GlassCard, PressableScale } from '@/design-system';
 import { authApi, walletApi } from '@/api';
+import { clearStoredPushToken } from '@/hooks/usePushTokenSync';
 import { queryKeys } from '@/constants/queryKeys';
 import { useAuthStore } from '@/store/auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -57,6 +58,11 @@ export function ProfileScreen() {
         text: 'Sign out',
         style: 'destructive',
         onPress: async () => {
+          try {
+            await clearStoredPushToken();
+          } catch {
+            /* ignore */
+          }
           try {
             await authApi.logout();
           } catch {

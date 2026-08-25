@@ -1,16 +1,18 @@
 import React, { useMemo, useState } from 'react';
-import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Participant } from 'livekit-client';
 import { getFilterDef } from '../catalog';
-import { heuristicFaceBox, layoutFilter } from '../layout';
-import { FACE_FILTER_ATTR, type FaceFilterDef } from '../types';
+import { heuristicFaceBox, layoutFilter, layoutFilterLayers, parseFaceBox } from '../layout';
+import { FACE_FILTER_ATTR, FACE_FILTER_BOX_ATTR, type FaceBox, type FaceFilterDef } from '../types';
 import { useFaceFilterStore, selectEffectiveFilterId } from '../hooks/useFaceFilter';
+import { FilterLayerSvg } from './FilterLayerSvg';
 
 type OverlayProps = {
   filterId: string | null | undefined;
   mirrored?: boolean;
+  faceBox?: FaceBox | null;
 };
 
 const BG_GRADIENT: Record<
@@ -26,10 +28,10 @@ const BG_GRADIENT: Record<
 };
 
 /**
- * Snapchat-style sticker locked to a face region (eyes / forehead / mouth / full face).
- * Uses a selfie heuristic box when native ML tracking is unavailable.
+ * Landmark-locked AR overlay. Uses a live FaceBox when tracking is available,
+ * otherwise a selfie-proportion heuristic so glasses/ears still span the face.
  */
-export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) {
+export function FaceFilterOverlay({ filterId, mirrored = false, faceBox }: OverlayProps) {
   const filter = getFilterDef(filterId);
   const [size, setSize] = useState({ w: 360, h: 640 });
 
@@ -39,61 +41,32 @@ export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) 
     setSize((prev) => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
   };
 
-  const layout = useMemo(() => {
-    if (!filter || filter.beauty || filter.background || size.w < 8 || size.h < 8) return null;
-    const box = heuristicFaceBox();
-    if (mirrored && box.eyes) {
-      box.eyes = { ...box.eyes, cx: 1 - box.eyes.cx };
-    }
+  const box = useMemo(() => {
+    const next = faceBox ?? heuristicFaceBox();
+    if (!mirrored) return next;
+    return {
+      ...next,
+      cx: 1 - next.cx,
+      rotation: -next.rotation,
+      eyes: next.eyes ? { ...next.eyes, cx: 1 - next.eyes.cx } : next.eyes,
+      forehead: next.forehead ? { ...next.forehead, cx: 1 - next.forehead.cx } : next.forehead,
+      mouth: next.mouth ? { ...next.mouth, cx: 1 - next.mouth.cx } : next.mouth,
+      nose: next.nose ? { ...next.nose, cx: 1 - next.nose.cx } : next.nose,
+    };
+  }, [faceBox, mirrored]);
+
+  const layers = useMemo(() => {
+    if (!filter || filter.beauty || filter.background || size.w < 8 || size.h < 8) return [];
+    if (filter.layers?.length) return layoutFilterLayers(box, filter, size.w, size.h);
+    return [];
+  }, [filter, box, size.w, size.h]);
+
+  const privacyLayout = useMemo(() => {
+    if (!filter?.privacy || size.w < 8 || size.h < 8) return null;
     return layoutFilter(box, filter, size.w, size.h);
-  }, [filter, size.w, size.h, mirrored]);
+  }, [filter, box, size.w, size.h]);
 
   if (!filter) return null;
-
-  const sticker = layout ? (
-    <View
-      style={{
-        position: 'absolute',
-        left: layout.x - layout.w / 2,
-        top: layout.y - layout.h / 2,
-        width: layout.w,
-        height: layout.h,
-        alignItems: 'center',
-        justifyContent: 'center',
-        transform: [{ rotate: `${layout.rotation}deg` }],
-      }}
-    >
-      {filter.privacy ? (
-        <View
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            borderRadius: Math.min(layout.w, layout.h) / 2,
-            backgroundColor:
-              filter.privacy === 'solid'
-                ? '#111'
-                : filter.privacy === 'blur'
-                  ? 'rgba(255,255,255,0.28)'
-                  : 'rgba(0,0,0,0.45)',
-          }}
-        />
-      ) : null}
-      {filter.emoji ? (
-        <Text
-          allowFontScaling={false}
-          style={{
-            fontSize: layout.fontSize,
-            textAlign: 'center',
-            includeFontPadding: false,
-            textShadowColor: 'rgba(0,0,0,0.45)',
-            textShadowOffset: { width: 0, height: 2 },
-            textShadowRadius: 6,
-          }}
-        >
-          {filter.emoji}
-        </Text>
-      ) : null}
-    </View>
-  ) : null;
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={onLayout}>
@@ -111,7 +84,28 @@ export function FaceFilterOverlay({ filterId, mirrored = false }: OverlayProps) 
       {filter.beauty ? (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255, 200, 220, 0.08)' }]} />
       ) : null}
-      {sticker}
+      {privacyLayout ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: privacyLayout.x - privacyLayout.w / 2,
+            top: privacyLayout.y - privacyLayout.h / 2,
+            width: privacyLayout.w,
+            height: privacyLayout.h,
+            borderRadius: Math.min(privacyLayout.w, privacyLayout.h) / 2,
+            backgroundColor:
+              filter.privacy === 'solid'
+                ? '#111'
+                : filter.privacy === 'blur'
+                  ? 'rgba(255,255,255,0.28)'
+                  : 'rgba(0,0,0,0.45)',
+            transform: [{ rotate: `${privacyLayout.rotation}deg` }],
+          }}
+        />
+      ) : null}
+      {layers.map((layer, index) => (
+        <FilterLayerSvg key={`${layer.kind}-${index}`} kind={layer.kind} layout={layer} />
+      ))}
     </View>
   );
 }
@@ -136,6 +130,28 @@ export function useParticipantFaceFilter(participant: Participant | null | undef
   }, [participant]);
 
   return filterId;
+}
+
+export function useParticipantFaceBox(participant: Participant | null | undefined) {
+  const [box, setBox] = React.useState<FaceBox | null>(() =>
+    parseFaceBox(participant?.attributes?.[FACE_FILTER_BOX_ATTR]),
+  );
+
+  React.useEffect(() => {
+    if (!participant) {
+      setBox(null);
+      return;
+    }
+    const sync = () => setBox(parseFaceBox(participant.attributes?.[FACE_FILTER_BOX_ATTR]));
+    sync();
+    const handler = () => sync();
+    participant.on('attributesChanged', handler);
+    return () => {
+      participant.off('attributesChanged', handler);
+    };
+  }, [participant]);
+
+  return box;
 }
 
 /** Local tile: prefer store filter when publishing. */
