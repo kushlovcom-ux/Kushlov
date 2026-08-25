@@ -1,22 +1,56 @@
 import React, { useEffect, useRef } from 'react';
 import { RoomEvent, type Room } from 'livekit-client';
 import {
+  isFaceTrackNativeAvailable,
+  subscribeNativeFace,
+  type NativeFaceEvent,
+} from 'kushlov-face-track';
+import {
   selectEffectiveFilterId,
   useFaceFilterStore,
 } from '../hooks/useFaceFilter';
+import { boxFromDetection, smoothBox } from '../layout';
 import {
   startProcessedVideoTrack,
   type ProcessedTrackController,
 } from '../livekit/publishProcessedTrack';
+import { attachLiveKitFaceTrack } from '../tracking/attachLiveKitFaceTrack';
+import type { FaceBox } from '../types';
 
 type Props = {
   room: Room | null;
 };
 
+function boxFromNative(ev: NativeFaceEvent): FaceBox | null {
+  if (!ev.detected || ev.cx == null || ev.cy == null) return null;
+  return boxFromDetection({
+    cx: ev.cx,
+    cy: ev.cy,
+    width: ev.width ?? 0.42,
+    height: ev.height ?? 0.54,
+    rotation: ev.rotation ?? 0,
+    eyes:
+      ev.eyeCx != null && ev.eyeCy != null
+        ? { cx: ev.eyeCx, cy: ev.eyeCy, width: ev.eyeW ?? 0.32 }
+        : undefined,
+    forehead:
+      ev.foreheadCx != null && ev.foreheadCy != null
+        ? { cx: ev.foreheadCx, cy: ev.foreheadCy }
+        : undefined,
+    mouth:
+      ev.mouthCx != null && ev.mouthCy != null
+        ? { cx: ev.mouthCx, cy: ev.mouthCy }
+        : undefined,
+    nose:
+      ev.noseCx != null && ev.noseCy != null
+        ? { cx: ev.noseCx, cy: ev.noseCy }
+        : undefined,
+  });
+}
+
 /**
- * Publishes the selected filter via LiveKit attributes + data so remotes
- * can overlay the same AR layers. Does not hook the camera capturer —
- * attaching a WebRTC VideoFrameProcessor was crashing the host app on live/call.
+ * Syncs the selected filter to remotes and drives the local overlay from
+ * native face boxes sampled off the LiveKit camera track.
  */
 export function FaceFilterPublisher({ room }: Props) {
   const filterId = useFaceFilterStore(selectEffectiveFilterId);
@@ -24,6 +58,8 @@ export function FaceFilterPublisher({ room }: Props) {
   const setLocalFaceBox = useFaceFilterStore((s) => s.setLocalFaceBox);
   const ctrlRef = useRef<ProcessedTrackController | null>(null);
   const startingRef = useRef<Promise<ProcessedTrackController> | null>(null);
+  const lastBoxRef = useRef<FaceBox | null>(null);
+  const missTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!room) return;
@@ -39,8 +75,13 @@ export function FaceFilterPublisher({ room }: Props) {
         }
         if (cancelled) return;
         void ctrlRef.current.setFilter(filterId);
-        setFaceDetected(filterId !== 'none');
-        if (filterId === 'none') setLocalFaceBox(null);
+        if (filterId === 'none') {
+          setFaceDetected(false);
+          setLocalFaceBox(null);
+          lastBoxRef.current = null;
+        } else if (!isFaceTrackNativeAvailable()) {
+          setFaceDetected(true);
+        }
       } catch {
         startingRef.current = null;
       }
@@ -67,11 +108,54 @@ export function FaceFilterPublisher({ room }: Props) {
   }, [room, filterId, setFaceDetected, setLocalFaceBox]);
 
   useEffect(() => {
+    if (!room || filterId === 'none') {
+      setLocalFaceBox(null);
+      lastBoxRef.current = null;
+      return;
+    }
+
+    const native = isFaceTrackNativeAvailable();
+    const detach = attachLiveKitFaceTrack(room, native);
+    const unsub = subscribeNativeFace((ev) => {
+      const next = boxFromNative(ev);
+      if (!next) {
+        if (missTimerRef.current) return;
+        missTimerRef.current = setTimeout(() => {
+          setFaceDetected(false);
+          missTimerRef.current = null;
+        }, 500);
+        return;
+      }
+      if (missTimerRef.current) {
+        clearTimeout(missTimerRef.current);
+        missTimerRef.current = null;
+      }
+      const smoothed = smoothBox(lastBoxRef.current, next, 0.34);
+      lastBoxRef.current = smoothed;
+      setLocalFaceBox(smoothed);
+      setFaceDetected(true);
+      ctrlRef.current?.setBox(smoothed);
+    });
+
+    if (!native) setFaceDetected(true);
+
+    return () => {
+      unsub();
+      detach();
+      if (missTimerRef.current) {
+        clearTimeout(missTimerRef.current);
+        missTimerRef.current = null;
+      }
+    };
+  }, [room, filterId, setFaceDetected, setLocalFaceBox]);
+
+  useEffect(() => {
     return () => {
       void ctrlRef.current?.stop();
       ctrlRef.current = null;
       startingRef.current = null;
       setLocalFaceBox(null);
+      lastBoxRef.current = null;
     };
   }, [room, setLocalFaceBox]);
 

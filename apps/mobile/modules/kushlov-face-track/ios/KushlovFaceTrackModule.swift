@@ -20,5 +20,10 @@ public class KushlovFaceTrackModule: Module {
     Function("isAvailable") { () -> Bool in
       true
     }
+
+    Function("attachProcessor") { () -> Bool in
+      KushlovFaceTrackBridge.registerProcessor()
+      true
+    }
   }
 }

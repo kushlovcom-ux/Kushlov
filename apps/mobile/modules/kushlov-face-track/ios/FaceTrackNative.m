@@ -152,8 +152,12 @@ static CGPoint regionPoint(VNFaceLandmarkRegion2D *region, CGRect box) {
   static KushlovFaceProcessor *processor;
   static dispatch_once_t once;
   dispatch_once(&once, ^{
-    processor = [KushlovFaceProcessor new];
-    [ProcessorProvider addProcessor:processor forName:@"kushlovFace"];
+    @try {
+      processor = [KushlovFaceProcessor new];
+      [ProcessorProvider addProcessor:processor forName:@"kushlovFace"];
+    } @catch (NSException *exception) {
+      processor = nil;
+    }
   });
 }
 

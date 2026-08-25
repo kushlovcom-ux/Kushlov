@@ -21,6 +21,7 @@ export type NativeFaceEvent = {
 
 type FaceTrackNative = {
   isAvailable(): boolean;
+  attachProcessor?: () => boolean | Promise<boolean>;
   addListener(
     event: 'onFace',
     listener: (event: NativeFaceEvent) => void,
@@ -34,6 +35,18 @@ export const FACE_TRACK_EFFECT = 'kushlovFace';
 
 export function isFaceTrackNativeAvailable(): boolean {
   return native != null;
+}
+
+export async function ensureFaceProcessorRegistered(): Promise<boolean> {
+  if (!native) return false;
+  try {
+    if (typeof native.attachProcessor === 'function') {
+      await native.attachProcessor();
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function subscribeNativeFace(
