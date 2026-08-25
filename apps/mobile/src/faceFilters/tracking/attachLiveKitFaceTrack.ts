@@ -11,6 +11,13 @@ type EffectTrack = {
   _setVideoEffects?: (names: string[]) => void;
 };
 
+/**
+ * Hooking ML Kit / Vision into the LiveKit capturer via `_setVideoEffect`
+ * was killing the host process on camera start (WebRTC pass-through
+ * double-release + GPU toI420). Keep the camera pipeline untouched.
+ */
+const ATTACH_CAPTURER = false;
+
 function cameraTrack(room: Room): EffectTrack | null {
   const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
   const raw = pub?.track?.mediaStreamTrack as EffectTrack | undefined;
@@ -19,7 +26,7 @@ function cameraTrack(room: Room): EffectTrack | null {
 }
 
 function applyEffect(room: Room, enabled: boolean) {
-  if (!isFaceTrackNativeAvailable()) return;
+  if (!ATTACH_CAPTURER || !isFaceTrackNativeAvailable()) return;
   const track = cameraTrack(room);
   if (!track?._setVideoEffects) return;
   try {
@@ -31,10 +38,13 @@ function applyEffect(room: Room, enabled: boolean) {
 }
 
 /**
- * Hooks ML Kit / Vision into the existing LiveKit camera capturer.
- * Does not open a second camera.
+ * Intentionally a no-op on the capturer so live / video calls stay up.
+ * Overlay + LiveKit attributes still work without sampling frames.
  */
 export function attachLiveKitFaceTrack(room: Room, enabled: boolean): () => void {
+  if (!ATTACH_CAPTURER) {
+    return () => undefined;
+  }
   if (!enabled) {
     applyEffect(room, false);
     return () => undefined;

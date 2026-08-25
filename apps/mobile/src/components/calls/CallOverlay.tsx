@@ -82,14 +82,23 @@ export function CallOverlay() {
     markConnected,
   ]);
 
-  // Ensure camera actually publishes on video calls once the room is ready.
+  // Apply mute/camera-off without restarting an already-correct capturer.
+  // Calling setCameraEnabled(true) again while LiveKitRoom is already
+  // publishing was racing and killing the host process on some devices.
   useEffect(() => {
     if (!room || !active) return;
-    if (active.session.type !== CallType.Video) return;
+    const participant = room.localParticipant;
+    const wantMic = !active.muted;
+    const wantCam =
+      active.session.type === CallType.Video && !active.cameraOff;
     void (async () => {
       try {
-        await room.localParticipant.setMicrophoneEnabled(!active.muted);
-        await room.localParticipant.setCameraEnabled(!active.cameraOff);
+        if (participant.isMicrophoneEnabled !== wantMic) {
+          await participant.setMicrophoneEnabled(wantMic);
+        }
+        if (active.session.type === CallType.Video && participant.isCameraEnabled !== wantCam) {
+          await participant.setCameraEnabled(wantCam);
+        }
       } catch {
         // Permission / device issues — audio may still work
       }

@@ -13,7 +13,8 @@ public class KushlovFaceTrackModule: Module {
           module.sendEvent("onFace", dict)
         }
       }
-      KushlovFaceTrackBridge.registerProcessor()
+      // Do not register a VideoFrameProcessor on the LiveKit capturer —
+      // that path was crashing the host app when the camera started.
     }
 
     Function("isAvailable") { () -> Bool in

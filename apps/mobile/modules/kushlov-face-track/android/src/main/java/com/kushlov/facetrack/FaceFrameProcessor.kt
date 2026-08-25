@@ -31,33 +31,51 @@ internal class FaceFrameProcessor : VideoFrameProcessor {
   private var lastEmit = 0L
 
   override fun process(frame: VideoFrame, textureHelper: SurfaceTextureHelper): VideoFrame {
-    val now = System.currentTimeMillis()
-    if (now - lastEmit < 80) return frame
-    if (!busy.compareAndSet(false, true)) return frame
-    lastEmit = now
+    try {
+      val now = System.currentTimeMillis()
+      if (now - lastEmit < 80) {
+        frame.retain()
+        return frame
+      }
+      if (!busy.compareAndSet(false, true)) {
+        frame.retain()
+        return frame
+      }
+      lastEmit = now
 
-    // Copy off the GPU texture *now*. Texture buffers are invalid after we return.
-    val i420 = try {
-      frame.buffer.toI420()
+      val i420 = try {
+        frame.buffer.toI420()
+      } catch (_: Throwable) {
+        busy.set(false)
+        frame.retain()
+        return frame
+      }
+      if (i420 == null) {
+        busy.set(false)
+        frame.retain()
+        return frame
+      }
+      val rotation = frame.rotation
+      executor.execute {
+        try {
+          detect(i420, rotation)
+        } catch (_: Throwable) {
+          emitEmpty()
+        } finally {
+          try {
+            i420.release()
+          } catch (_: Throwable) {
+            /* already released */
+          }
+          busy.set(false)
+        }
+      }
     } catch (_: Throwable) {
       busy.set(false)
-      return frame
     }
-    if (i420 == null) {
-      busy.set(false)
-      return frame
-    }
-    val rotation = frame.rotation
-    executor.execute {
-      try {
-        detect(i420, rotation)
-      } catch (_: Throwable) {
-        emitEmpty()
-      } finally {
-        i420.release()
-        busy.set(false)
-      }
-    }
+    // Extra retain: react-native-webrtc VideoEffectProcessor releases both
+    // the processed frame and the original when they are the same instance.
+    frame.retain()
     return frame
   }
 

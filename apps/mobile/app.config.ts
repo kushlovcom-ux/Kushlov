@@ -108,6 +108,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
               '-keep class com.google.mlkit.** { *; }',
               '-keep class com.kushlov.facetrack.** { *; }',
               '-keep class io.livekit.** { *; }',
+              '-keep class com.oney.WebRTCModule.** { *; }',
+              '-keep class org.webrtc.** { *; }',
               '-dontwarn com.razorpay.**',
               '-dontwarn org.webrtc.**',
             ].join('\n'),

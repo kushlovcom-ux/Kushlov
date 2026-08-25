@@ -3,7 +3,6 @@ import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Participant } from 'livekit-client';
-import { isFaceTrackNativeAvailable } from 'kushlov-face-track';
 import { getFilterDef } from '../catalog';
 import { heuristicFaceBox, layoutFilter, layoutFilterLayers, parseFaceBox } from '../layout';
 import { FACE_FILTER_ATTR, FACE_FILTER_BOX_ATTR, type FaceBox, type FaceFilterDef } from '../types';
@@ -44,10 +43,8 @@ export function FaceFilterOverlay({ filterId, mirrored = false, faceBox }: Overl
 
   const resolved = useMemo(() => {
     if (faceBox) return faceBox;
-    // Local tiles with native tracking wait for a real face instead of a fixed box.
-    if (mirrored && isFaceTrackNativeAvailable()) return null;
     return heuristicFaceBox();
-  }, [faceBox, mirrored]);
+  }, [faceBox]);
 
   const box = useMemo(() => {
     if (!resolved) return null;
