@@ -10,8 +10,12 @@
 **/coverage/**
 **/.turbo/**
 **/.cache/**
-**/android/**
-**/ios/**
+# Generated Expo prebuild output only — never **/android or **/ios, those
+# also ignore local modules under apps/mobile/modules/*/android|ios.
+/android/
+/ios/
+apps/mobile/android/**
+apps/mobile/ios/**
 **/*.log
 **/.DS_Store
 
