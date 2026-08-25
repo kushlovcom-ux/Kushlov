@@ -116,3 +116,5 @@ export type FaceFilterSettings = {
 export const FACE_FILTER_ATTR = 'kushlovFaceFilter';
 /** Compact serialized FaceBox so remotes can lock overlays to the publisher's landmarks. */
 export const FACE_FILTER_BOX_ATTR = 'kushlovFaceBox';
+/** Reliable data-channel topic — attributes can miss on some native clients. */
+export const FACE_FILTER_TOPIC = 'kushlov.ff';

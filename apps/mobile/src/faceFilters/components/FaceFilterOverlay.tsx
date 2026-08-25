@@ -69,7 +69,14 @@ export function FaceFilterOverlay({ filterId, mirrored = false, faceBox }: Overl
   if (!filter) return null;
 
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={onLayout}>
+    <View
+      pointerEvents="none"
+      collapsable={false}
+      renderToHardwareTextureAndroid
+      needsOffscreenAlphaCompositing
+      style={StyleSheet.absoluteFill}
+      onLayout={onLayout}
+    >
       {filter.background === 'blur' ? (
         <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} />
       ) : null}
@@ -133,6 +140,8 @@ export function useParticipantFaceFilter(participant: Participant | null | undef
 }
 
 export function useParticipantFaceBox(participant: Participant | null | undefined) {
+  const identity = participant?.isLocal ? '' : participant?.identity ?? '';
+  const stored = useFaceFilterStore((s) => (identity ? s.remoteBoxes[identity] ?? null : null));
   const [box, setBox] = React.useState<FaceBox | null>(() =>
     parseFaceBox(participant?.attributes?.[FACE_FILTER_BOX_ATTR]),
   );
@@ -151,17 +160,19 @@ export function useParticipantFaceBox(participant: Participant | null | undefine
     };
   }, [participant]);
 
-  return box;
+  return box ?? stored ?? null;
 }
 
-/** Local tile: prefer store filter when publishing. */
+/** Local tile: store filter. Remote: LiveKit attributes, then data-channel store. */
 export function useLocalOrRemoteFaceFilter(
   participant: Participant | null | undefined,
 ) {
   const attr = useParticipantFaceFilter(participant);
   const local = useFaceFilterStore(selectEffectiveFilterId);
+  const identity = participant?.isLocal ? '' : participant?.identity ?? '';
+  const remote = useFaceFilterStore((s) => (identity ? s.remoteFilters[identity] ?? '' : ''));
   if (participant?.isLocal) {
     return local === 'none' ? '' : local;
   }
-  return attr;
+  return attr || remote || '';
 }

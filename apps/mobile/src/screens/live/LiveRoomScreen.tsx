@@ -20,6 +20,7 @@ import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { LiveKitStage } from '@/components/live/LiveKitStage';
+import { HostMediaBar } from '@/components/live/HostMediaBar';
 import { FilterSelector } from '@/faceFilters/components/FilterSelector';
 import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
 import { liveApi } from '@/api/live';
@@ -173,7 +174,6 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     if (!live.data) return;
     if (coliveToken && isCoHost) return;
     let cancelled = false;
-    setConnecting(true);
     setConnectError(null);
     (async () => {
       try {
@@ -403,10 +403,20 @@ export function LiveRoomScreen({ navigation, route }: Props) {
               serverUrl={livekitUrl}
               publish={canPublish}
               isHost={canPublish}
+              layout="grid"
+              videoFit="cover"
+              showAvControls={false}
               onDisconnected={leave}
               onRoom={onRoom}
               style={{ flex: 1 }}
             />
+            {canPublish ? (
+              <View style={styles.filterOverlay} pointerEvents="box-none">
+                <FaceFilterPublisher room={room} />
+                <HostMediaBar room={room} />
+                <FilterSelector compact />
+              </View>
+            ) : null}
           </View>
         ) : (
           <View style={[styles.stageFallback, { backgroundColor: c.elevated }]}>
@@ -486,10 +496,6 @@ export function LiveRoomScreen({ navigation, route }: Props) {
               variant="secondary"
               onPress={() => liveApi.like(liveId).catch(() => undefined)}
             />
-          </View>
-          <View style={{ gap: 8, marginTop: spacing.sm }}>
-            <FaceFilterPublisher room={room} />
-            <FilterSelector />
           </View>
         </View>
       ) : null}
@@ -586,6 +592,13 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     backgroundColor: '#000',
     gap: 4,
+  },
+  filterOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 12,
+    zIndex: 20,
   },
   chatDockList: {
     maxHeight: 96,

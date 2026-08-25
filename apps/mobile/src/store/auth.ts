@@ -87,4 +87,4 @@ export const useAuthStore = create<AuthState>()(
 setTimeout(() => {
   const s = useAuthStore.getState();
   if (!s.hydrated) s.setHydrated(true);
-}, 2000);
+}, 400);

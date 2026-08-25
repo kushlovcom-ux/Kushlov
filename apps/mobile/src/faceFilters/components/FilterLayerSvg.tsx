@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import Svg, { Circle, Ellipse, Path, Rect, G } from 'react-native-svg';
+import Svg, { Circle, Ellipse, Path, Rect, G, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import type { FilterLayerKind } from '../types';
 import type { FilterLayout } from '../layout';
 
@@ -27,6 +27,12 @@ export function FilterLayerSvg({ kind, layout }: Props) {
       }}
     >
       <Svg width="100%" height="100%" viewBox={viewBoxFor(kind)} preserveAspectRatio="xMidYMid meet">
+        <Defs>
+          <SvgLinearGradient id={`glassShine-${kind}`} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#fff" stopOpacity="0.35" />
+            <Stop offset="1" stopColor="#fff" stopOpacity="0" />
+          </SvgLinearGradient>
+        </Defs>
         <LayerArt kind={kind} />
       </Svg>
     </View>
@@ -66,8 +72,8 @@ function LayerArt({ kind }: { kind: FilterLayerKind }) {
           <Path d="M98 46 H122" stroke="#111" strokeWidth="8" strokeLinecap="round" />
           <Path d="M18 42 H6" stroke="#111" strokeWidth="7" strokeLinecap="round" />
           <Path d="M202 42 H214" stroke="#111" strokeWidth="7" strokeLinecap="round" />
-          <Rect x="24" y="34" width="68" height="16" rx="8" fill="#3d4a5c" opacity="0.45" />
-          <Rect x="128" y="34" width="68" height="16" rx="8" fill="#3d4a5c" opacity="0.45" />
+          <Rect x="24" y="34" width="68" height="16" rx="8" fill="url(#glassShine-sunglasses)" />
+          <Rect x="128" y="34" width="68" height="16" rx="8" fill="url(#glassShine-sunglasses)" />
         </G>
       );
     case 'aviator':

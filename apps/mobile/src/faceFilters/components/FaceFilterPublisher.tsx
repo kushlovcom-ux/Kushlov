@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import type { Room } from 'livekit-client';
+import { RoomEvent, type Room } from 'livekit-client';
 import {
   selectEffectiveFilterId,
   useFaceFilterStore,
@@ -14,8 +14,8 @@ type Props = {
 };
 
 /**
- * Applies the selected face filter: bitstream replace when native bridge exists,
- * otherwise LiveKit attribute sync for remote overlays.
+ * Applies the selected face filter via LiveKit attribute + data sync
+ * so remotes can overlay the same AR layers.
  */
 export function FaceFilterPublisher({ room }: Props) {
   const filterId = useFaceFilterStore(selectEffectiveFilterId);
@@ -36,7 +36,6 @@ export function FaceFilterPublisher({ room }: Props) {
           ctrlRef.current = await startingRef.current;
         }
         if (cancelled) return;
-        // Attribute + overlay apply immediately; do not tear down on "none".
         void ctrlRef.current.setFilter(filterId);
         setFaceDetected(true);
       } catch {
@@ -45,8 +44,22 @@ export function FaceFilterPublisher({ room }: Props) {
     };
 
     void run();
+
+    const onPeer = () => {
+      void ctrlRef.current?.resync();
+    };
+    room.on(RoomEvent.ParticipantConnected, onPeer);
+    room.on(RoomEvent.Connected, onPeer);
+
+    const pulse = setInterval(() => {
+      void ctrlRef.current?.resync();
+    }, 2000);
+
     return () => {
       cancelled = true;
+      clearInterval(pulse);
+      room.off(RoomEvent.ParticipantConnected, onPeer);
+      room.off(RoomEvent.Connected, onPeer);
     };
   }, [room, filterId, setFaceDetected]);
 

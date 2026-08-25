@@ -117,3 +117,4 @@ export type FaceFilterSettings = {
 /** LiveKit attribute key — used when clients sync filter selection without bitstream replace. */
 export const FACE_FILTER_ATTR = 'kushlovFaceFilter';
 export const FACE_FILTER_BOX_ATTR = 'kushlovFaceBox';
+export const FACE_FILTER_TOPIC = 'kushlov.ff';

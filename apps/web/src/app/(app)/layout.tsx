@@ -1,6 +1,5 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
@@ -8,19 +7,10 @@ import { AppNav } from '@/components/app/app-nav';
 import { AppTopBar } from '@/components/app/app-top-bar';
 import { MobileBottomNav } from '@/components/app/mobile-bottom-nav';
 import { SocketProvider } from '@/components/socket-provider';
+import { CallOverlay } from '@/components/calls/call-overlay';
+import { ColiveInviteOverlay } from '@/components/live/colive-invite-overlay';
 import { useScrollNavVisibility } from '@/hooks/use-scroll-nav-visibility';
 import { cn } from '@/lib/utils';
-
-const CallOverlay = dynamic(
-  () => import('@/components/calls/call-overlay').then((m) => m.CallOverlay),
-  { ssr: false },
-);
-
-const ColiveInviteOverlay = dynamic(
-  () =>
-    import('@/components/live/colive-invite-overlay').then((m) => m.ColiveInviteOverlay),
-  { ssr: false },
-);
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { accessToken, hydrated, sessionChecked } = useAuthStore();
@@ -34,7 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (hydrated && sessionChecked && !accessToken) router.replace('/login');
   }, [hydrated, sessionChecked, accessToken, router]);
 
-  if (!hydrated || !sessionChecked || !accessToken) {
+  if (!hydrated || !accessToken) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-brand-pink" />

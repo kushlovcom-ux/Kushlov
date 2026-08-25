@@ -13,8 +13,8 @@ export function useDiscover(
     initialPageParam: 1,
     getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
     enabled: options?.enabled ?? true,
-    staleTime: 0,
-    refetchOnMount: 'always',
+    staleTime: 30_000,
+    refetchOnMount: false,
     refetchOnReconnect: true,
     refetchInterval: options?.refetchInterval ?? false,
   });

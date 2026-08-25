@@ -1,6 +1,6 @@
 'use client';
 
-import dynamic from 'next/dynamic';
+import { LiveKitStage } from '@/components/live/livekit-stage';
 import {
   useCallback,
   useEffect,
@@ -35,11 +35,6 @@ import { AddCallParticipant } from '@/components/calls/add-call-participant';
 import { cn } from '@/lib/utils';
 
 const INCOMING_RINGTONE_SRC = '/sounds/incoming-call.wav';
-
-const LiveKitStage = dynamic(
-  () => import('@/components/live/livekit-stage').then((m) => m.LiveKitStage),
-  { ssr: false, loading: () => <div className="skeleton h-full min-h-[240px] w-full rounded-2xl" /> },
-);
 
 type IncomingInvite = {
   callId: string;

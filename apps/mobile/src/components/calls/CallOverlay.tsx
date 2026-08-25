@@ -16,7 +16,7 @@ import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublishe
 import { callsApi } from '@/api/calls';
 import { getErrorMessage } from '@/api/client';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import { ensureLiveKitNative } from '@/services/livekit';
+import { getLiveKitRn, isLiveKitNativeReady, preloadLiveKitNative } from '@/services/livekit';
 import { dismissIncomingCallNotification } from '@/services/notifications';
 import { useCallStore } from '@/store/call';
 import { CallStatus, CallType } from '@/types';
@@ -41,7 +41,9 @@ export function CallOverlay() {
   const setSpeakerOn = useCallStore((s) => s.setSpeakerOn);
   const markConnected = useCallStore((s) => s.markConnected);
   const [elapsed, setElapsed] = useState(0);
-  const [nativeOk, setNativeOk] = useState<boolean | null>(null);
+  const [nativeOk, setNativeOk] = useState<boolean | null>(() =>
+    isLiveKitNativeReady() ? true : null,
+  );
   const [room, setRoom] = useState<Room | null>(null);
   const endingRef = useRef(false);
   useCallRingtone(Boolean(incoming));
@@ -52,17 +54,7 @@ export function CallOverlay() {
 
   useEffect(() => {
     if (!active && !incoming) return;
-    let cancelled = false;
-    ensureLiveKitNative()
-      .then((ok) => {
-        if (!cancelled) setNativeOk(ok);
-      })
-      .catch(() => {
-        if (!cancelled) setNativeOk(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    setNativeOk(preloadLiveKitNative());
   }, [active, incoming]);
 
   useEffect(() => {
@@ -379,6 +371,8 @@ export function CallOverlay() {
             serverUrl={url}
             publish
             audioOnly={!isVideo}
+            layout="speaker"
+            videoFit="contain"
             onDisconnected={() => {
               if (endingRef.current) return;
               if (useCallStore.getState().parked) return;
@@ -515,7 +509,7 @@ export function CallOverlay() {
       {isVideo ? (
         <View style={styles.filterBar}>
           <FaceFilterPublisher room={room} />
-          <FilterSelector />
+          <FilterSelector compact />
         </View>
       ) : null}
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { FaceFilterId, FaceFilterSettings } from '../types';
+import type { FaceBox, FaceFilterId, FaceFilterSettings } from '../types';
 
 const STORAGE_KEY = 'kushlov.faceFilter.settings';
 
@@ -19,6 +19,9 @@ type FaceFilterStore = {
   panelOpen: boolean;
   faceDetected: boolean;
   lowBattery: boolean;
+  /** identity → filter id from LiveKit attributes / data packets */
+  remoteFilters: Record<string, string>;
+  remoteBoxes: Record<string, FaceBox>;
   hydrate: () => Promise<void>;
   setActiveFilterId: (id: FaceFilterId) => void;
   toggleFavorite: (id: FaceFilterId) => void;
@@ -26,6 +29,8 @@ type FaceFilterStore = {
   setPanelOpen: (v: boolean) => void;
   setFaceDetected: (v: boolean) => void;
   setLowBattery: (v: boolean) => void;
+  setRemoteFilter: (identity: string, id: string, box?: FaceBox | null) => void;
+  clearRemoteFilters: () => void;
 };
 
 async function persist(settings: FaceFilterSettings) {
@@ -43,6 +48,8 @@ export const useFaceFilterStore = create<FaceFilterStore>((set, get) => ({
   panelOpen: false,
   faceDetected: true,
   lowBattery: false,
+  remoteFilters: {},
+  remoteBoxes: {},
   hydrate: async () => {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -91,6 +98,31 @@ export const useFaceFilterStore = create<FaceFilterStore>((set, get) => ({
   setPanelOpen: (panelOpen) => set({ panelOpen }),
   setFaceDetected: (faceDetected) => set({ faceDetected }),
   setLowBattery: (lowBattery) => set({ lowBattery }),
+  setRemoteFilter: (identity, id, box) => {
+    const key = String(identity || '');
+    if (!key) return;
+    const next = id && id !== 'none' ? id : '';
+    set((s) => {
+      const prevId = s.remoteFilters[key] ?? '';
+      const prevBox = s.remoteBoxes[key];
+      const boxSame =
+        !box ||
+        (prevBox &&
+          prevBox.cx === box.cx &&
+          prevBox.cy === box.cy &&
+          prevBox.width === box.width &&
+          prevBox.height === box.height);
+      if (prevId === next && boxSame) return s;
+      const remoteFilters = { ...s.remoteFilters };
+      const remoteBoxes = { ...s.remoteBoxes };
+      if (next) remoteFilters[key] = next;
+      else delete remoteFilters[key];
+      if (next && box) remoteBoxes[key] = box;
+      else if (!next) delete remoteBoxes[key];
+      return { remoteFilters, remoteBoxes };
+    });
+  },
+  clearRemoteFilters: () => set({ remoteFilters: {}, remoteBoxes: {} }),
 }));
 
 /** Effective filter after settings / battery gates. */

@@ -15,6 +15,7 @@ import { useLiveKitUrl } from '@/hooks/use-livekit-url';
 import { FaceFilterProvider } from '@/faceFilters/hooks/useFaceFilter';
 import { FilterSelector } from '@/faceFilters/components/FilterSelector';
 import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
+import { FaceFilterOverlay } from '@/faceFilters/components/FaceFilterOverlay';
 import { PublisherAvControls } from '@/components/live/publisher-av-controls';
 import { cn } from '@/lib/utils';
 
@@ -69,6 +70,9 @@ function ParticipantTile({
           height: '100%',
         }}
       />
+      {!trackRef.participant.isLocal ? (
+        <FaceFilterOverlay participant={trackRef.participant} />
+      ) : null}
       {showLabel ? (
         <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex max-w-[90%] items-center gap-1.5">
           {roleBadge ? (
@@ -83,6 +87,25 @@ function ParticipantTile({
       ) : null}
     </div>
   );
+}
+
+function uniqueCameraTracks<
+  T extends { participant: Participant; publication?: { isSubscribed?: boolean; isMuted?: boolean } },
+>(tracks: T[]): T[] {
+  const byIdentity = new Map<string, T>();
+  for (const track of tracks) {
+    const identity = track.participant.identity;
+    if (!identity || identity.startsWith('preview_')) continue;
+    const existing = byIdentity.get(identity);
+    if (!existing) {
+      byIdentity.set(identity, track);
+      continue;
+    }
+    const score = (t: T) =>
+      (t.publication?.isSubscribed ? 2 : 0) + (t.publication?.isMuted ? 0 : 1);
+    if (score(track) >= score(existing)) byIdentity.set(identity, track);
+  }
+  return [...byIdentity.values()];
 }
 
 /** In-room video UI — avoids VideoConference placeholder track bugs. */
@@ -101,10 +124,11 @@ function LiveRoomVideo({
   videoFit: VideoFit;
   layout: StageLayout;
 }) {
-  const cameraTracks = useTracks(
-    [{ source: Track.Source.Camera, withPlaceholder: false }],
-    { onlySubscribed: false },
-  ).filter(isTrackReference);
+  const cameraTracks = uniqueCameraTracks(
+    useTracks([{ source: Track.Source.Camera, withPlaceholder: false }], {
+      onlySubscribed: false,
+    }).filter(isTrackReference),
+  );
 
   const localTracks = cameraTracks.filter((t) => t.participant.isLocal);
   const remoteTracks = cameraTracks.filter((t) => !t.participant.isLocal);

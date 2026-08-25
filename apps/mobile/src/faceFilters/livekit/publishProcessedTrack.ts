@@ -1,130 +1,95 @@
-import { LocalVideoTrack, Track, type Room } from 'livekit-client';
-import { FACE_FILTER_ATTR, type FaceFilterId } from '../types';
-import { createFaceTrackingEngine } from '../tracking/FaceTrackingEngine';
+import { ConnectionState, RoomEvent, type Room } from 'livekit-client';
+import {
+  FACE_FILTER_ATTR,
+  FACE_FILTER_BOX_ATTR,
+  FACE_FILTER_TOPIC,
+  type FaceFilterId,
+} from '../types';
+import { heuristicFaceBox, serializeFaceBox } from '../layout';
 
 export type ProcessedTrackController = {
   setFilter: (id: FaceFilterId) => Promise<void>;
+  resync: () => Promise<void>;
   stop: () => Promise<void>;
   faceDetected: () => boolean;
-  /** `bitstream` when native frame processor is available; else attribute+overlay sync. */
   mode: () => 'bitstream' | 'attribute';
 };
 
-type NativeBridge = {
-  start: (filterId: FaceFilterId) => Promise<MediaStreamTrack | null>;
-  setFilter: (filterId: FaceFilterId) => Promise<void>;
-  stop: () => Promise<void>;
-};
+const encoder = new TextEncoder();
 
-declare global {
-  // Optional EAS native module hook
-  // eslint-disable-next-line no-var
-  var __KushlovFaceFilterCapture: NativeBridge | undefined;
+async function whenConnected(room: Room) {
+  if (room.state === ConnectionState.Connected) return;
+  await new Promise<void>((resolve) => {
+    if (room.state === ConnectionState.Connected) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      room.off(RoomEvent.Connected, done);
+      resolve();
+    };
+    room.on(RoomEvent.Connected, done);
+    setTimeout(() => {
+      room.off(RoomEvent.Connected, done);
+      resolve();
+    }, 8000);
+  });
 }
 
 /**
- * Publishes filtered video when a native capture bridge exists (EAS).
- * Otherwise syncs filter id via LiveKit attributes so remotes can overlay,
- * and keeps local tracking engine warm for future frame processors.
+ * Publishes the selected filter to remotes via LiveKit attributes + data packets
+ * so the other person can overlay the same AR layers.
+ *
+ * Mobile keeps LiveKit's camera track (no second capturer / no bitstream replace)
+ * to avoid duplicate video windows.
  */
 export async function startProcessedVideoTrack(
   room: Room,
 ): Promise<ProcessedTrackController> {
-  const engine = createFaceTrackingEngine();
   let filterId: FaceFilterId = 'none';
-  let mode: 'bitstream' | 'attribute' = 'attribute';
-  let lkTrack: LocalVideoTrack | null = null;
-  let detected = true;
 
-  const syncAttr = async (id: FaceFilterId) => {
+  const broadcast = async (id: FaceFilterId) => {
+    try {
+      await whenConnected(room);
+    } catch {
+      /* still try */
+    }
+    const value = id === 'none' ? '' : id;
+    const box = value ? serializeFaceBox(heuristicFaceBox()) : '';
+    const identity = room.localParticipant?.identity || '';
     try {
       await room.localParticipant.setAttributes({
-        [FACE_FILTER_ATTR]: id === 'none' ? '' : id,
+        [FACE_FILTER_ATTR]: value,
+        [FACE_FILTER_BOX_ATTR]: box,
       });
     } catch {
-      /* soft fail */
+      /* some SFUs reject unknown attrs — data packet still goes out */
     }
-  };
-
-  const applyBitstream = async (id: FaceFilterId) => {
-    const bridge = globalThis.__KushlovFaceFilterCapture;
-    if (!bridge || id === 'none') return false;
     try {
-      const mediaTrack = await bridge.start(id);
-      if (!mediaTrack) return false;
-      const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-      if (pub?.track) {
-        await room.localParticipant.unpublishTrack(pub.track);
-      }
-      lkTrack = new LocalVideoTrack(mediaTrack, undefined, true);
-      await room.localParticipant.publishTrack(lkTrack, {
-        source: Track.Source.Camera,
-        name: 'camera-filtered',
+      const payload = encoder.encode(
+        JSON.stringify({ t: 'ff', id: value, box: box || undefined, from: identity }),
+      );
+      await room.localParticipant.publishData(payload, {
+        reliable: true,
+        topic: FACE_FILTER_TOPIC,
       });
-      mode = 'bitstream';
-      return true;
     } catch {
-      return false;
+      /* overlay still works locally */
     }
   };
 
   return {
-    mode: () => mode,
-    faceDetected: () => {
-      void engine.detect(640, 480).then((box) => {
-        detected = !!box;
-      });
-      return detected;
+    mode: () => 'attribute',
+    faceDetected: () => filterId !== 'none',
+    resync: async () => {
+      await broadcast(filterId);
     },
     setFilter: async (id) => {
       filterId = id;
-      if (id === 'none') {
-        if (lkTrack) {
-          try {
-            await room.localParticipant.unpublishTrack(lkTrack);
-          } catch {
-            /* ignore */
-          }
-          lkTrack.stop();
-          lkTrack = null;
-          try {
-            await room.localParticipant.setCameraEnabled(true);
-          } catch {
-            /* ignore */
-          }
-        }
-        await globalThis.__KushlovFaceFilterCapture?.stop();
-        mode = 'attribute';
-        await syncAttr('none');
-        return;
-      }
-      const ok = await applyBitstream(id);
-      if (!ok) {
-        mode = 'attribute';
-        await syncAttr(id);
-      } else {
-        await globalThis.__KushlovFaceFilterCapture?.setFilter(id);
-        await syncAttr(id);
-      }
+      await broadcast(id);
     },
     stop: async () => {
-      await syncAttr('none');
-      if (lkTrack) {
-        try {
-          await room.localParticipant.unpublishTrack(lkTrack);
-        } catch {
-          /* ignore */
-        }
-        lkTrack.stop();
-        lkTrack = null;
-      }
-      await globalThis.__KushlovFaceFilterCapture?.stop();
-      engine.dispose?.();
-      try {
-        await room.localParticipant.setCameraEnabled(true);
-      } catch {
-        /* ignore */
-      }
+      await broadcast('none');
     },
   };
 }

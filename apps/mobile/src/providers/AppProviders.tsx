@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Appearance, StatusBar } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query';
 import { CallOverlay } from '@/components/calls/CallOverlay';
 import { ColiveInviteModal } from '@/components/live/ColiveInviteModal';
 import { SocketProvider } from './SocketProvider';
@@ -13,6 +13,7 @@ import { useIncomingCallWatcher } from '@/hooks/useIncomingCallWatcher';
 import { usePushTokenSync } from '@/hooks/usePushTokenSync';
 import { useNotificationNavigation } from '@/hooks/useNotificationNavigation';
 import { useFaceFilterStore } from '@/faceFilters/hooks/useFaceFilter';
+import { preloadLiveKitNative } from '@/services/livekit';
 
 function ThemeBridge({ children }: { children: React.ReactNode }) {
   const syncSystem = useThemeStore((s) => s.syncSystem);
@@ -27,6 +28,10 @@ function ThemeBridge({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!filtersHydrated) void hydrateFilters();
   }, [filtersHydrated, hydrateFilters]);
+
+  useEffect(() => {
+    preloadLiveKitNative();
+  }, []);
 
   useEffect(() => {
     const sub = Appearance.addChangeListener(() => syncSystem());
@@ -48,7 +53,10 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             retry: 1,
-            staleTime: 20_000,
+            staleTime: 60_000,
+            gcTime: 10 * 60_000,
+            refetchOnWindowFocus: false,
+            placeholderData: keepPreviousData,
           },
         },
       }),

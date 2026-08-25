@@ -39,9 +39,12 @@ function MainTabs() {
   return (
     <Tab.Navigator
       tabBar={(props) => <PremiumTabBar {...props} />}
+      lazy={false}
+      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
+        freezeOnBlur: false,
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home' }} />
@@ -69,7 +72,7 @@ export function AppNavigator() {
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: c.bg },
-        animation: 'fade_from_bottom',
+        animation: 'none',
       }}
     >
       <Stack.Screen name="MainTabs" component={MainTabs} />

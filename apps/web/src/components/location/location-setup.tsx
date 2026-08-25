@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 
 const OsmMapPicker = dynamic(
   () => import('./osm-map-picker').then((m) => m.OsmMapPicker),
-  { ssr: false, loading: () => <div className="skeleton h-72 rounded-2xl" /> },
+  { ssr: false },
 );
 
 interface LocationData {
@@ -39,6 +39,10 @@ export function LocationSetup({ compact, onSaved }: Props) {
   const [lng, setLng] = useState(77.209);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    void import('./osm-map-picker');
+  }, []);
 
   useEffect(() => {
     if (data?.hasLocation && data.lat != null && data.lng != null) {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
@@ -26,6 +26,7 @@ const MAX_PREVIEWS = 4;
 
 export function LiveListScreen() {
   const c = useThemeColors();
+  const focused = useIsFocused();
   const nav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { user } = useAuth();
   const list = useQuery({
@@ -74,7 +75,12 @@ export function LiveListScreen() {
                 <LiveCardPreview
                   liveId={room.id}
                   thumbnailUrl={room.thumbnailUrl}
-                  active={Boolean(room.id) && index < MAX_PREVIEWS}
+                  active={
+                    focused &&
+                    Boolean(room.id) &&
+                    index < MAX_PREVIEWS &&
+                    room.hostId !== user?.id
+                  }
                   style={styles.thumb}
                 />
                 <LinearGradient

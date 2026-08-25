@@ -7,6 +7,7 @@ import { RootNavigator } from '@/navigation/RootNavigator';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useThemeStore } from '@/store/theme';
 import { registerForPushNotifications } from '@/services/notifications';
+import { preloadLiveKitNative } from '@/services/livekit';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -22,35 +23,9 @@ export default function App() {
   }, [syncSystem]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const boot = async () => {
-      // Always reveal UI quickly — never wait on push/permissions.
-      const hide = async () => {
-        if (!cancelled) await SplashScreen.hideAsync().catch(() => undefined);
-      };
-
-      const hideTimer = setTimeout(() => {
-        void hide();
-      }, 1500);
-
-      try {
-        await Promise.race([
-          registerForPushNotifications(),
-          new Promise((r) => setTimeout(r, 1200)),
-        ]);
-      } catch {
-        /* optional */
-      } finally {
-        clearTimeout(hideTimer);
-        await hide();
-      }
-    };
-
-    void boot();
-    return () => {
-      cancelled = true;
-    };
+    void SplashScreen.hideAsync().catch(() => undefined);
+    preloadLiveKitNative();
+    void registerForPushNotifications().catch(() => undefined);
   }, []);
 
   return (

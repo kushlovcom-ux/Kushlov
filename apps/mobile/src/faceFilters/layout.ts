@@ -13,9 +13,9 @@ export const LM = {
 
 export const DEFAULT_FACE_BOX: FaceBox = {
   cx: 0.5,
-  cy: 0.44,
-  width: 0.5,
-  height: 0.64,
+  cy: 0.4,
+  width: 0.54,
+  height: 0.66,
   rotation: 0,
 };
 

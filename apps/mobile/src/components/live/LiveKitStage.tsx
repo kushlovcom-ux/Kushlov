@@ -1,32 +1,70 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import {
   FaceFilterOverlay,
   useLocalOrRemoteFaceFilter,
   useParticipantFaceBox,
 } from '@/faceFilters/components/FaceFilterOverlay';
-import { ensureLiveKitNative } from '@/services/livekit';
+import { FaceFilterRoomSync } from '@/faceFilters/components/FaceFilterRoomSync';
+import { getLiveKitRn, preloadLiveKitNative } from '@/services/livekit';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { Room } from 'livekit-client';
 import type { Participant } from 'livekit-client';
 
+export type StageLayout = 'grid' | 'speaker';
+export type VideoFit = 'cover' | 'contain';
+
 type Props = {
   token: string;
   serverUrl: string;
-  /** When true, do not publish local camera (audio-only call). */
   audioOnly?: boolean;
-  /** When true, publish local camera/mic. Viewers should leave this false. */
   publish?: boolean;
   isHost?: boolean;
+  /** grid = equal tiles (live); speaker = remote main + local PiP (calls). */
+  layout?: StageLayout;
+  /** contain avoids cropping the person on 1:1 calls. */
+  videoFit?: VideoFit;
+  /** Mic/camera toggles for the local publisher (live host). */
+  showAvControls?: boolean;
   onDisconnected?: () => void;
   onRoom?: (room: Room | null) => void;
   style?: ViewStyle;
 };
 
+type StageMods = {
+  LiveKitRoom: React.ComponentType<Record<string, unknown>>;
+  VideoGrid: React.ComponentType<{
+    isHost?: boolean;
+    audioOnly?: boolean;
+    layout: StageLayout;
+    videoFit: VideoFit;
+    showAvControls?: boolean;
+  }>;
+  RoomBinder: React.ComponentType<{ onRoom?: (room: Room | null) => void }>;
+};
+
+let cachedStageMods: StageMods | null | undefined;
+
+function getStageMods(): StageMods | null {
+  if (cachedStageMods !== undefined) return cachedStageMods;
+  const lk = getLiveKitRn();
+  if (!lk) {
+    cachedStageMods = null;
+    return null;
+  }
+  cachedStageMods = {
+    LiveKitRoom: lk.LiveKitRoom,
+    VideoGrid: makeVideoGrid(lk, lk.Track),
+    RoomBinder: makeRoomBinder(lk),
+  };
+  return cachedStageMods;
+}
+
 /**
  * LiveKit video/audio stage for live rooms and calls.
- * Soft-loads native modules so Expo Go does not crash on import.
+ * Native modules are preloaded at boot so this mounts immediately.
  */
 export function LiveKitStage({
   token,
@@ -34,43 +72,26 @@ export function LiveKitStage({
   audioOnly = false,
   publish = false,
   isHost = false,
+  layout = 'grid',
+  videoFit = 'cover',
+  showAvControls = false,
   onDisconnected,
   onRoom,
   style,
 }: Props) {
   const c = useThemeColors();
-  const [nativeOk, setNativeOk] = useState<boolean | null>(null);
-  const [mods, setMods] = useState<{
-    LiveKitRoom: React.ComponentType<Record<string, unknown>>;
-    VideoGrid: React.ComponentType<{ isHost?: boolean; audioOnly?: boolean }>;
-    RoomBinder: React.ComponentType<{ onRoom?: (room: Room | null) => void }>;
-  } | null>(null);
+  const [mods, setMods] = useState<StageMods | null>(() => getStageMods());
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const ok = await ensureLiveKitNative();
-      if (cancelled) return;
-      setNativeOk(ok);
-      if (!ok) return;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const lk = require('@livekit/react-native');
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { Track } = require('livekit-client');
-        setMods({
-          LiveKitRoom: lk.LiveKitRoom,
-          VideoGrid: makeVideoGrid(lk, Track),
-          RoomBinder: makeRoomBinder(lk),
-        });
-      } catch {
-        setNativeOk(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (mods) return;
+    const next = getStageMods();
+    if (next) {
+      setMods(next);
+      return;
+    }
+    const ok = preloadLiveKitNative();
+    setMods(ok ? getStageMods() : null);
+  }, [mods]);
 
   useEffect(() => {
     return () => onRoom?.(null);
@@ -79,7 +100,7 @@ export function LiveKitStage({
   const publishVideo = publish && !audioOnly;
   const publishAudio = publish;
 
-  if (nativeOk === false) {
+  if (!mods) {
     return (
       <View style={[styles.fallback, style, { backgroundColor: c.elevated }]}>
         <Text muted style={{ textAlign: 'center', paddingHorizontal: 16 }}>
@@ -89,21 +110,10 @@ export function LiveKitStage({
     );
   }
 
-  if (!mods || nativeOk === null) {
-    return (
-      <View style={[styles.fallback, style, { backgroundColor: c.elevated }]}>
-        <ActivityIndicator color={c.primary} />
-        <Text muted style={{ marginTop: 8 }}>
-          Connecting…
-        </Text>
-      </View>
-    );
-  }
-
   const { LiveKitRoom, VideoGrid, RoomBinder } = mods;
 
   return (
-    <View style={[{ flex: 1, overflow: 'hidden', borderRadius: 16 }, style]}>
+    <View style={[{ flex: 1, overflow: layout === 'speaker' ? 'visible' : 'hidden' }, style]}>
       <LiveKitRoom
         key={token}
         token={token}
@@ -112,11 +122,17 @@ export function LiveKitStage({
         video={publishVideo}
         audio={publishAudio}
         onDisconnected={onDisconnected}
-        options={{ adaptiveStream: true, dynacast: true }}
+        options={{ adaptiveStream: layout !== 'speaker', dynacast: true }}
         style={{ flex: 1 }}
       >
         <RoomBinder onRoom={onRoom} />
-        <VideoGrid isHost={isHost} audioOnly={audioOnly} />
+        <VideoGrid
+          isHost={isHost}
+          audioOnly={audioOnly}
+          layout={layout}
+          videoFit={videoFit}
+          showAvControls={showAvControls && publish}
+        />
       </LiveKitRoom>
     </View>
   );
@@ -131,13 +147,47 @@ function makeRoomBinder(lk: {
       onRoom?.(room);
       return () => onRoom?.(null);
     }, [room, onRoom]);
-    return null;
+    return <FaceFilterRoomSync room={room} />;
   };
+}
+
+function isPreviewIdentity(identity?: string) {
+  return Boolean(identity && identity.startsWith('preview_'));
+}
+
+function dedupeCameraTracks(tracks: unknown[]) {
+  const byIdentity = new Map<string, unknown>();
+  for (const trackRef of tracks) {
+    const participant = (trackRef as { participant?: Participant }).participant;
+    const identity = participant?.identity;
+    if (!identity || isPreviewIdentity(identity)) continue;
+    const existing = byIdentity.get(identity) as
+      | { publication?: { isSubscribed?: boolean; isMuted?: boolean; track?: unknown } }
+      | undefined;
+    const next = trackRef as {
+      publication?: { isSubscribed?: boolean; isMuted?: boolean; track?: unknown };
+    };
+    if (!existing) {
+      byIdentity.set(identity, trackRef);
+      continue;
+    }
+    const existingScore =
+      (existing.publication?.track ? 4 : 0) +
+      (existing.publication?.isSubscribed ? 2 : 0) +
+      (existing.publication?.isMuted ? 0 : 1);
+    const nextScore =
+      (next.publication?.track ? 4 : 0) +
+      (next.publication?.isSubscribed ? 2 : 0) +
+      (next.publication?.isMuted ? 0 : 1);
+    if (nextScore >= existingScore) byIdentity.set(identity, trackRef);
+  }
+  return [...byIdentity.values()];
 }
 
 function makeVideoGrid(
   lk: {
     useTracks: (sources: unknown[], opts?: unknown) => unknown[];
+    useRoomContext: () => Room;
     isTrackReference: (t: unknown) => boolean;
     VideoTrack: React.ComponentType<{
       trackRef: unknown;
@@ -149,13 +199,27 @@ function makeVideoGrid(
   },
   Track: { Source: { Camera: unknown } },
 ) {
-  return function VideoGrid({ isHost, audioOnly }: { isHost?: boolean; audioOnly?: boolean }) {
+  return function VideoGrid({
+    isHost,
+    audioOnly,
+    layout,
+    videoFit,
+    showAvControls,
+  }: {
+    isHost?: boolean;
+    audioOnly?: boolean;
+    layout: StageLayout;
+    videoFit: VideoFit;
+    showAvControls?: boolean;
+  }) {
     const c = useThemeColors();
-    const tracks = lk
-      .useTracks([{ source: Track.Source.Camera, withPlaceholder: false }], {
-        onlySubscribed: false,
-      })
-      .filter(lk.isTrackReference);
+    const tracks = dedupeCameraTracks(
+      lk
+        .useTracks([{ source: Track.Source.Camera, withPlaceholder: false }], {
+          onlySubscribed: false,
+        })
+        .filter(lk.isTrackReference),
+    );
 
     if (audioOnly) {
       return (
@@ -175,40 +239,116 @@ function makeVideoGrid(
       );
     }
 
-    const multi = tracks.length > 1;
-    const dual = tracks.length === 2;
+    const local = tracks.filter((t) => (t as { participant: Participant }).participant.isLocal);
+    const remote = tracks.filter((t) => !(t as { participant: Participant }).participant.isLocal);
+    const speaker = layout === 'speaker';
+    const main = speaker ? (remote[0] ?? local[0]) : null;
+    const pip = speaker && remote[0] && local[0] ? local[0] : null;
+    const multi = !speaker && tracks.length > 1;
 
     return (
-      <View
-        style={[
-          styles.grid,
-          multi && (dual ? styles.gridDual : styles.gridMulti),
-          { backgroundColor: '#000' },
-        ]}
-      >
-        {tracks.map((trackRef, index) => {
-          const ref = trackRef as {
-            participant: Participant;
-            publication?: { trackSid?: string };
-            source?: string;
-          };
-          const key = `${ref.participant.identity}-${ref.publication?.trackSid ?? ref.source ?? index}`;
-          const isLocal = Boolean(ref.participant.isLocal);
-          return (
+      <View style={[styles.grid, { backgroundColor: '#000' }]}>
+        {speaker && main ? (
+          <>
             <ParticipantVideoTile
-              key={key}
               lk={lk}
-              trackRef={trackRef}
-              isLocal={isLocal}
+              trackRef={main}
+              isLocal={(main as { participant: Participant }).participant.isLocal}
               elevated={c.elevated}
-              multi={multi}
-              dual={dual}
+              multi={false}
+              videoFit={videoFit}
             />
-          );
-        })}
+            {pip ? (
+              <View style={styles.pip}>
+                <ParticipantVideoTile
+                  lk={lk}
+                  trackRef={pip}
+                  isLocal
+                  elevated={c.elevated}
+                  multi={false}
+                  videoFit="cover"
+                  pip
+                />
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <View style={[styles.gridInner, multi && styles.gridStack]}>
+            {tracks.map((trackRef, index) => {
+              const ref = trackRef as {
+                participant: Participant;
+                publication?: { trackSid?: string };
+                source?: string;
+              };
+              const key = `${ref.participant.identity}-${ref.publication?.trackSid ?? ref.source ?? index}`;
+              return (
+                <ParticipantVideoTile
+                  key={key}
+                  lk={lk}
+                  trackRef={trackRef}
+                  isLocal={Boolean(ref.participant.isLocal)}
+                  elevated={c.elevated}
+                  multi={multi}
+                  videoFit={videoFit}
+                />
+              );
+            })}
+          </View>
+        )}
+        {showAvControls ? <LivePublisherControls roomApi={lk} audioOnly={audioOnly} /> : null}
       </View>
     );
   };
+}
+
+function LivePublisherControls({
+  roomApi,
+  audioOnly,
+}: {
+  roomApi: { useRoomContext: () => Room };
+  audioOnly?: boolean;
+}) {
+  const room = roomApi.useRoomContext();
+  const [mic, setMic] = useState(true);
+  const [cam, setCam] = useState(true);
+
+  useEffect(() => {
+    const p = room?.localParticipant;
+    if (!p) return;
+    setMic(p.isMicrophoneEnabled);
+    setCam(p.isCameraEnabled);
+  }, [room]);
+
+  if (!room) return null;
+
+  return (
+    <View style={styles.avRow}>
+      <Pressable
+        accessibilityLabel={mic ? 'Mute' : 'Unmute'}
+        onPress={() => {
+          const next = !mic;
+          setMic(next);
+          void room.localParticipant.setMicrophoneEnabled(next);
+        }}
+        style={[styles.avBtn, !mic && styles.avBtnOff]}
+      >
+        <Ionicons name={mic ? 'mic' : 'mic-off'} size={20} color="#fff" />
+      </Pressable>
+      {!audioOnly ? (
+        <Pressable
+          accessibilityLabel={cam ? 'Turn camera off' : 'Turn camera on'}
+          onPress={() => {
+            const next = !cam;
+            setCam(next);
+            void room.localParticipant.setCameraEnabled(next);
+          }}
+          style={[styles.avBtn, !cam && styles.avBtnOff]}
+        >
+          <Ionicons name={cam ? 'videocam' : 'videocam-off'} size={20} color="#fff" />
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
 
 function ParticipantVideoTile({
@@ -217,7 +357,8 @@ function ParticipantVideoTile({
   isLocal,
   elevated,
   multi,
-  dual,
+  videoFit,
+  pip,
 }: {
   lk: {
     VideoTrack: React.ComponentType<{
@@ -232,7 +373,8 @@ function ParticipantVideoTile({
   isLocal: boolean;
   elevated: string;
   multi: boolean;
-  dual?: boolean;
+  videoFit: VideoFit;
+  pip?: boolean;
 }) {
   const participant = (trackRef as { participant: Participant }).participant;
   const filterId = useLocalOrRemoteFaceFilter(participant);
@@ -249,22 +391,29 @@ function ParticipantVideoTile({
   const name = isLocal ? 'You' : participant.name || roleBadge || 'Guest';
 
   return (
-    <View style={[dual ? styles.tileDual : multi ? styles.tileMulti : styles.tile]}>
+    <View style={[styles.tile, multi && styles.tileStack, pip && styles.tilePip]}>
       <lk.VideoTrack
         trackRef={trackRef}
         style={StyleSheet.absoluteFill}
-        objectFit="cover"
+        objectFit={videoFit}
         mirror={isLocal}
-        zOrder={isLocal ? 1 : 0}
+        zOrder={-1}
       />
-      <FaceFilterOverlay
-        filterId={filterId}
-        mirrored={isLocal}
-        faceBox={isLocal ? undefined : remoteBox}
-      />
-      {multi ? (
+      <View
+        pointerEvents="none"
+        collapsable={false}
+        renderToHardwareTextureAndroid
+        style={styles.filterLayer}
+      >
+        <FaceFilterOverlay
+          filterId={filterId}
+          mirrored={isLocal}
+          faceBox={isLocal ? undefined : remoteBox}
+        />
+      </View>
+      {multi || pip ? (
         <View style={styles.labelRow}>
-          {roleBadge ? (
+          {roleBadge && !pip ? (
             <Text style={styles.roleBadge} numberOfLines={1}>
               {roleBadge}
             </Text>
@@ -290,35 +439,67 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 220,
   },
-  gridMulti: {
-    flexDirection: 'row',
-    flexWrap: 'nowrap',
-    height: '100%',
+  gridInner: {
+    flex: 1,
   },
-  /** Group live (2 hosts): stacked dual frame like Instagram/FB live. */
-  gridDual: {
+  /** Co-live: stacked full-width tiles, never a squeezed side-by-side pair. */
+  gridStack: {
     flexDirection: 'column',
-    flexWrap: 'nowrap',
-    height: '100%',
-    gap: 2,
   },
   tile: {
     flex: 1,
-    overflow: 'hidden',
+    overflow: Platform.OS === 'android' ? 'visible' : 'hidden',
     backgroundColor: '#000',
   },
-  tileMulti: {
-    width: '50%',
-    height: '100%',
-    minHeight: '100%',
-    overflow: 'hidden',
-    backgroundColor: '#000',
-  },
-  tileDual: {
-    flex: 1,
+  tileStack: {
     width: '100%',
+    minHeight: 0,
+  },
+  tilePip: {
+    borderRadius: 14,
+  },
+  pip: {
+    position: 'absolute',
+    right: 12,
+    bottom: 16,
+    width: 108,
+    height: 152,
+    borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: '#000',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    zIndex: 20,
+    elevation: 20,
+  },
+  filterLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 8,
+    elevation: 24,
+  },
+  avRow: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 16,
+    zIndex: 40,
+    elevation: 40,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  avBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.28)',
+    elevation: 40,
+  },
+  avBtnOff: {
+    backgroundColor: 'rgba(239,68,68,0.85)',
   },
   labelRow: {
     position: 'absolute',
@@ -328,6 +509,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     maxWidth: '90%',
+    zIndex: 9,
   },
   roleBadge: {
     overflow: 'hidden',
