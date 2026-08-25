@@ -215,7 +215,7 @@ export interface HostReview {
   id: string;
   hostId: string;
   rating: number;
-  text: string;
+  text?: string;
   createdAt: string;
   updatedAt: string;
   reviewer: {

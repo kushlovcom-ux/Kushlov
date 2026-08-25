@@ -66,7 +66,8 @@ export default function PublicProfilePage() {
   };
 
   const saveReview = useMutation({
-    mutationFn: () => api.post('/reviews', { hostId: id, rating, text }),
+    mutationFn: () =>
+      api.post('/reviews', { hostId: id, rating, text: text.trim() || undefined }),
     onSuccess: () => {
       toast.success(myReview.data ? 'Review updated' : 'Review submitted');
       qc.invalidateQueries({ queryKey: ['host-reviews', id] });
@@ -217,19 +218,24 @@ export default function PublicProfilePage() {
               {myReview.data ? 'Update your review' : 'Leave a review'}
             </h3>
             <p className="mt-1 text-sm text-white/45">
-              Optional. You can also rate after an audio or video call.
+              Stars are enough — a written comment is optional. You can also rate after a call.
             </p>
             <div className="mt-4 space-y-3">
               <StarRatingInput value={rating} onChange={setRating} />
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder="Share your experience…"
+                placeholder="Add a comment (optional)…"
                 maxLength={1000}
                 rows={3}
                 className="flex w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-pink"
               />
-              <Button loading={saveReview.isPending} onClick={() => saveReview.mutate()}>
+              <Button
+                type="button"
+                loading={saveReview.isPending}
+                disabled={rating < 1}
+                onClick={() => saveReview.mutate()}
+              >
                 {myReview.data ? 'Update review' : 'Submit review'}
               </Button>
             </div>

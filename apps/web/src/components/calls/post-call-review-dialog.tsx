@@ -28,7 +28,8 @@ export function PostCallReviewDialog({ open, hostId, hostName, onClose }: Props)
   const [text, setText] = useState('');
 
   const submit = useMutation({
-    mutationFn: () => api.post('/reviews', { hostId, rating, text: text.trim() }),
+    mutationFn: () =>
+      api.post('/reviews', { hostId, rating, text: text.trim() || undefined }),
     onSuccess: () => {
       toast.success('Thanks for your review!');
       qc.invalidateQueries({ queryKey: ['host-reviews', hostId] });

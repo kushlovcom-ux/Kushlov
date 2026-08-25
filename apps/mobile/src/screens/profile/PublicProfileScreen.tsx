@@ -83,7 +83,12 @@ export function PublicProfileScreen({ navigation, route }: Props) {
   });
 
   const saveReview = useMutation({
-    mutationFn: () => reviewsApi.upsert({ hostId: userId, rating, text: reviewText }),
+    mutationFn: () =>
+      reviewsApi.upsert({
+        hostId: userId,
+        rating,
+        text: reviewText.trim() || undefined,
+      }),
     onSuccess: () => {
       Alert.alert('Thanks!', myReview.data ? 'Review updated.' : 'Review submitted.');
       qc.invalidateQueries({ queryKey: queryKeys.reviews(userId) });
@@ -273,7 +278,7 @@ export function PublicProfileScreen({ navigation, route }: Props) {
                   {myReview.data ? 'Update your review' : 'Leave a review'}
                 </Text>
                 <Text muted variant="caption" style={{ marginBottom: spacing.sm }}>
-                  Rate your experience with this host.
+                  Stars are enough — a written comment is optional.
                 </Text>
                 <View style={styles.starsRow}>
                   {[1, 2, 3, 4, 5].map((n) => (
@@ -292,7 +297,7 @@ export function PublicProfileScreen({ navigation, route }: Props) {
                 <TextInput
                   value={reviewText}
                   onChangeText={setReviewText}
-                  placeholder="Share your experience…"
+                  placeholder="Add a comment (optional)…"
                   placeholderTextColor={c.textMuted}
                   multiline
                   style={[
