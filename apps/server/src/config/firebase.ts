@@ -1,6 +1,6 @@
-import type { Auth, DecodedIdToken } from 'firebase-admin/auth';
+import jwt from 'jsonwebtoken';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import { env } from './env';
-import { logger } from './logger';
 
 /**
  * Vercel / dotenv often store PEMs as a single line with literal `\n`.
@@ -47,55 +47,8 @@ export function firebaseAdminProjectId(): string {
   return fromEnv || fromEmail;
 }
 
-/**
- * Lazily initialize Firebase Admin from service-account env vars.
- * Uses dynamic import so the heavy firebase-admin package is never loaded
- * (or bundled at cold start) unless Google sign-in is actually used.
- *
- * Vercel (and some GCP runtimes) set GCLOUD_PROJECT / GOOGLE_CLOUD_PROJECT to
- * a different project than the Firebase web app. verifyIdToken then rejects a
- * valid token as the wrong audience. Force those env vars + `projectId` to match.
- */
-export async function getFirebaseAuth(): Promise<Auth> {
-  const projectId = firebaseAdminProjectId();
-  const clientEmail = env.FIREBASE_CLIENT_EMAIL?.trim();
-  const privateKeyRaw = env.FIREBASE_PRIVATE_KEY;
-  if (!projectId || !clientEmail || !privateKeyRaw) {
-    throw new Error('Firebase Admin is not configured');
-  }
-
-  process.env.GOOGLE_CLOUD_PROJECT = projectId;
-  process.env.GCLOUD_PROJECT = projectId;
-
-  const { cert, deleteApp, getApp, getApps, initializeApp } = await import('firebase-admin/app');
-  const { getAuth } = await import('firebase-admin/auth');
-
-  const existing = getApps()[0];
-  if (existing && existing.options.projectId && existing.options.projectId !== projectId) {
-    logger.warn(
-      { existingProjectId: existing.options.projectId, expectedProjectId: projectId },
-      'Reinitializing Firebase Admin with the configured project',
-    );
-    await deleteApp(existing);
-  }
-
-  if (!getApps().length) {
-    initializeApp({
-      credential: cert({
-        projectId,
-        clientEmail,
-        privateKey: normalizeFirebasePrivateKey(privateKeyRaw),
-      }),
-      projectId,
-    });
-    logger.info({ firebaseProjectId: projectId }, 'Firebase Admin initialized');
-  }
-
-  return getAuth(getApp());
-}
-
 export function isFirebaseConfigured(): boolean {
-  return Boolean(firebaseAdminProjectId() && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY);
+  return Boolean(firebaseAdminProjectId());
 }
 
 type JwtPeek = { iss?: string; aud?: string | string[]; exp?: number };
@@ -147,12 +100,84 @@ export function describeFirebaseTokenProblem(token: string): string | null {
   return null;
 }
 
+const GOOGLE_CERTS_URL =
+  'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
+
+let googleCertsCache: { certs: Record<string, string>; expiresAt: number } | null = null;
+
+async function getGoogleSecureTokenCerts(): Promise<Record<string, string>> {
+  if (googleCertsCache && Date.now() < googleCertsCache.expiresAt) {
+    return googleCertsCache.certs;
+  }
+  const res = await fetch(GOOGLE_CERTS_URL);
+  if (!res.ok) {
+    throw new Error(`Could not fetch Firebase public keys (${res.status})`);
+  }
+  const certs = (await res.json()) as Record<string, string>;
+  const maxAge = Number(/max-age=(\d+)/i.exec(res.headers.get('cache-control') ?? '')?.[1] ?? 3600);
+  googleCertsCache = {
+    certs,
+    expiresAt: Date.now() + Math.max(60, maxAge - 60) * 1000,
+  };
+  return certs;
+}
+
 /**
- * Verify a Firebase ID token. Does not check revocation — that extra Admin API
- * call is a common source of false "invalid token" failures on serverless.
+ * Verify a Firebase ID token with Google's public certs (not firebase-admin
+ * verifyIdToken). That Admin call uses GCLOUD_PROJECT / the default app audience
+ * and fails on Vercel and some VPS images even when the token is valid.
  */
 export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedIdToken> {
   const token = idToken.trim().replace(/^Bearer\s+/i, '');
-  const auth = await getFirebaseAuth();
-  return auth.verifyIdToken(token, false);
+  const projectId = firebaseAdminProjectId();
+  if (!projectId) {
+    throw new Error('Firebase Admin is not configured');
+  }
+
+  const headerJson = token.split('.')[0];
+  if (!headerJson) {
+    throw new Error('Firebase ID token is missing');
+  }
+  let kid: string | undefined;
+  try {
+    const header = JSON.parse(Buffer.from(headerJson, 'base64url').toString('utf8')) as {
+      kid?: string;
+    };
+    kid = header.kid;
+  } catch {
+    throw new Error('Firebase ID token verification failed');
+  }
+
+  const certs = await getGoogleSecureTokenCerts();
+  const pem = kid ? certs[kid] : undefined;
+  if (!pem) {
+    throw new Error('Firebase ID token verification failed');
+  }
+
+  const payload = jwt.verify(token, pem, {
+    algorithms: ['RS256'],
+    audience: projectId,
+    issuer: `https://securetoken.google.com/${projectId}`,
+    clockTolerance: 60,
+  }) as jwt.JwtPayload & {
+    user_id?: string;
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+    picture?: string;
+  };
+
+  const uid = String(payload.user_id ?? payload.sub ?? '');
+  if (!uid) {
+    throw new Error('Firebase ID token verification failed');
+  }
+
+  return {
+    ...payload,
+    uid,
+    email: payload.email,
+    email_verified: payload.email_verified,
+    name: payload.name,
+    picture: payload.picture,
+  } as DecodedIdToken;
 }

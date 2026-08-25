@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect } from 'react';
+import { DEFAULT_COUNTRY } from '@kushlov/utils';
 import { api, refreshAccessToken } from '@/lib/api';
+import { completeGoogleRedirectIfPresent } from '@/lib/firebase-auth';
+import { isFirebaseClientConfigured } from '@/lib/env';
 import { useAuthStore } from '@/store/auth';
 
 /**
- * Restore session on load: validate access token or silently refresh (cookie + stored
- * refresh token) so users stay signed in for up to 30 days.
+ * Restore session on load: Google redirect result, valid access token, or silent refresh.
  */
 export function AuthBootstrap() {
   const hydrated = useAuthStore((s) => s.hydrated);
@@ -20,6 +22,27 @@ export function AuthBootstrap() {
       const store = useAuthStore.getState();
 
       try {
+        if (isFirebaseClientConfigured()) {
+          try {
+            const firebaseIdToken = await completeGoogleRedirectIfPresent();
+            if (firebaseIdToken && !cancelled) {
+              const res = await api.post('/auth/google', {
+                idToken: firebaseIdToken,
+                country: store.user?.country ?? DEFAULT_COUNTRY,
+              });
+              const data = res.data.data as {
+                user: Parameters<typeof store.setAuth>[0];
+                accessToken: string;
+                refreshToken: string;
+              };
+              store.setAuth(data.user, data.accessToken, data.refreshToken);
+              return;
+            }
+          } catch {
+            /* not returning from Google, or exchange failed — continue restore */
+          }
+        }
+
         if (store.accessToken) {
           try {
             const res = await api.get('/auth/me');
@@ -35,7 +58,6 @@ export function AuthBootstrap() {
           const res = await api.get('/auth/me');
           store.setAuth(res.data.data, token, useAuthStore.getState().refreshToken);
         }
-        // Transient refresh failure: keep persisted tokens — do not wipe the session.
       } finally {
         if (!cancelled) store.setSessionChecked(true);
       }

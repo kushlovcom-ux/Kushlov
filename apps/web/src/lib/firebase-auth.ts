@@ -1,4 +1,9 @@
-import { signInWithPopup, signOut } from 'firebase/auth';
+import {
+  getRedirectResult,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+} from 'firebase/auth';
 import { clientEnv } from './env';
 import { getFirebaseAuth, googleProvider } from './firebase';
 
@@ -19,18 +24,10 @@ function isFirebaseIdToken(token: string): boolean {
   if (token.split('.').length !== 3) return false;
   const payload = decodeJwtPayload(token);
   if (!payload) return true;
-  const iss = String(payload.iss ?? '');
-  return iss.includes('securetoken.google.com');
+  return String(payload.iss ?? '').includes('securetoken.google.com');
 }
 
-/** Open Google sign-in popup and return a fresh Firebase ID token (not a Google OAuth token). */
-export async function signInWithGooglePopup(): Promise<string> {
-  const auth = getFirebaseAuth();
-  const result = await signInWithPopup(auth, googleProvider);
-  const user = result.user;
-  if (!user) {
-    throw new Error('Google authentication failed');
-  }
+async function idTokenFromUser(user: { getIdToken: (force?: boolean) => Promise<string> }) {
   const firebaseIdToken = await user.getIdToken(true);
   if (!isFirebaseIdToken(firebaseIdToken)) {
     throw new Error('Firebase ID token is missing');
@@ -41,6 +38,49 @@ export async function signInWithGooglePopup(): Promise<string> {
     console.info('[auth] Frontend Firebase project:', expected, 'token aud:', payload?.aud);
   }
   return firebaseIdToken;
+}
+
+/** Finish Google redirect sign-in after returning from accounts.google.com. */
+export async function completeGoogleRedirectIfPresent(): Promise<string | null> {
+  const auth = getFirebaseAuth();
+  const result = await getRedirectResult(auth);
+  if (!result?.user) return null;
+  return idTokenFromUser(result.user);
+}
+
+function shouldFallbackToRedirect(err: unknown): boolean {
+  const code = (err as { code?: string })?.code ?? '';
+  return (
+    code === 'auth/popup-blocked' ||
+    code === 'auth/internal-error' ||
+    code === 'auth/operation-not-supported-in-this-environment' ||
+    code === 'auth/argument-error'
+  );
+}
+
+/**
+ * Google sign-in: popup first (needs COOP same-origin-allow-popups).
+ * If the popup cannot talk to this window, fall back to a full-page redirect.
+ */
+export async function signInWithGooglePopup(): Promise<string> {
+  const auth = getFirebaseAuth();
+
+  const redirected = await completeGoogleRedirectIfPresent();
+  if (redirected) return redirected;
+
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    if (!result.user) {
+      throw new Error('Google authentication failed');
+    }
+    return idTokenFromUser(result.user);
+  } catch (err) {
+    if (shouldFallbackToRedirect(err)) {
+      await signInWithRedirect(auth, googleProvider);
+      return new Promise(() => undefined);
+    }
+    throw err;
+  }
 }
 
 /** Sign out of the Firebase session (safe if not signed in with Google). */

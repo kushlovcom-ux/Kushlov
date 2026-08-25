@@ -78,6 +78,8 @@ export function createApp(): Application {
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'cross-origin' },
+      // Allow Firebase Google sign-in popups to read window.closed.
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     }),
   );
 

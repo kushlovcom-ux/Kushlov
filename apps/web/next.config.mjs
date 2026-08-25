@@ -69,6 +69,17 @@ const nextConfig = {
     ],
   },
   eslint: { ignoreDuringBuilds: true },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          // Required for Firebase Google popup (Chrome isolates popups otherwise).
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
