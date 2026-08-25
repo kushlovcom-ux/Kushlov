@@ -24,6 +24,7 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import {
   describeFirebaseTokenProblem,
+  firebaseAdminProjectId,
   isFirebaseConfigured,
   peekJwtPayload,
   verifyFirebaseIdToken,
@@ -97,7 +98,8 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
 function extractGoogleLoginToken(req: Request): string {
   const fromBody = typeof req.body?.idToken === 'string' ? req.body.idToken.trim() : '';
-  if (fromBody && fromBody !== 'undefined' && fromBody !== 'null') return fromBody;
+  const bodyToken = fromBody.replace(/^Bearer\s+/i, '');
+  if (bodyToken && bodyToken !== 'undefined' && bodyToken !== 'null') return bodyToken;
 
   const header = req.headers.authorization;
   if (typeof header === 'string' && header.startsWith('Bearer ')) {
@@ -112,14 +114,11 @@ function publicFirebaseVerifyMessage(err: unknown, token: string): string {
   if (precheck) return precheck;
   const code = (err as { code?: string })?.code ?? '';
   const msg = err instanceof Error ? err.message : '';
-  if (code === 'auth/id-token-expired' || /expired/i.test(msg)) {
+  if (code === 'auth/id-token-expired' || /id token has expired/i.test(msg)) {
     return 'Authentication session expired';
   }
-  if (/audience|project/i.test(msg) || code === 'auth/argument-error') {
-    const claims = peekJwtPayload(token);
-    if (claims?.aud && env.FIREBASE_PROJECT_ID && String(claims.aud) !== env.FIREBASE_PROJECT_ID) {
-      return 'Firebase project configuration mismatch';
-    }
+  if (/incorrect ["']aud["']|audience|issuer|project/i.test(msg)) {
+    return 'Firebase project configuration mismatch';
   }
   return 'Firebase ID token verification failed';
 }
@@ -143,7 +142,7 @@ export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
         reason: obvious,
         tokenIss: peekJwtPayload(idToken)?.iss,
         tokenAud: peekJwtPayload(idToken)?.aud,
-        adminProjectId: env.FIREBASE_PROJECT_ID,
+        adminProjectId: firebaseAdminProjectId(),
       },
       'Rejected Google login token before verifyIdToken',
     );
@@ -162,7 +161,7 @@ export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
         firebaseMessage,
         tokenIss: claims?.iss,
         tokenAud: claims?.aud,
-        adminProjectId: env.FIREBASE_PROJECT_ID,
+        adminProjectId: firebaseAdminProjectId(),
       },
       'Firebase ID token verification failed',
     );

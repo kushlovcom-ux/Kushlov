@@ -1,5 +1,12 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-import { getAuth, signOut, type Auth } from 'firebase/auth';
+import {
+  getAuth,
+  getReactNativePersistence,
+  initializeAuth,
+  signOut,
+  type Auth,
+} from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { env } from '@/config/env';
 
 let firebaseApp: FirebaseApp | null = null;
@@ -29,7 +36,14 @@ export function getFirebaseApp(): FirebaseApp {
 /** Firebase Auth used only to mint ID tokens for POST /auth/google. */
 export function getFirebaseAuth(): Auth {
   if (!firebaseAuth) {
-    firebaseAuth = getAuth(getFirebaseApp());
+    const app = getFirebaseApp();
+    try {
+      firebaseAuth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage),
+      });
+    } catch {
+      firebaseAuth = getAuth(app);
+    }
   }
   return firebaseAuth;
 }

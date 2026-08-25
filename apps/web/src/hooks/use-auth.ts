@@ -50,16 +50,10 @@ export function useGoogleLogin() {
   return useMutation({
     mutationFn: async () => {
       const firebaseIdToken = await signInWithGooglePopup();
-      const res = await api.post(
-        '/auth/google',
-        {
-          idToken: firebaseIdToken,
-          country: user?.country ?? DEFAULT_COUNTRY,
-        },
-        {
-          headers: { Authorization: `Bearer ${firebaseIdToken}` },
-        },
-      );
+      const res = await api.post('/auth/google', {
+        idToken: firebaseIdToken,
+        country: user?.country ?? DEFAULT_COUNTRY,
+      });
       return res.data.data as AuthResult;
     },
     onSuccess: (data) => {

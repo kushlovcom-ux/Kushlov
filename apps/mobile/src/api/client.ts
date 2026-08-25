@@ -34,6 +34,15 @@ type Envelope<T> = {
 
 let refreshPromise: Promise<string | null> | null = null;
 
+function isAuthCredentialUrl(url = ''): boolean {
+  return (
+    url.includes('/auth/google') ||
+    url.includes('/auth/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/refresh')
+  );
+}
+
 export async function refreshAccessToken(): Promise<string | null> {
   const { refreshToken, setTokens, clear } = useAuthStore.getState();
   if (!refreshToken) {
@@ -75,8 +84,9 @@ function getClient(): AxiosInstance {
   });
 
   client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    const url = `${config.baseURL ?? ''}${config.url ?? ''}`;
     const token = useAuthStore.getState().accessToken;
-    if (token) {
+    if (token && !isAuthCredentialUrl(url)) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -98,7 +108,12 @@ function getClient(): AxiosInstance {
       const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
       const status = error.response?.status;
 
-      if (status === 401 && original && !original._retry && !original.url?.includes('/auth/refresh')) {
+      if (
+        status === 401 &&
+        original &&
+        !original._retry &&
+        !isAuthCredentialUrl(original.url ?? '')
+      ) {
         original._retry = true;
         if (!refreshPromise) {
           refreshPromise = refreshAccessToken().finally(() => {
