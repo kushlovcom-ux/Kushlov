@@ -8,7 +8,7 @@ export const CALL_ACTION_ACCEPT = 'accept';
 export const CALL_ACTION_DECLINE = 'decline';
 /** New channel id so Android 8+ picks up the custom ringtone (channel sound is immutable). */
 export const CALLS_CHANNEL_ID = 'incoming_calls';
-const CALL_SOUND = 'incoming-call.wav';
+const CALL_SOUND = 'incoming_call.wav';
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
@@ -38,7 +38,7 @@ export async function setupCallNotifications(): Promise<void> {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 400, 200, 400, 200, 400],
         lightColor: '#22c55e',
-        sound: 'incoming-call',
+        sound: 'incoming_call',
         enableVibrate: true,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });

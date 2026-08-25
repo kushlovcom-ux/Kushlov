@@ -111,6 +111,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
       'expo-secure-store',
+      'expo-asset',
       [
         '@react-native-google-signin/google-signin',
         {
@@ -124,7 +125,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         {
           icon: './assets/adaptive-icon.png',
           color: '#ec4899',
-          sounds: ['./assets/sounds/incoming-call.wav'],
+          sounds: ['./assets/sounds/incoming_call.wav'],
           defaultChannel: 'default',
         },
       ],

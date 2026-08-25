@@ -49,7 +49,7 @@ export async function sendExpoPush(params: {
       title: params.title,
       body: params.body,
       data: flattenData(params.data),
-      sound: call ? 'incoming-call.wav' : 'default',
+      sound: call ? 'incoming_call.wav' : 'default',
       channelId: call ? 'incoming_calls' : 'default',
       priority: 'high',
       interruptionLevel: call ? 'timeSensitive' : 'active',

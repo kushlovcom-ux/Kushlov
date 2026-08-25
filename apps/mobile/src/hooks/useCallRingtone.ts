@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 
-const RINGTONE = require('../../assets/sounds/incoming-call.wav');
+const RINGTONE = require('../../assets/sounds/incoming_call.wav');
 
 /** Loop the incoming-call ringtone while the incoming-call UI is visible. */
 export function useCallRingtone(enabled: boolean) {
