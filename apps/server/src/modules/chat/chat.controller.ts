@@ -71,13 +71,18 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
       durationSec: uploaded.durationSec,
       width: uploaded.width,
       height: uploaded.height,
+      bytes: uploaded.bytes,
+      fileName: uploaded.fileName,
+      mimeType: uploaded.mimeType,
     };
     type =
       uploaded.type === 'video'
         ? MessageType.Video
         : uploaded.type === 'audio'
           ? MessageType.Voice
-          : MessageType.Image;
+          : uploaded.type === 'image'
+            ? MessageType.Image
+            : MessageType.File;
   }
 
   const message = await createMessage({

@@ -14,15 +14,28 @@ export interface UploadedMedia {
   durationSec?: number;
   bytes?: number;
   format?: string;
+  fileName?: string;
+  mimeType?: string;
 }
 
-function mapType(resource: string, format?: string): MediaType {
-  if (resource === 'video') {
-    // webm is commonly used for live verification video — treat as video, not audio.
-    const audioFormats = ['mp3', 'wav', 'ogg', 'm4a', 'aac'];
-    if (format && audioFormats.includes(format)) return MediaType.Audio;
-    return MediaType.Video;
+/**
+ * The uploaded MIME type is the source of truth. Cloudinary's `resource_type`
+ * is not: it files PDFs under `image` and .m4a voice notes under `video`, so
+ * trusting it turned documents into broken photo bubbles in chat.
+ */
+function mapType(resource: string, format?: string, mimetype?: string): MediaType {
+  if (mimetype?.startsWith('image/')) return MediaType.Image;
+  if (mimetype?.startsWith('audio/')) return MediaType.Audio;
+  if (mimetype?.startsWith('video/')) {
+    // webm is commonly used for live verification video — treat as video, not
+    // audio, unless the transcoded result really has no video stream.
+    const audioFormats = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'weba'];
+    return format && audioFormats.includes(format) ? MediaType.Audio : MediaType.Video;
   }
+  if (mimetype) return MediaType.Raw;
+
+  if (resource === 'raw') return MediaType.Raw;
+  if (resource === 'video') return MediaType.Video;
   return MediaType.Image;
 }
 
@@ -53,8 +66,12 @@ export async function uploadBuffer(
         ? MediaType.Video
         : file.mimetype.startsWith('audio')
           ? MediaType.Audio
-          : MediaType.Image,
+          : file.mimetype.startsWith('image')
+            ? MediaType.Image
+            : MediaType.Raw,
       bytes: file.size,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
     };
   }
 
@@ -82,12 +99,14 @@ export async function uploadBuffer(
   return {
     url: result.secure_url,
     publicId: result.public_id,
-    type: mapType(result.resource_type, result.format),
+    type: mapType(result.resource_type, result.format, file.mimetype),
     width: result.width,
     height: result.height,
     durationSec: result.duration,
     bytes: result.bytes,
     format: result.format,
+    fileName: file.originalname,
+    mimeType: file.mimetype,
   };
 }
 

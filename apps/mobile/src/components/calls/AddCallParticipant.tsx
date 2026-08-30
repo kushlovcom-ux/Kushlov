@@ -88,7 +88,7 @@ export function AddCallParticipant({ callId, type, mode = 'invite' }: Props) {
     <>
       <Pressable onPress={() => setOpen(true)} style={styles.trigger}>
         <Text variant="caption" color="#fff">
-          {isConsult ? 'Call another' : 'Add person'}
+          {isConsult ? 'Hold & call' : 'Add person'}
         </Text>
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>

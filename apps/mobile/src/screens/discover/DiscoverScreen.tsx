@@ -103,6 +103,7 @@ export function DiscoverScreen() {
       Alert.alert(res.matched ? "It's a match!" : 'Liked', res.matched ? 'You can start chatting.' : undefined);
       qc.invalidateQueries({ queryKey: ['discover'] });
       qc.invalidateQueries({ queryKey: ['users', 'search-contacts'] });
+      if (res.matched) qc.invalidateQueries({ queryKey: queryKeys.matches });
     },
     onError: (e) => Alert.alert('Could not like', getErrorMessage(e)),
   });

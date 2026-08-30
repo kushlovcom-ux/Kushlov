@@ -7,6 +7,7 @@ import {
   ControlBar,
   VideoTrack,
   useTracks,
+  useParticipants,
   isTrackReference,
 } from '@livekit/components-react';
 import { Track, type Participant } from 'livekit-client';
@@ -89,6 +90,67 @@ function ParticipantTile({
   );
 }
 
+/** Equal tiles for every remote in a conference — the last join is never a thumbnail. */
+function remoteConferenceClass(count: number): string {
+  if (count <= 1) return 'absolute inset-0';
+  if (count === 2) {
+    return 'absolute inset-0 grid h-full min-h-0 w-full grid-cols-1 grid-rows-2 gap-0.5 sm:grid-cols-2 sm:grid-rows-1';
+  }
+  if (count === 3) {
+    return 'absolute inset-0 grid h-full min-h-0 w-full grid-cols-2 grid-rows-2 gap-0.5';
+  }
+  return 'absolute inset-0 grid h-full min-h-0 w-full auto-rows-fr grid-cols-2 gap-0.5 sm:grid-cols-3';
+}
+
+/** Audio conference: camera tiles are empty, so show everyone by name. */
+function AudioRoster() {
+  const participants = useParticipants();
+  const remotes = participants.filter((p) => !p.isLocal && !p.identity.startsWith('preview_'));
+  const local = participants.find((p) => p.isLocal);
+  const people = remotes.length ? remotes : local ? [local] : [];
+  const count = remotes.length + (local ? 1 : 0);
+
+  return (
+    <div
+      className={cn(
+        'absolute inset-0 grid h-full min-h-0 w-full gap-0.5 bg-zinc-950 p-0.5',
+        count <= 1
+          ? 'grid-cols-1'
+          : count === 2
+            ? 'grid-cols-1 sm:grid-cols-2'
+            : 'grid-cols-2',
+      )}
+    >
+      {people.map((p) => (
+        <div
+          key={p.identity}
+          className="flex min-h-0 flex-col items-center justify-center gap-3 bg-zinc-900"
+        >
+          <div
+            className={cn(
+              'flex h-20 w-20 items-center justify-center rounded-full text-2xl font-semibold text-white',
+              p.isSpeaking ? 'bg-emerald-500/80 ring-4 ring-emerald-400/40' : 'bg-white/10',
+            )}
+          >
+            {(p.name || p.identity || '?').slice(0, 1).toUpperCase()}
+          </div>
+          <p className="max-w-[90%] truncate px-2 text-sm text-white/85">
+            {p.isLocal ? 'You' : p.name || p.identity}
+          </p>
+        </div>
+      ))}
+      {remotes.length > 0 && local ? (
+        <div className="absolute bottom-3 right-3 z-20 flex h-16 w-16 flex-col items-center justify-center rounded-xl border border-white/25 bg-zinc-800 shadow-lg">
+          <span className="text-lg font-semibold text-white">
+            {(local.name || 'You').slice(0, 1).toUpperCase()}
+          </span>
+          <span className="text-[10px] text-white/70">You</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function uniqueCameraTracks<
   T extends { participant: Participant; publication?: { isSubscribed?: boolean; isMuted?: boolean } },
 >(tracks: T[]): T[] {
@@ -134,12 +196,18 @@ function LiveRoomVideo({
   const remoteTracks = cameraTracks.filter((t) => !t.participant.isLocal);
 
   const speakerMode = layout === 'speaker' && !audioOnly;
+  // After merge, extra remotes used to sit in a bottom filmstrip under the
+  // Filters button — so the last person looked missing. Give every remote a
+  // real tile, keep self as PiP, and park chrome away from those tiles.
+  const conference = speakerMode && remoteTracks.length > 1;
 
   return (
     <FaceFilterProvider>
       <div className="relative flex h-full w-full flex-col overflow-hidden">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
-          {cameraTracks.length === 0 ? (
+          {audioOnly ? (
+            <AudioRoster />
+          ) : cameraTracks.length === 0 ? (
             <div className="flex h-full items-center justify-center p-6 text-center text-sm text-white/50">
               {isHost
                 ? 'Starting camera… allow access when your browser prompts.'
@@ -147,31 +215,44 @@ function LiveRoomVideo({
             </div>
           ) : speakerMode ? (
             <>
-              {/* Remote (or only) as main stage */}
-              <div className="absolute inset-0">
-                {(remoteTracks[0] ?? localTracks[0] ?? cameraTracks[0]) && (
-                  <ParticipantTile
-                    trackRef={(remoteTracks[0] ?? localTracks[0] ?? cameraTracks[0]) as never}
-                    videoFit={videoFit}
-                    mirror={!remoteTracks[0]}
-                  />
-                )}
-                {remoteTracks.length > 1 ? (
-                  <div className="absolute inset-x-0 bottom-0 flex gap-1 overflow-x-auto p-2">
-                    {remoteTracks.slice(1).map((trackRef) => (
-                      <div
-                        key={`${trackRef.participant.identity}-${trackRef.publication?.trackSid}`}
-                        className="h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-white/20"
-                      >
-                        <ParticipantTile trackRef={trackRef as never} videoFit={videoFit} />
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              {/* Local PiP */}
+              {conference ? (
+                <div className={remoteConferenceClass(remoteTracks.length)}>
+                  {remoteTracks.map((trackRef, i) => (
+                    <div
+                      key={`${trackRef.participant.identity}-${trackRef.publication?.trackSid ?? trackRef.source}`}
+                      className={cn(
+                        'min-h-0 min-w-0',
+                        remoteTracks.length === 3 && i === 2 && 'col-span-2',
+                      )}
+                    >
+                      <ParticipantTile
+                        trackRef={trackRef as never}
+                        videoFit="cover"
+                        showLabel
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="absolute inset-0">
+                  {(remoteTracks[0] ?? localTracks[0] ?? cameraTracks[0]) && (
+                    <ParticipantTile
+                      trackRef={(remoteTracks[0] ?? localTracks[0] ?? cameraTracks[0]) as never}
+                      videoFit={videoFit}
+                      mirror={!remoteTracks[0]}
+                    />
+                  )}
+                </div>
+              )}
               {remoteTracks.length > 0 && localTracks[0] ? (
-                <div className="absolute bottom-3 right-3 z-20 h-28 w-20 overflow-hidden rounded-xl border border-white/25 shadow-lg sm:h-36 sm:w-28 md:h-40 md:w-32">
+                <div
+                  className={cn(
+                    'absolute z-20 overflow-hidden rounded-xl border border-white/25 shadow-lg',
+                    conference
+                      ? 'bottom-3 right-3 h-24 w-[4.5rem] sm:h-32 sm:w-24'
+                      : 'bottom-3 right-3 h-28 w-20 sm:h-36 sm:w-28 md:h-40 md:w-32',
+                  )}
+                >
                   <ParticipantTile
                     trackRef={localTracks[0] as never}
                     videoFit="cover"
@@ -219,10 +300,15 @@ function LiveRoomVideo({
           {showFilters ? (
             <div
               className={cn(
-                'absolute z-10 max-w-[min(100%,20rem)]',
-                // Live room keeps a bottom chat/gift composer — sit filters above it on all breakpoints.
-                // Calls (speaker) have no composer, so filters can sit lower.
-                speakerMode ? 'bottom-3 left-3' : 'bottom-[7.25rem] left-3 sm:bottom-[7.5rem]',
+                'absolute z-30 max-w-[min(100%,20rem)]',
+                // 1:1 calls: bottom-left, clear of the local PiP on the right.
+                // Conference: top-left — bottom-left sat on the last merged tile.
+                // Live grid: above the chat/gift composer.
+                conference
+                  ? 'left-3 top-3'
+                  : speakerMode
+                    ? 'bottom-3 left-3'
+                    : 'bottom-[7.25rem] left-3 sm:bottom-[7.5rem]',
               )}
             >
               <FilterSelector />
@@ -255,6 +341,7 @@ function LiveRoomVideo({
  */
 export function LiveKitStage({
   token,
+  roomName,
   serverUrl,
   onDisconnected,
   audioOnly = false,
@@ -270,6 +357,8 @@ export function LiveKitStage({
   layout = 'grid',
 }: {
   token: string;
+  /** When set, remount only if the LiveKit room changes — not on a fresh token for the same room. */
+  roomName?: string;
   serverUrl?: string;
   onDisconnected?: () => void;
   audioOnly?: boolean;
@@ -309,7 +398,7 @@ export function LiveKitStage({
 
   return (
     <LiveKitRoom
-      key={token}
+      key={roomName || token}
       token={token}
       serverUrl={url}
       connect

@@ -137,6 +137,7 @@ export enum MessageType {
   Image = 'image',
   Video = 'video',
   Voice = 'voice',
+  File = 'file',
   Gift = 'gift',
   System = 'system',
 }
@@ -174,6 +175,8 @@ export enum MediaType {
   Image = 'image',
   Video = 'video',
   Audio = 'audio',
+  /** Documents and anything else Cloudinary stores untranscoded. */
+  Raw = 'raw',
 }
 
 export interface MediaAsset {
@@ -185,6 +188,9 @@ export interface MediaAsset {
   durationSec?: number;
   bytes?: number;
   format?: string;
+  /** Original upload name, so documents can be listed by their real filename. */
+  fileName?: string;
+  mimeType?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +305,7 @@ export const SocketEvents = {
   LiveLeave: 'live:leave',
   LiveChat: 'live:chat',
   LiveGift: 'live:gift',
+  LiveLike: 'live:like',
   LiveViewerCount: 'live:viewer_count',
   LiveColiveInvite: 'live:colive_invite',
   LiveColiveAccept: 'live:colive_accept',

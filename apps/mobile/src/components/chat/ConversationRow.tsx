@@ -6,7 +6,7 @@ import { PressableScale } from '@/design-system';
 import { OnlineStatus } from '@/components/common/OnlineStatus';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { radius, spacing } from '@/theme';
-import type { Conversation, PublicUser } from '@/types';
+import { MessageType, type ChatMessage, type Conversation, type PublicUser } from '@/types';
 import { formatRelative } from '@/utils/format';
 
 type Props = {
@@ -14,6 +14,18 @@ type Props = {
   meId?: string;
   onPress: () => void;
 };
+
+/** Attachment-only messages have no text, which used to render as "Say hello". */
+function previewOf(message?: ChatMessage) {
+  if (!message) return 'Say hello';
+  if (message.text) return message.text;
+  if (message.type === MessageType.Image) return '📷 Photo';
+  if (message.type === MessageType.Video) return '🎬 Video';
+  if (message.type === MessageType.Voice) return '🎤 Voice message';
+  if (message.type === MessageType.File) return `📎 ${message.media?.fileName ?? 'File'}`;
+  if (message.type === MessageType.Gift) return '🎁 Gift';
+  return 'Say hello';
+}
 
 export function ConversationRow({ conversation, meId, onPress }: Props) {
   const c = useThemeColors();
@@ -48,7 +60,7 @@ export function ConversationRow({ conversation, meId, onPress }: Props) {
         </View>
         <View style={styles.top}>
           <Text variant="caption" muted numberOfLines={1} style={{ flex: 1 }}>
-            {conversation.lastMessage?.text ?? 'Say hello'}
+            {previewOf(conversation.lastMessage)}
           </Text>
           {unread > 0 ? (
             <View style={[styles.badge, { backgroundColor: c.primary }]}>

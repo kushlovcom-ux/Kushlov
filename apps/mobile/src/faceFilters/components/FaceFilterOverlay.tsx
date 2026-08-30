@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { LayoutChangeEvent, Platform, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { Participant } from 'livekit-client';
@@ -79,12 +79,13 @@ export function FaceFilterOverlay({ filterId, mirrored = false, faceBox }: Overl
     <View
       pointerEvents="none"
       collapsable={false}
-      renderToHardwareTextureAndroid
-      needsOffscreenAlphaCompositing
       style={StyleSheet.absoluteFill}
       onLayout={onLayout}
     >
-      {filter.background === 'blur' ? (
+      {/* Android composites the video in its own SurfaceView layer, so a blur
+          view cannot sample it — it only costs a hardware layer that blacks the
+          video out. The gradient below carries the look on both platforms. */}
+      {filter.background === 'blur' && Platform.OS === 'ios' ? (
         <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} />
       ) : null}
       {filter.background ? (

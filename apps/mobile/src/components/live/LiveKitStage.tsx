@@ -1,5 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  View,
+  type ViewStyle,
+} from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import {
@@ -156,6 +163,16 @@ function isPreviewIdentity(identity?: string) {
   return Boolean(identity && identity.startsWith('preview_'));
 }
 
+/** Stable per-participant key so tiles survive a peer joining or leaving. */
+function trackKey(trackRef: unknown, index: number) {
+  const ref = trackRef as {
+    participant?: Participant;
+    publication?: { trackSid?: string };
+    source?: string;
+  };
+  return `${ref.participant?.identity ?? 'p'}-${ref.publication?.trackSid ?? ref.source ?? index}`;
+}
+
 function dedupeCameraTracks(tracks: unknown[]) {
   const byIdentity = new Map<string, unknown>();
   for (const trackRef of tracks) {
@@ -243,32 +260,54 @@ function makeVideoGrid(
     const local = tracks.filter((t) => (t as { participant: Participant }).participant.isLocal);
     const remote = tracks.filter((t) => !(t as { participant: Participant }).participant.isLocal);
     const speaker = layout === 'speaker';
-    const main = speaker ? (remote[0] ?? local[0]) : null;
-    const pip = speaker && remote[0] && local[0] ? local[0] : null;
+    const localRef = local[0] ?? null;
     const multi = !speaker && tracks.length > 1;
+    // Conference: every remote gets a tile. Rendering only remote[0] is why a
+    // third person was audible but never visible.
+    const conference = remote.length > 1;
 
     return (
       <View style={[styles.grid, { backgroundColor: '#000' }]}>
-        {speaker && main ? (
+        {speaker ? (
           <>
-            <ParticipantVideoTile
-              lk={lk}
-              trackRef={main}
-              isLocal={(main as { participant: Participant }).participant.isLocal}
-              elevated={c.elevated}
-              multi={false}
-              videoFit={videoFit}
-            />
-            {pip ? (
-              <View style={styles.pip}>
+            {remote.length > 0 ? (
+              <View key="main" style={[styles.gridInner, conference && styles.gridStack]}>
+                {remote.map((ref, index) => (
+                  <ParticipantVideoTile
+                    key={trackKey(ref, index)}
+                    lk={lk}
+                    trackRef={ref}
+                    isLocal={false}
+                    elevated={c.elevated}
+                    multi={conference}
+                    videoFit={conference ? 'cover' : videoFit}
+                    zOrder={0}
+                    zoomable={!conference}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View key="main" style={[styles.fallback, { backgroundColor: '#050506' }]}>
+                <Text muted>Connecting…</Text>
+              </View>
+            )}
+            {/* Same tree slot in both states: moving this tile between a
+                full-screen and a PiP parent tore down the Android surface,
+                which is what made the peer flash over the local preview. */}
+            {localRef ? (
+              <View
+                key="self"
+                style={remote.length > 0 ? styles.pip : StyleSheet.absoluteFill}
+              >
                 <ParticipantVideoTile
                   lk={lk}
-                  trackRef={pip}
+                  trackRef={localRef}
                   isLocal
                   elevated={c.elevated}
                   multi={false}
                   videoFit="cover"
-                  pip
+                  zOrder={remote.length > 0 ? 1 : 0}
+                  pip={remote.length > 0}
                 />
               </View>
             ) : null}
@@ -276,15 +315,10 @@ function makeVideoGrid(
         ) : (
           <View style={[styles.gridInner, multi && styles.gridStack]}>
             {tracks.map((trackRef, index) => {
-              const ref = trackRef as {
-                participant: Participant;
-                publication?: { trackSid?: string };
-                source?: string;
-              };
-              const key = `${ref.participant.identity}-${ref.publication?.trackSid ?? ref.source ?? index}`;
+              const ref = trackRef as { participant: Participant };
               return (
                 <ParticipantVideoTile
-                  key={key}
+                  key={trackKey(trackRef, index)}
                   lk={lk}
                   trackRef={trackRef}
                   isLocal={Boolean(ref.participant.isLocal)}
@@ -352,6 +386,113 @@ function LivePublisherControls({
   );
 }
 
+const MAX_ZOOM = 4;
+
+const ABSOLUTE_FILL: ViewStyle = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  top: 0,
+  bottom: 0,
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Zoom is applied by resizing/offsetting the video's wrapper rather than with a
+ * transform: on Android the renderer is a SurfaceView, which composites in its
+ * own layer and ignores parent transforms.
+ */
+function useVideoZoom(enabled: boolean) {
+  const sizeRef = useRef({ w: 0, h: 0 });
+  const zoomRef = useRef({ scale: 1, x: 0, y: 0 });
+  const startRef = useRef({ scale: 1, x: 0, y: 0 });
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const [zoom, setZoom] = useState({ scale: 1, x: 0, y: 0 });
+  const [fitOverride, setFitOverride] = useState<VideoFit | null>(null);
+
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width < 8 || height < 8) return;
+    sizeRef.current = { w: width, h: height };
+    setSize((prev) => (prev.w === width && prev.h === height ? prev : { w: width, h: height }));
+  }, []);
+
+  const apply = useCallback((next: { scale: number; x: number; y: number }) => {
+    const scale = clamp(next.scale, 1, MAX_ZOOM);
+    const maxX = ((scale - 1) * sizeRef.current.w) / 2;
+    const maxY = ((scale - 1) * sizeRef.current.h) / 2;
+    const value = {
+      scale,
+      x: clamp(next.x, -maxX, maxX),
+      y: clamp(next.y, -maxY, maxY),
+    };
+    zoomRef.current = value;
+    setZoom(value);
+  }, []);
+
+  const gesture = useMemo(() => {
+    if (!enabled) return null;
+    const pinch = Gesture.Pinch()
+      .runOnJS(true)
+      .onStart(() => {
+        startRef.current = zoomRef.current;
+      })
+      .onUpdate((e) => {
+        apply({
+          scale: startRef.current.scale * e.scale,
+          x: startRef.current.x,
+          y: startRef.current.y,
+        });
+      });
+
+    const pan = Gesture.Pan()
+      .runOnJS(true)
+      .averageTouches(true)
+      .onStart(() => {
+        startRef.current = zoomRef.current;
+      })
+      .onUpdate((e) => {
+        if (zoomRef.current.scale <= 1.01) return;
+        apply({
+          scale: zoomRef.current.scale,
+          x: startRef.current.x + e.translationX,
+          y: startRef.current.y + e.translationY,
+        });
+      });
+
+    const doubleTap = Gesture.Tap()
+      .numberOfTaps(2)
+      .runOnJS(true)
+      .onEnd(() => {
+        if (zoomRef.current.scale > 1.01) {
+          apply({ scale: 1, x: 0, y: 0 });
+          return;
+        }
+        setFitOverride((prev) => (prev === 'contain' ? 'cover' : 'contain'));
+      });
+
+    // Race, not Exclusive: Exclusive makes the pan wait for the double-tap to
+    // fail, which adds a visible lag before the video starts following a drag.
+    return Gesture.Race(doubleTap, Gesture.Simultaneous(pinch, pan));
+  }, [enabled, apply]);
+
+  const zoomStyle = useMemo<ViewStyle>(() => {
+    if (zoom.scale <= 1.001 || size.w < 8 || size.h < 8) return ABSOLUTE_FILL;
+    return {
+      position: 'absolute',
+      left: -((size.w * (zoom.scale - 1)) / 2) + zoom.x,
+      top: -((size.h * (zoom.scale - 1)) / 2) + zoom.y,
+      width: size.w * zoom.scale,
+      height: size.h * zoom.scale,
+    };
+  }, [zoom, size]);
+
+  return { gesture, zoomStyle, onLayout, fitOverride };
+}
+
 function ParticipantVideoTile({
   lk,
   trackRef,
@@ -360,6 +501,8 @@ function ParticipantVideoTile({
   multi,
   videoFit,
   pip,
+  zOrder = 0,
+  zoomable = false,
 }: {
   lk: {
     VideoTrack: React.ComponentType<{
@@ -376,6 +519,9 @@ function ParticipantVideoTile({
   multi: boolean;
   videoFit: VideoFit;
   pip?: boolean;
+  /** 0 = normal surface, 1 = media overlay. PiP must sit above the main tile. */
+  zOrder?: number;
+  zoomable?: boolean;
 }) {
   const participant = (trackRef as { participant: Participant }).participant;
   const filterId = useLocalOrRemoteFaceFilter(participant);
@@ -391,27 +537,30 @@ function ParticipantVideoTile({
   }
   const roleBadge = role === 'cohost' ? 'Co-host' : role === 'host' ? 'Host' : null;
   const name = isLocal ? 'You' : participant.name || roleBadge || 'Guest';
+  const { gesture, zoomStyle, onLayout, fitOverride } = useVideoZoom(zoomable);
+  const fit = fitOverride ?? videoFit;
 
-  return (
-    <View style={[styles.tile, multi && styles.tileStack, pip && styles.tilePip]}>
-      <lk.VideoTrack
-        trackRef={trackRef}
-        style={StyleSheet.absoluteFill}
-        objectFit={videoFit}
-        mirror={isLocal}
-        zOrder={-1}
-      />
-      <View
-        pointerEvents="none"
-        collapsable={false}
-        renderToHardwareTextureAndroid
-        style={styles.filterLayer}
-      >
-        <FaceFilterOverlay
-          filterId={filterId}
-          mirrored={isLocal}
-          faceBox={isLocal ? localBox : remoteBox}
+  const tile = (
+    <View
+      style={[styles.tile, multi && styles.tileStack, pip && styles.tilePip]}
+      onLayout={zoomable ? onLayout : undefined}
+    >
+      {/* Video and overlay share the zoom wrapper so filters stay on the face. */}
+      <View style={zoomStyle}>
+        <lk.VideoTrack
+          trackRef={trackRef}
+          style={StyleSheet.absoluteFill}
+          objectFit={fit}
+          mirror={isLocal}
+          zOrder={zOrder}
         />
+        <View pointerEvents="none" collapsable={false} style={styles.filterLayer}>
+          <FaceFilterOverlay
+            filterId={filterId}
+            mirrored={isLocal}
+            faceBox={isLocal ? localBox : remoteBox}
+          />
+        </View>
       </View>
       {multi || pip ? (
         <View style={styles.labelRow}>
@@ -427,6 +576,9 @@ function ParticipantVideoTile({
       ) : null}
     </View>
   );
+
+  if (!gesture) return tile;
+  return <GestureDetector gesture={gesture}>{tile}</GestureDetector>;
 }
 
 const styles = StyleSheet.create({
@@ -450,7 +602,7 @@ const styles = StyleSheet.create({
   },
   tile: {
     flex: 1,
-    overflow: Platform.OS === 'android' ? 'visible' : 'hidden',
+    overflow: 'hidden',
     backgroundColor: '#000',
   },
   tileStack: {
@@ -463,19 +615,25 @@ const styles = StyleSheet.create({
   pip: {
     position: 'absolute',
     right: 12,
-    bottom: 16,
+    // Clears the call control row; at bottom: 16 it sat on top of the
+    // end-call button in the bottom-right corner.
+    bottom: 168,
     width: 108,
     height: 152,
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
-    zIndex: 20,
-    elevation: 20,
+    // Above the main tile's filter layer (24) so a full-screen filter
+    // background does not tint or cover the self view.
+    zIndex: 30,
+    elevation: 30,
   },
   filterLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...ABSOLUTE_FILL,
     zIndex: 8,
+    // No renderToHardwareTextureAndroid here: an offscreen hardware layer over
+    // the video SurfaceView renders as an opaque black rectangle on Android.
     elevation: 24,
   },
   avRow: {

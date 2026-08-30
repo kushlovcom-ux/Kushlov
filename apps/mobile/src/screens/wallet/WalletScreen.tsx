@@ -356,7 +356,8 @@ export function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
-  pad: { paddingHorizontal: spacing.screen, paddingBottom: spacing['4xl'] },
+  // 110 clears the floating PremiumTabBar, matching the other tab screens.
+  pad: { paddingHorizontal: spacing.screen, paddingBottom: 110 },
   hero: {
     borderRadius: radius['2xl'],
     padding: spacing.xl,

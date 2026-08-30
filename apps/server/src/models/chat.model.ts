@@ -37,7 +37,16 @@ export interface IMessage extends Document {
   sender: Types.ObjectId;
   type: MessageType;
   text?: string;
-  media?: { url: string; publicId: string; durationSec?: number; width?: number; height?: number };
+  media?: {
+    url: string;
+    publicId: string;
+    durationSec?: number;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    fileName?: string;
+    mimeType?: string;
+  };
   replyTo?: Types.ObjectId;
   forwardedFrom?: Types.ObjectId;
   readBy: Types.ObjectId[];
@@ -64,6 +73,9 @@ const messageSchema = new Schema<IMessage>(
       durationSec: Number,
       width: Number,
       height: Number,
+      bytes: Number,
+      fileName: String,
+      mimeType: String,
     },
     replyTo: { type: Schema.Types.ObjectId, ref: 'Message' },
     forwardedFrom: { type: Schema.Types.ObjectId, ref: 'Message' },

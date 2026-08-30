@@ -8,7 +8,7 @@ import {
   SocketEvents,
 } from '@kushlov/types';
 import { buildPaginated, parsePagination } from '@kushlov/utils';
-import { Follower, Gift, LiveChat, LiveParticipant, LiveStream, User } from '../../models';
+import { Follower, Gift, LiveChat, LiveParticipant, LiveStream, User, Block } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
@@ -32,6 +32,10 @@ import { refId } from '../../utils/refId';
 import { getLiveKitPublicUrl } from '../../config/env';
 
 const roomOf = (id: string) => `live:${id}`;
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 async function countActiveViewers(liveId: unknown): Promise<number> {
   return LiveParticipant.countDocuments({
@@ -229,12 +233,36 @@ export const endLive = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, live, 'Stream ended');
 });
 
-/** GET /live — list currently live streams (hosts within discovery radius). */
+/** GET /live — list currently live streams.
+ *  Browse: hosts outside the ~10 km exclusion zone (same privacy as Discover).
+ *  Search (?q=): match host name/username or title, including nearby hosts —
+ *  locals who type the host's name can find and join the stream.
+ */
 export const listLive = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   await pruneStaleLiveStreams();
-  const discoverableIds = await getDiscoverableUserIds(req.user!.id);
-  const filter = { status: LiveStatus.Live, host: { $in: discoverableIds } };
+
+  const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
+  const exclude = [...blocked.map(String), req.user!.id];
+
+  const filter: Record<string, unknown> = {
+    status: LiveStatus.Live,
+    host: { $nin: exclude },
+  };
+
+  if (q) {
+    const rx = new RegExp(escapeRegex(q), 'i');
+    const matchedHosts = await User.find({
+      _id: { $nin: exclude },
+      $or: [{ displayName: rx }, { username: rx }],
+    }).distinct('_id');
+    filter.$or = [{ host: { $in: matchedHosts } }, { title: rx }];
+  } else {
+    const discoverableIds = await getDiscoverableUserIds(req.user!.id, blocked);
+    filter.host = { $in: discoverableIds };
+  }
+
   const [items, total] = await Promise.all([
     LiveStream.find(filter)
       .sort({ viewerCount: -1, startedAt: -1 })
@@ -406,10 +434,15 @@ export const likeLive = asyncHandler(async (req: Request, res: Response) => {
     { new: true },
   );
   if (!live) throw ApiError.notFound('Stream not found');
-  emitToRoom(roomOf(live._id.toString()), SocketEvents.LiveViewerCount, {
+  // Likes used to ride on `live:viewer_count`, which clients read as a viewer
+  // update and ignored. Fan it out on its own event so hearts animate for
+  // everyone, including a host that has not re-joined the socket room yet.
+  await emitLiveEvent(live, SocketEvents.LiveLike, {
+    liveId: live._id.toString(),
+    userId: req.user!.id,
     totalLikes: live.totalLikes,
   });
-  return ok(res, { totalLikes: live.totalLikes });
+  return ok(res, { totalLikes: live.totalLikes, likeCount: live.totalLikes });
 });
 
 /** POST /live/:id/gift — send a gift inside the stream to the host. */

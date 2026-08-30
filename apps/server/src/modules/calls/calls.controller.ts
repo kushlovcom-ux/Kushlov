@@ -45,6 +45,106 @@ function isCallMember(call: ICall, userId: string): boolean {
   return participantIdsOf(call).includes(userId);
 }
 
+type MergeRosterMember = { id: string; displayName?: string; avatarUrl?: string };
+
+/**
+ * Fold a parked 1:1 into an Ongoing consult. Used by POST /merge and automatically
+ * when the consult callee answers — otherwise the website just switched to the
+ * second person and left the first one behind.
+ */
+async function mergeHeldIntoActive(
+  active: ICall,
+  uid: string,
+  heldCallId: string,
+  opts?: { skipNotifyUserId?: string },
+): Promise<{ heldId: string; members: MergeRosterMember[] } | null> {
+  const held =
+    (await AudioCall.findById(heldCallId)) || (await VideoCall.findById(heldCallId));
+  if (!held || held.status !== CallStatus.Ongoing) return null;
+  if (!isCallMember(held, uid)) return null;
+
+  const heldMembers = participantIdsOf(held).filter((id) => id !== uid);
+  const activeMembers = participantIdsOf(active);
+  if (activeMembers.length + heldMembers.length > MAX_CALL_PARTICIPANTS) {
+    throw ApiError.badRequest(`Max ${MAX_CALL_PARTICIPANTS} participants per call`);
+  }
+
+  const parts = new Set(activeMembers);
+  for (const id of heldMembers) parts.add(id);
+  active.participants = [...parts] as unknown as typeof active.participants;
+  await active.save();
+
+  held.status = CallStatus.Ended;
+  held.endedAt = new Date();
+  held.pendingInvites = [];
+  await held.save();
+
+  const livekitUrl = getLiveKitPublicUrl();
+  const activeType = active.type as CallType;
+  const members: MergeRosterMember[] = [];
+  const allRoster = await rosterOf(active);
+
+  for (const memberId of heldMembers) {
+    const joiner = await User.findById(memberId).select('displayName avatarUrl');
+    const joinerToken = await createLiveKitToken({
+      identity: memberId,
+      name: joiner?.displayName,
+      roomName: active.roomName,
+      canPublish: true,
+    });
+    members.push({
+      id: memberId,
+      displayName: joiner?.displayName,
+      avatarUrl: joiner?.avatarUrl,
+    });
+    const joinPayload = {
+      callId: active._id.toString(),
+      type: activeType,
+      roomName: active.roomName,
+      livekitUrl,
+      maxDurationSec: active.maxDurationSec,
+      mergedFromHold: held._id.toString(),
+      participant: {
+        id: memberId,
+        displayName: joiner?.displayName,
+        avatarUrl: joiner?.avatarUrl,
+      },
+    };
+    emitToUser(memberId, SocketEvents.CallAccept, {
+      ...joinPayload,
+      token: joinerToken,
+      merged: true,
+      call: active,
+      participants: allRoster.filter((p) => p.id !== memberId),
+    });
+    emitToUser(memberId, SocketEvents.CallUnhold, {
+      callId: held._id.toString(),
+      type: held.type,
+      held: false,
+      merged: true,
+    });
+    for (const mid of participantIdsOf(active)) {
+      if (mid === memberId) continue;
+      if (opts?.skipNotifyUserId && mid === opts.skipNotifyUserId) continue;
+      emitToUser(mid, SocketEvents.CallParticipantJoined, joinPayload);
+    }
+  }
+
+  return { heldId: held._id.toString(), members };
+}
+
+async function rosterOf(call: ICall, exceptId?: string): Promise<MergeRosterMember[]> {
+  const ids = participantIdsOf(call).filter((id) => id !== exceptId);
+  if (!ids.length) return [];
+  const users = await User.find({ _id: { $in: ids } }).select('displayName avatarUrl');
+  const byId = new Map(users.map((u) => [u._id.toString(), u]));
+  return ids.map((id) => ({
+    id,
+    displayName: byId.get(id)?.displayName,
+    avatarUrl: byId.get(id)?.avatarUrl,
+  }));
+}
+
 function isPendingInvitee(call: ICall, userId: string): boolean {
   return (call.pendingInvites ?? []).some((p) => p.toString() === userId);
 }
@@ -358,11 +458,13 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     });
   }
 
-  // Park other members of the held call while consult rings.
-  // Real hold: kick the holder out of the held LiveKit room + mute held peers.
+  // Park other members of the held call while the consult rings.
+  // Mute the holder instead of removing them: the holder's client leaves the
+  // held room by itself when it switches to the consult token, and a forced
+  // removal arrives first, which the client reads as the call dropping.
   if (heldCall && heldType) {
     try {
-      await removeParticipant(heldCall.roomName, req.user!.id);
+      await setParticipantMuted(heldCall.roomName, req.user!.id, true);
     } catch {
       /* already left */
     }
@@ -476,12 +578,29 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
   call.participants = [...parts] as unknown as typeof call.participants;
   await call.save();
 
+  let mergedFromHold: string | undefined;
+  if (call.targetCallId && !call.isInterrupt) {
+    try {
+      const merged = await mergeHeldIntoActive(
+        call,
+        call.caller.toString(),
+        call.targetCallId.toString(),
+        { skipNotifyUserId: call.caller.toString() },
+      );
+      if (merged) mergedFromHold = merged.heldId;
+    } catch {
+      /* held already gone — consult continues as 1:1 with the new callee */
+    }
+  }
+
   const joinerToken = await createLiveKitToken({
     identity: uid,
+    name: (await User.findById(uid).select('displayName'))?.displayName,
     roomName: call.roomName,
     canPublish: true,
   });
   const livekitUrl = getLiveKitPublicUrl();
+  const allRoster = await rosterOf(call);
 
   // Notify caller (and other members) that someone joined / call accepted.
   const joiner = await User.findById(uid).select('displayName avatarUrl');
@@ -500,6 +619,9 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
               roomName: call.roomName,
               canPublish: true,
             }),
+            participants: allRoster.filter((p) => p.id !== memberId),
+            merged: Boolean(mergedFromHold),
+            mergedFromHold,
           }
         : {
             callId: call._id.toString(),
@@ -512,6 +634,7 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
               displayName: joiner?.displayName,
               avatarUrl: joiner?.avatarUrl,
             },
+            participants: allRoster.filter((p) => p.id !== memberId),
           };
     emitToUser(
       memberId,
@@ -530,6 +653,9 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
       roomName: call.roomName,
       livekitUrl,
       maxDurationSec: call.maxDurationSec,
+      participants: allRoster.filter((p) => p.id !== uid),
+      merged: Boolean(mergedFromHold),
+      mergedFromHold,
     },
     'Call accepted',
   );
@@ -700,9 +826,10 @@ export const holdCall = asyncHandler(async (req: Request, res: Response) => {
   if (call.status !== CallStatus.Ongoing) throw ApiError.badRequest('Call is not ongoing');
   if (!isCallMember(call, req.user!.id)) throw ApiError.forbidden('Not your call');
 
-  // Force holder out of the LiveKit room so held peers cannot hear them.
+  // Mute the holder so held peers cannot hear them. Removing them from the room
+  // instead makes their client see a disconnect and tear the call down.
   try {
-    await removeParticipant(call.roomName, req.user!.id);
+    await setParticipantMuted(call.roomName, req.user!.id, true);
   } catch {
     /* already left */
   }
@@ -739,6 +866,13 @@ export const unholdCall = asyncHandler(async (req: Request, res: Response) => {
     roomName: call.roomName,
     canPublish: true,
   });
+
+  // Hold muted us server-side; lift that before anyone rejoins.
+  try {
+    await setParticipantMuted(call.roomName, req.user!.id, false);
+  } catch {
+    /* not in the room yet */
+  }
 
   // Unmute held peers and give them fresh tokens so they can republish.
   for (const memberId of participantIdsOf(call)) {
@@ -792,82 +926,17 @@ export const mergeCalls = asyncHandler(async (req: Request, res: Response) => {
   if (active.status !== CallStatus.Ongoing) throw ApiError.badRequest('Active call is not ongoing');
   if (!isCallMember(active, uid)) throw ApiError.forbidden('Not on the active call');
 
-  let held =
-    (await AudioCall.findById(heldCallId)) || (await VideoCall.findById(heldCallId));
-  if (!held || held.status !== CallStatus.Ongoing) {
-    throw ApiError.badRequest('Held call is not ongoing');
-  }
-  if (!isCallMember(held, uid)) throw ApiError.forbidden('Not on the held call');
-
-  const heldMembers = participantIdsOf(held).filter((id) => id !== uid);
-  const activeMembers = participantIdsOf(active);
-  if (activeMembers.length + heldMembers.length > MAX_CALL_PARTICIPANTS) {
-    throw ApiError.badRequest(`Max ${MAX_CALL_PARTICIPANTS} participants per call`);
-  }
-
-  const parts = new Set(activeMembers);
-  for (const id of heldMembers) parts.add(id);
-  active.participants = [...parts] as unknown as typeof active.participants;
-  await active.save();
-
-  held.status = CallStatus.Ended;
-  held.endedAt = new Date();
-  held.pendingInvites = [];
-  await held.save();
+  const merged = await mergeHeldIntoActive(active, uid, heldCallId);
+  if (!merged) throw ApiError.badRequest('Held call is not ongoing');
 
   const livekitUrl = getLiveKitPublicUrl();
   const activeType = active.type as CallType;
-
-  for (const memberId of heldMembers) {
-    const joinerToken = await createLiveKitToken({
-      identity: memberId,
-      roomName: active.roomName,
-      canPublish: true,
-    });
-    const joiner = await User.findById(memberId).select('displayName avatarUrl');
-    const joinPayload = {
-      callId: active._id.toString(),
-      type: activeType,
-      roomName: active.roomName,
-      livekitUrl,
-      maxDurationSec: active.maxDurationSec,
-      mergedFromHold: held._id.toString(),
-      participant: {
-        id: memberId,
-        displayName: joiner?.displayName,
-        avatarUrl: joiner?.avatarUrl,
-      },
-    };
-    emitToUser(memberId, SocketEvents.CallAccept, {
-      ...joinPayload,
-      token: joinerToken,
-      merged: true,
-      call: active,
-    });
-    emitToUser(memberId, SocketEvents.CallUnhold, {
-      callId: held._id.toString(),
-      type: held.type,
-      held: false,
-      merged: true,
-    });
-    for (const mid of participantIdsOf(active)) {
-      if (mid === memberId) continue;
-      emitToUser(mid, SocketEvents.CallParticipantJoined, joinPayload);
-    }
-  }
-
-  // Close held LiveKit room after members have been directed to the active room.
-  try {
-    await closeRoom(held.roomName);
-  } catch {
-    /* ignore */
-  }
-
   const selfToken = await createLiveKitToken({
     identity: uid,
     roomName: active.roomName,
     canPublish: true,
   });
+  const participants = await rosterOf(active, uid);
 
   return ok(
     res,
@@ -879,6 +948,7 @@ export const mergeCalls = asyncHandler(async (req: Request, res: Response) => {
       livekitUrl,
       maxDurationSec: active.maxDurationSec,
       merged: true,
+      participants,
     },
     'Calls merged',
   );

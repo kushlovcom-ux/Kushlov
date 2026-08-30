@@ -2,18 +2,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   FlatList,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
 import { Header } from '@/components/common/Header';
@@ -21,15 +20,18 @@ import { Screen } from '@/components/common/Screen';
 import { ErrorView } from '@/components/ui/ErrorView';
 import { LiveKitStage } from '@/components/live/LiveKitStage';
 import { HostMediaBar } from '@/components/live/HostMediaBar';
+import { LiveHearts, type LiveHeartsHandle } from '@/components/live/LiveHearts';
 import { FilterSelector } from '@/faceFilters/components/FilterSelector';
 import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
 import { liveApi } from '@/api/live';
 import { getErrorMessage } from '@/api/client';
 import { queryKeys } from '@/constants/queryKeys';
 import { useAuth } from '@/hooks/useAuth';
+import { useKeyboard } from '@/hooks/useKeyboard';
 import { useSettings } from '@/hooks/useSettings';
 import { useSocket } from '@/providers/SocketProvider';
 import { useThemeColors } from '@/hooks/useThemeColors';
+import { haptics } from '@/utils/haptics';
 import { spacing } from '@/theme';
 import { SocketEvents } from '@/types';
 import type { AppStackParamList } from '@/navigation/types';
@@ -85,6 +87,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   const { liveId, coliveToken, livekitUrl: handoffUrl } = route.params;
   const c = useThemeColors();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboard();
   const { user } = useAuth();
   const socket = useSocket();
   const settings = useSettings();
@@ -92,6 +95,8 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const lastChatIdRef = useRef<string | undefined>(undefined);
   const [viewers, setViewers] = useState(0);
+  const [likes, setLikes] = useState(0);
+  const heartsRef = useRef<LiveHeartsHandle>(null);
   const [showViewers, setShowViewers] = useState(false);
   const [showColive, setShowColive] = useState(false);
   const [token, setToken] = useState<string>();
@@ -127,12 +132,39 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     (settings.data?.rates as { liveChatPerMessage?: number } | undefined)?.liveChatPerMessage ?? 0,
   );
 
+  // Polled for every host, not just while the viewer sheet is open: a viewer who
+  // joins before the host finishes `live:join` is otherwise never counted, so
+  // the header sat at "0 watching" for the whole stream.
   const viewerList = useQuery({
     queryKey: [...queryKeys.liveRoom(liveId), 'viewers'] as const,
     queryFn: () => liveApi.viewers(liveId),
-    enabled: Boolean(isHost && showViewers),
-    refetchInterval: showViewers ? 8_000 : false,
+    enabled: Boolean(isHost),
+    refetchInterval: showViewers ? 5_000 : 10_000,
   });
+
+  useEffect(() => {
+    const count = viewerList.data?.viewerCount;
+    if (typeof count === 'number') setViewers(count);
+  }, [viewerList.data?.viewerCount]);
+
+  useEffect(() => {
+    if (typeof live.data?.likeCount === 'number') {
+      setLikes((prev) => (prev > live.data!.likeCount! ? prev : live.data!.likeCount!));
+    }
+  }, [live.data?.likeCount]);
+
+  const sendLike = useCallback(() => {
+    void haptics.light();
+    heartsRef.current?.burst();
+    setLikes((n) => n + 1);
+    liveApi
+      .like(liveId)
+      .then((res) => {
+        const total = res?.totalLikes ?? res?.likeCount;
+        if (typeof total === 'number') setLikes(total);
+      })
+      .catch(() => undefined);
+  }, [liveId]);
 
   const otherLives = useQuery({
     queryKey: [...queryKeys.live, 'colive-targets'] as const,
@@ -261,6 +293,13 @@ export function LiveRoomScreen({ navigation, route }: Props) {
       const p = args[0] as { viewerCount?: number };
       if (p?.viewerCount != null) setViewers(p.viewerCount);
     });
+    const offLike = socket.on(SocketEvents.LiveLike, (...args: unknown[]) => {
+      const p = args[0] as { totalLikes?: number; userId?: string };
+      if (typeof p?.totalLikes === 'number') setLikes(p.totalLikes);
+      // Our own like already animated optimistically; don't double it.
+      if (p?.userId && user?.id && String(p.userId) === String(user.id)) return;
+      heartsRef.current?.burst();
+    });
     const offLeave = socket.on(SocketEvents.LiveLeave, (...args: unknown[]) => {
       const p = args[0] as { ended?: boolean };
       if (p?.ended) {
@@ -283,6 +322,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
       socket.emit(SocketEvents.LiveLeave, { liveId });
       offChat();
       offCount();
+      offLike();
       offLeave();
       offColiveAccept();
       offColiveLeave();
@@ -348,11 +388,10 @@ export function LiveRoomScreen({ navigation, route }: Props) {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: '#000' }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
-      >
+      {/* Android is edge-to-edge since API 35, so the window no longer resizes
+          for the keyboard and KeyboardAvoidingView's Android branch did
+          nothing, hiding the composer behind the keyboard. */}
+      <View style={{ flex: 1, backgroundColor: '#000', paddingBottom: keyboard.height }}>
       <Header
         title={live.data?.title ?? 'Live'}
         onBack={() => navigation.goBack()}
@@ -366,10 +405,29 @@ export function LiveRoomScreen({ navigation, route }: Props) {
       />
 
       <View style={styles.meta}>
-        <Text variant="caption" muted>
-          {live.data?.host?.displayName ?? 'Host'}
-          {coHostName ? ` + ${coHostName}` : ''} · {viewers} watching
-        </Text>
+        <View style={styles.metaLeft}>
+          <Text variant="caption" muted numberOfLines={1}>
+            {live.data?.host?.displayName ?? 'Host'}
+            {coHostName ? ` + ${coHostName}` : ''}
+          </Text>
+          <View style={styles.statRow}>
+            <Pressable
+              onPress={() => (isHost ? setShowViewers(true) : undefined)}
+              style={[styles.statPill, { backgroundColor: c.elevated }]}
+            >
+              <Ionicons name="eye" size={13} color={c.text} />
+              <Text variant="caption" color={c.text}>
+                {viewers} watching
+              </Text>
+            </Pressable>
+            <View style={[styles.statPill, { backgroundColor: c.elevated }]}>
+              <Ionicons name="heart" size={13} color="#FF4D8D" />
+              <Text variant="caption" color={c.text}>
+                {likes}
+              </Text>
+            </View>
+          </View>
+        </View>
         <View style={{ flexDirection: 'row', gap: 12 }}>
           {isHost ? (
             <Pressable onPress={() => setShowColive(true)}>
@@ -441,33 +499,27 @@ export function LiveRoomScreen({ navigation, route }: Props) {
                 </View>
               )}
             />
-            <View style={styles.chatRow}>
-              <View style={{ flex: 1 }}>
-                <Input
-                  value={chat}
-                  onChangeText={setChat}
-                  placeholder={
-                    chatCost > 0 ? `Say something… (${chatCost}♦/msg)` : 'Say something…'
-                  }
-                />
-              </View>
-              <Button title="Send" size="sm" onPress={sendChat} />
-              <Button
-                title="Like"
-                size="sm"
-                variant="secondary"
-                onPress={() => liveApi.like(liveId).catch(() => undefined)}
-              />
-            </View>
+            <LiveChatBar
+              value={chat}
+              onChange={setChat}
+              onSend={sendChat}
+              onLike={sendLike}
+              cost={chatCost}
+            />
           </View>
         ) : null}
+
+        <LiveHearts ref={heartsRef} />
       </View>
 
       {canPublish ? (
         <View
           style={[
             styles.chatDock,
-            { paddingBottom: Math.max(insets.bottom, spacing.sm) },
+            // The keyboard already covers the gesture bar, so adding its inset
+            // on top of the KeyboardAvoidingView padding would float the
+            // composer above the keyboard.
+            { paddingBottom: keyboard.visible ? spacing.sm : Math.max(insets.bottom, spacing.sm) },
           ]}
         >
           <FlatList
@@ -485,18 +537,13 @@ export function LiveRoomScreen({ navigation, route }: Props) {
               </View>
             )}
           />
-          <View style={styles.chatRow}>
-            <View style={{ flex: 1 }}>
-              <Input value={chat} onChangeText={setChat} placeholder="Say something…" />
-            </View>
-            <Button title="Send" size="sm" onPress={sendChat} />
-            <Button
-              title="Like"
-              size="sm"
-              variant="secondary"
-              onPress={() => liveApi.like(liveId).catch(() => undefined)}
-            />
-          </View>
+          <LiveChatBar
+            value={chat}
+            onChange={setChat}
+            onSend={sendChat}
+            onLike={sendLike}
+            cost={chatCost}
+          />
         </View>
       ) : null}
 
@@ -557,8 +604,63 @@ export function LiveRoomScreen({ navigation, route }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
-      </KeyboardAvoidingView>
+      </View>
     </Screen>
+  );
+}
+
+/**
+ * Compact composer for the live room. The previous version put a full-size
+ * `Input` (52pt tall, thick border, 16pt padding) between two labelled buttons,
+ * which left so little room that the placeholder was cut mid-word.
+ */
+function LiveChatBar({
+  value,
+  onChange,
+  onSend,
+  onLike,
+  cost,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
+  onLike: () => void;
+  cost: number;
+}) {
+  const c = useThemeColors();
+  return (
+    <View>
+      {cost > 0 ? (
+        <Text variant="tiny" style={styles.chatCost}>
+          {cost}♦ per message
+        </Text>
+      ) : null}
+      <View style={styles.chatRow}>
+        <View style={styles.chatField}>
+          <TextInput
+            value={value}
+            onChangeText={onChange}
+            placeholder="Say something…"
+            placeholderTextColor="rgba(255,255,255,0.65)"
+            style={styles.chatInput}
+            maxLength={500}
+            returnKeyType="send"
+            onSubmitEditing={onSend}
+            blurOnSubmit={false}
+          />
+        </View>
+        <Pressable
+          onPress={onSend}
+          accessibilityLabel="Send message"
+          style={[styles.chatBtn, { backgroundColor: c.pink }]}
+        >
+          <Ionicons name="send" size={17} color="#fff" />
+        </Pressable>
+        <Pressable onPress={onLike} accessibilityLabel="Send a like" style={styles.chatBtn}>
+          <Ionicons name="heart" size={20} color="#FF4D8D" />
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -613,6 +715,41 @@ const styles = StyleSheet.create({
     maxWidth: '92%',
   },
   chatRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  chatCost: { color: 'rgba(255,255,255,0.7)', marginLeft: 14, marginBottom: 2 },
+  chatField: {
+    flex: 1,
+    minWidth: 0,
+    height: 44,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  chatInput: {
+    color: '#fff',
+    fontSize: 15,
+    padding: 0,
+  },
+  chatBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  metaLeft: { flex: 1, gap: 4 },
+  statRow: { flexDirection: 'row', gap: 8 },
+  statPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',

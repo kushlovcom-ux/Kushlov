@@ -82,6 +82,14 @@ function rosterFromPeer(peerId?: string, peerName?: string): { id: string; name:
   return [{ id: peerId, name: peerName || 'Peer' }];
 }
 
+function rosterFromPayload(
+  list?: { id?: string; displayName?: string }[],
+): { id: string; name: string }[] {
+  return (list ?? [])
+    .map((p) => ({ id: String(p.id ?? ''), name: p.displayName || 'Peer' }))
+    .filter((p) => p.id);
+}
+
 function isApprovedHostPeer(role?: string, isHostApproved?: boolean) {
   return role === Role.Host && isHostApproved !== false;
 }
@@ -255,6 +263,11 @@ export function CallOverlay() {
   const endingRef = useRef(false);
   /** Skip end-on-disconnect while parking for consult / switching rooms. */
   const intentionalLeaveRef = useRef(false);
+  const parkedRef = useRef(false);
+  const mergingRef = useRef(false);
+  const autoMergedRef = useRef<string | null>(null);
+  /** Last time call id / token / room changed — stale LiveKit disconnects in this window are not hangups. */
+  const sessionSwapRef = useRef(0);
   const shellRef = useRef<HTMLDivElement>(null);
   const waitingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -266,6 +279,12 @@ export function CallOverlay() {
   useEffect(() => {
     heldCallRef.current = heldCall;
   }, [heldCall]);
+  useEffect(() => {
+    parkedRef.current = parked;
+  }, [parked]);
+  useEffect(() => {
+    sessionSwapRef.current = Date.now();
+  }, [active?.callId, active?.token, active?.roomName]);
   useEffect(() => {
     incomingRef.current = incoming;
   }, [incoming]);
@@ -325,6 +344,10 @@ export function CallOverlay() {
     async (call?: ActiveCall | null) => {
       const c = call ?? activeRef.current;
       if (!c || endingRef.current) return;
+      const held = heldCallRef.current;
+      // Consult/hold leaves this LiveKit room on purpose. Ending it here would
+      // hang up the original person while we are ringing someone else.
+      if (held && held.callId === c.callId) return;
       endingRef.current = true;
       intentionalLeaveRef.current = true;
       try {
@@ -367,9 +390,14 @@ export function CallOverlay() {
     toast.message(`Ended held call with ${held.peerName}`);
   }, [heldCall]);
 
-  const mergeHeld = useCallback(async () => {
-    if (!active || !heldCall) return;
-    intentionalLeaveRef.current = true;
+  const mergeHeld = useCallback(async (opts?: { silent?: boolean }) => {
+    const current = activeRef.current;
+    const held = heldCallRef.current;
+    if (!current || !held) return;
+    if (current.callId === held.callId) return;
+    if (mergingRef.current) return;
+    mergingRef.current = true;
+    sessionSwapRef.current = Date.now();
     try {
       const data = await unwrap<{
         token?: string;
@@ -378,30 +406,72 @@ export function CallOverlay() {
         maxDurationSec?: number;
         call?: { _id?: string };
         type?: CallType;
-      }>(api.post(`/calls/${active.type}/${active.callId}/merge`, { heldCallId: heldCall.callId }));
-      const participants = [...active.participants];
-      if (heldCall.peerId && !participants.some((p) => p.id === heldCall.peerId)) {
-        participants.push({ id: heldCall.peerId, name: heldCall.peerName });
+        participants?: { id?: string; displayName?: string }[];
+      }>(api.post(`/calls/${current.type}/${current.callId}/merge`, { heldCallId: held.callId }));
+      const latest = activeRef.current ?? current;
+      const fromServer = rosterFromPayload(data.participants);
+      const participants = fromServer.length ? [...fromServer] : [...latest.participants];
+      if (held.peerId && !participants.some((p) => p.id === held.peerId)) {
+        participants.push({ id: held.peerId, name: held.peerName });
       }
+      const sameRoom = !data.roomName || data.roomName === latest.roomName;
       setActive({
-        ...active,
-        callId: data.call?._id ?? active.callId,
-        type: data.type ?? active.type,
-        roomName: data.roomName ?? active.roomName,
-        token: data.token || active.token,
-        livekitUrl: data.livekitUrl ?? active.livekitUrl,
-        maxDurationSec: data.maxDurationSec ?? active.maxDurationSec,
-        peerName: participants.map((p) => p.name).join(' + ') || active.peerName,
+        ...latest,
+        callId: data.call?._id ?? latest.callId,
+        type: data.type ?? latest.type,
+        roomName: data.roomName ?? latest.roomName,
+        token: sameRoom ? latest.token : data.token || latest.token,
+        livekitUrl: data.livekitUrl ?? latest.livekitUrl,
+        maxDurationSec: data.maxDurationSec ?? latest.maxDurationSec,
+        peerName: participants.map((p) => p.name).join(' + ') || latest.peerName,
         peerId: participants[0]?.id,
         participants,
       });
+      heldCallRef.current = null;
       setHeldCall(null);
-      toast.success('Calls merged');
+      if (!opts?.silent) toast.success('Calls merged');
     } catch (e) {
-      intentionalLeaveRef.current = false;
-      toast.error(apiError(e));
+      const msg = apiError(e).toLowerCase();
+      // Server already folded the held leg in when the consult was answered.
+      if (msg.includes('not ongoing') || msg.includes('not found')) {
+        const parked = held;
+        heldCallRef.current = null;
+        setHeldCall(null);
+        if (parked.peerId) {
+          setActive((prev) => {
+            if (!prev) return prev;
+            const participants = [...prev.participants];
+            if (!participants.some((p) => p.id === parked.peerId)) {
+              participants.push({ id: parked.peerId!, name: parked.peerName });
+            }
+            return {
+              ...prev,
+              participants,
+              peerName: participants.map((p) => p.name).join(' + ') || prev.peerName,
+            };
+          });
+        }
+        return;
+      }
+      if (!opts?.silent) toast.error(apiError(e));
+    } finally {
+      mergingRef.current = false;
     }
-  }, [active, heldCall]);
+  }, []);
+
+  // "Call another" is how a conference is built: as soon as the new person
+  // answers, fold the held 1:1 into this room so nobody has to tap Merge.
+  useEffect(() => {
+    if (!heldCall) {
+      autoMergedRef.current = null;
+      return;
+    }
+    if (!active?.token) return;
+    if (active.callId === heldCall.callId) return;
+    if (autoMergedRef.current === heldCall.callId) return;
+    autoMergedRef.current = heldCall.callId;
+    void mergeHeld({ silent: true });
+  }, [active?.callId, active?.token, heldCall?.callId, mergeHeld]);
 
   const endConsultAndResumeHeld = useCallback(async () => {
     const c = activeRef.current;
@@ -448,6 +518,28 @@ export function CallOverlay() {
       toast.error(apiError(e));
     }
   }, [heldCall, offerReviewIfEligible]);
+
+  const onStageDisconnected = useCallback(
+    (stageToken: string, stageRoom?: string) => {
+      if (endingRef.current) return;
+      if (parkedRef.current) return;
+      const current = activeRef.current;
+      if (!current) return;
+      // Old LiveKitRoom unmounted after hold / consult / merge. The store
+      // already points at a different session — that is not a hangup.
+      if (current.token && stageToken && current.token !== stageToken) return;
+      if (current.roomName && stageRoom && current.roomName !== stageRoom) return;
+      const held = heldCallRef.current;
+      if (held && held.callId === current.callId) return;
+      if (Date.now() - sessionSwapRef.current < 4000) return;
+      if (intentionalLeaveRef.current) {
+        intentionalLeaveRef.current = false;
+        return;
+      }
+      void (held ? endConsultAndResumeHeld() : endActive());
+    },
+    [endConsultAndResumeHeld, endActive],
+  );
 
   const endAllCalls = useCallback(async () => {
     const held = heldCall;
@@ -503,6 +595,7 @@ export function CallOverlay() {
       mergedFromHold?: string;
       merged?: boolean;
       participant?: { id?: string; displayName?: string };
+      participants?: { id?: string; displayName?: string }[];
     }) => {
       const cur = activeRef.current;
       if (
@@ -510,16 +603,24 @@ export function CallOverlay() {
         cur &&
         (cur.callId === payload.mergedFromHold || payload.token)
       ) {
-        intentionalLeaveRef.current = true;
+        sessionSwapRef.current = Date.now();
         setParked(false);
+        const sameRoom = Boolean(cur.roomName) && payload.roomName === cur.roomName;
+        const fromServer = rosterFromPayload(payload.participants);
+        const participants = fromServer.length
+          ? fromServer
+          : cur.participants;
         setActive({
           ...cur,
           callId: payload.callId,
           type: payload.type ?? cur.type,
           roomName: payload.roomName ?? cur.roomName,
-          token: payload.token || cur.token,
+          token: sameRoom ? cur.token : payload.token || cur.token,
           livekitUrl: payload.livekitUrl ?? cur.livekitUrl,
           maxDurationSec: payload.maxDurationSec ?? cur.maxDurationSec,
+          participants,
+          peerName: participants.map((p) => p.name).join(' + ') || cur.peerName,
+          peerId: participants[0]?.id ?? cur.peerId,
         });
         toast.success('Joined merged call');
         return;
@@ -528,19 +629,32 @@ export function CallOverlay() {
       setOutgoing((prev) => {
         if (!prev) return prev;
         if (payload.interrupt || prev.callId === payload.callId || payload.token) {
+          const sameRoom = Boolean(prev.roomName) && payload.roomName === prev.roomName;
+          const held = heldCallRef.current;
+          const fromServer = rosterFromPayload(payload.participants);
+          const participants = fromServer.length
+            ? [...fromServer]
+            : rosterFromPeer(prev.peerId, prev.peerName);
+          if (held?.peerId && !participants.some((p) => p.id === held.peerId)) {
+            participants.push({ id: held.peerId, name: held.peerName });
+          }
           setActive({
             callId: payload.callId,
             type: payload.type ?? prev.type,
             roomName: payload.roomName ?? prev.roomName,
-            token: payload.token,
+            token: sameRoom && prev.token ? prev.token : payload.token,
             livekitUrl: payload.livekitUrl ?? prev.livekitUrl,
             maxDurationSec: payload.maxDurationSec ?? prev.maxDurationSec,
-            peerName: prev.peerName,
-            peerId: prev.peerId,
+            peerName: participants.map((p) => p.name).join(' + ') || prev.peerName,
+            peerId: participants[0]?.id ?? prev.peerId,
             peerIsHost: prev.peerIsHost,
             role: 'caller',
-            participants: rosterFromPeer(prev.peerId, prev.peerName),
+            participants,
           });
+          if (payload.merged) {
+            heldCallRef.current = null;
+            setHeldCall(null);
+          }
           return null;
         }
         return prev;
@@ -643,8 +757,8 @@ export function CallOverlay() {
     const onHold = (payload: { callId?: string; held?: boolean }) => {
       const cur = activeRef.current;
       if (!cur || (payload.callId && payload.callId !== cur.callId)) return;
-      // Soft-disconnect media so hold is real (silence), without ending the call.
-      intentionalLeaveRef.current = true;
+      // Stay in the LiveKit room (server already muted us). Unmounting used
+      // to fire onDisconnected, which the overlay treated as a hangup.
       setParked(true);
       toast.message('You are on hold');
     };
@@ -665,10 +779,11 @@ export function CallOverlay() {
       if (!cur || (payload.callId && payload.callId !== cur.callId)) return;
       setParked(false);
       if (payload.token) {
-        intentionalLeaveRef.current = true;
+        sessionSwapRef.current = Date.now();
+        const sameRoom = Boolean(cur.roomName) && payload.roomName === cur.roomName;
         setActive({
           ...cur,
-          token: payload.token,
+          token: sameRoom ? cur.token : payload.token,
           roomName: payload.roomName ?? cur.roomName,
           livekitUrl: payload.livekitUrl ?? cur.livekitUrl,
           maxDurationSec: payload.maxDurationSec ?? cur.maxDurationSec,
@@ -912,14 +1027,18 @@ export function CallOverlay() {
 
         if (data.consult && data.heldCallId && activeRef.current) {
           const prev = activeRef.current;
-          intentionalLeaveRef.current = true;
-          setHeldCall({
+          const held: HeldCall = {
             callId: data.heldCallId,
             type: data.heldType ?? prev.type,
             peerName: prev.peerName,
             peerId: prev.peerId,
             peerIsHost: prev.peerIsHost,
-          });
+          };
+          sessionSwapRef.current = Date.now();
+          intentionalLeaveRef.current = true;
+          heldCallRef.current = held;
+          activeRef.current = null;
+          setHeldCall(held);
           setActive(null);
           setRemainingSec(null);
           toast.message(`On hold: ${prev.peerName}`, {
@@ -979,21 +1098,24 @@ export function CallOverlay() {
         call?: { _id?: string };
         type?: CallType;
         merged?: boolean;
+        participants?: { id?: string; displayName?: string }[];
       }>(api.post(path));
 
       if (active && incoming.interrupt) {
         const joinerId = incoming.from?.id;
         const joinerName = incoming.from?.displayName ?? 'Caller';
-        const participants = [...active.participants];
+        const fromServer = rosterFromPayload(data.participants);
+        const participants = fromServer.length ? [...fromServer] : [...active.participants];
         if (joinerId && !participants.some((p) => p.id === joinerId)) {
           participants.push({ id: joinerId, name: joinerName });
         }
+        const sameRoom = Boolean(active.roomName) && data.roomName === active.roomName;
         setActive({
           ...active,
           callId: data.call?._id ?? active.callId,
           type: data.type ?? active.type,
           roomName: data.roomName ?? active.roomName,
-          token: data.token || active.token,
+          token: sameRoom ? active.token : data.token || active.token,
           livekitUrl: data.livekitUrl ?? active.livekitUrl,
           maxDurationSec: data.maxDurationSec ?? active.maxDurationSec,
           participants,
@@ -1007,6 +1129,10 @@ export function CallOverlay() {
 
       const peerId = incoming.from?.id;
       const peerName = incoming.from?.displayName ?? 'Caller';
+      const fromServer = rosterFromPayload(data.participants);
+      const participants = fromServer.length
+        ? fromServer
+        : rosterFromPeer(peerId, peerName);
       setActive({
         callId: data.call?._id ?? incoming.callId,
         type: incoming.type,
@@ -1014,11 +1140,11 @@ export function CallOverlay() {
         token: data.token,
         livekitUrl: data.livekitUrl,
         maxDurationSec: data.maxDurationSec,
-        peerName,
-        peerId,
+        peerName: participants.map((p) => p.name).join(' + ') || peerName,
+        peerId: participants[0]?.id ?? peerId,
         peerIsHost: isApprovedHostPeer(incoming.from?.role, incoming.from?.isHostApproved),
         role: 'callee',
-        participants: rosterFromPeer(peerId, peerName),
+        participants,
       });
       setIncoming(null);
     } catch (e) {
@@ -1353,35 +1479,29 @@ export function CallOverlay() {
               ) : null}
 
               {/* Stage */}
-              <div className="min-h-0 flex-1 bg-black">
+              <div className="relative min-h-0 flex-1 bg-black">
+                <LiveKitStage
+                  token={active.token}
+                  roomName={active.roomName}
+                  serverUrl={active.livekitUrl}
+                  audioOnly={active.type === CallType.Audio}
+                  isHost
+                  publish
+                  showAvControls={!parked}
+                  showFilters={active.type === CallType.Video && !parked}
+                  videoFit="contain"
+                  layout="speaker"
+                  onDisconnected={() => onStageDisconnected(active.token, active.roomName)}
+                />
                 {parked ? (
-                  <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 px-6 text-center">
+                  <div className="absolute inset-0 z-40 flex min-h-[240px] flex-col items-center justify-center gap-3 bg-zinc-950/90 px-6 text-center">
                     <Pause className="h-10 w-10 text-amber-300/80" />
                     <p className="text-lg font-semibold text-amber-100">On hold</p>
                     <p className="max-w-sm text-sm text-white/50">
                       Please wait — the other person will reconnect you shortly.
                     </p>
                   </div>
-                ) : (
-                  <LiveKitStage
-                    token={active.token}
-                    serverUrl={active.livekitUrl}
-                    audioOnly={active.type === CallType.Audio}
-                    isHost
-                    publish
-                    showAvControls
-                    showFilters={active.type === CallType.Video}
-                    videoFit="contain"
-                    layout="speaker"
-                    onDisconnected={() => {
-                      if (intentionalLeaveRef.current) {
-                        intentionalLeaveRef.current = false;
-                        return;
-                      }
-                      void (heldCall ? endConsultAndResumeHeld() : endActive());
-                    }}
-                  />
-                )}
+                ) : null}
               </div>
 
               {/* Compact horizontal toolbar */}

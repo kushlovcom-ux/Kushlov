@@ -3,7 +3,7 @@ import { normalizeLiveRoom } from '@/utils/normalizeLive';
 import type { LiveRoom, Paginated } from '@/types';
 
 export const liveApi = {
-  list: async (params?: { page?: number; limit?: number }) => {
+  list: async (params?: { page?: number; limit?: number; q?: string }) => {
     const res = await apiGet<Paginated<unknown>>('/live', { params });
     return {
       ...res,
@@ -55,7 +55,8 @@ export const liveApi = {
         user?: { displayName?: string; avatarUrl?: string };
       }>;
     }>(`/live/${id}/chat`, { params }),
-  like: (id: string) => apiPost<{ likeCount: number }>(`/live/${id}/like`),
+  like: (id: string) =>
+    apiPost<{ likeCount?: number; totalLikes?: number }>(`/live/${id}/like`),
   gift: (id: string, giftId: string) =>
     apiPost<{ ok: boolean }>(`/live/${id}/gift`, { giftId }),
   ban: (id: string, userId: string) =>

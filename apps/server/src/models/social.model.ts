@@ -15,6 +15,8 @@ const likeSchema = new Schema<ILike>(
   { timestamps: { createdAt: true, updatedAt: false } },
 );
 likeSchema.index({ from: 1, to: 1 }, { unique: true });
+// "who liked me" lookups have no `from` to lean on, so they need their own index.
+likeSchema.index({ to: 1, createdAt: -1 });
 export const Like = model<ILike>('Like', likeSchema, 'likes');
 
 /** A mutual match between two users (order-independent pair). */

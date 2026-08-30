@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RoomEvent, type Room } from 'livekit-client';
 import {
   isFaceTrackNativeAvailable,
@@ -107,12 +107,25 @@ export function FaceFilterPublisher({ room }: Props) {
     };
   }, [room, filterId, setFaceDetected, setLocalFaceBox]);
 
+  // Latched on purpose. Attaching a WebRTC video processor swaps the capturer's
+  // frame pipeline; doing that on every filter change blacked out the camera and
+  // took the call down with it. Attach once per room, tear down only on unmount.
+  const [tracking, setTracking] = useState(false);
+
   useEffect(() => {
-    if (!room || filterId === 'none') {
+    if (filterId !== 'none') setTracking(true);
+  }, [filterId]);
+
+  useEffect(() => {
+    if (!room) return;
+    if (filterId === 'none') {
       setLocalFaceBox(null);
       lastBoxRef.current = null;
-      return;
     }
+  }, [room, filterId, setLocalFaceBox]);
+
+  useEffect(() => {
+    if (!room || !tracking) return;
 
     const native = isFaceTrackNativeAvailable();
     const detach = attachLiveKitFaceTrack(room, native);
@@ -147,7 +160,7 @@ export function FaceFilterPublisher({ room }: Props) {
         missTimerRef.current = null;
       }
     };
-  }, [room, filterId, setFaceDetected, setLocalFaceBox]);
+  }, [room, tracking, setFaceDetected, setLocalFaceBox]);
 
   useEffect(() => {
     return () => {

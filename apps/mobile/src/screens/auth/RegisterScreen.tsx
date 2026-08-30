@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import {
   Alert,
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +18,7 @@ import { Screen } from '@/components/common/Screen';
 import { getErrorMessage } from '@/api/client';
 import { DEFAULT_COUNTRY } from '@/constants/countries';
 import { useAuth } from '@/hooks/useAuth';
+import { useKeyboard } from '@/hooks/useKeyboard';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { isValidEmail, isValidPassword, isValidUsername } from '@/utils/validation';
 import { spacing } from '@/theme';
@@ -29,6 +28,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
 export function RegisterScreen({ navigation }: Props) {
   const c = useThemeColors();
+  const keyboard = useKeyboard();
   const { register, isRegistering } = useAuth();
   const [form, setForm] = useState({
     email: '',
@@ -71,10 +71,9 @@ export function RegisterScreen({ navigation }: Props) {
   return (
     <Screen padded={false}>
       <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      {/* Android is edge-to-edge since API 35: the window no longer resizes for
+          the keyboard, so screens have to reserve the space themselves. */}
+      <View style={{ flex: 1, paddingBottom: keyboard.height }}>
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
@@ -207,7 +206,7 @@ export function RegisterScreen({ navigation }: Props) {
             </Text>
           </Pressable>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </Screen>
   );
 }

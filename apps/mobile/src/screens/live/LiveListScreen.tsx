@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused, useNavigation } from '@react-navigation/native';
@@ -11,11 +11,13 @@ import { ErrorView } from '@/components/ui/ErrorView';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
+import { SearchBar } from '@/components/common/SearchBar';
 import { LiveCardPreview } from '@/components/live/LiveCardPreview';
 import { PressableScale } from '@/design-system';
 import { liveApi } from '@/api/live';
 import { queryKeys } from '@/constants/queryKeys';
 import { useAuth } from '@/hooks/useAuth';
+import { useDebounce } from '@/hooks/useDebounce';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { radius, spacing } from '@/theme';
 import { LiveStatus } from '@/types';
@@ -29,9 +31,11 @@ export function LiveListScreen() {
   const focused = useIsFocused();
   const nav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { user } = useAuth();
+  const [q, setQ] = useState('');
+  const deferredQ = useDebounce(q.trim(), 300);
   const list = useQuery({
-    queryKey: queryKeys.live,
-    queryFn: () => liveApi.list({ limit: 40 }),
+    queryKey: [...queryKeys.live, deferredQ],
+    queryFn: () => liveApi.list({ limit: 40, q: deferredQ || undefined }),
   });
   const items: LiveRoom[] = (list.data?.items ?? []).filter((r) => r.status === LiveStatus.Live);
 
@@ -49,8 +53,15 @@ export function LiveListScreen() {
           }
         />
       </View>
+      <View style={{ paddingHorizontal: spacing.screen }}>
+        <SearchBar
+          value={q}
+          onChangeText={setQ}
+          placeholder="Search host name…"
+        />
+      </View>
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: spacing.screen, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: spacing.screen, paddingBottom: 110 }}
         refreshControl={
           <RefreshControl refreshing={list.isRefetching} onRefresh={() => list.refetch()} />
         }
@@ -60,7 +71,14 @@ export function LiveListScreen() {
         ) : list.isError ? (
           <ErrorView message="Could not load live rooms" onRetry={() => list.refetch()} />
         ) : items.length === 0 ? (
-          <EmptyState title="No one is live" description="Check back soon or become a host." />
+          <EmptyState
+            title={deferredQ ? 'No live match' : 'No one is live'}
+            description={
+              deferredQ
+                ? 'No live host matches that name. Nearby lives stay hidden until you search.'
+                : 'Hosts within 10 km are hidden here — search their name to watch.'
+            }
+          />
         ) : (
           items.map((room, index) => (
             <PressableScale

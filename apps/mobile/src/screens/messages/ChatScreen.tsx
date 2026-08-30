@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
+import { Alert, AppState, FlatList, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
-import { ChatInput } from '@/components/chat/ChatInput';
+import { ChatInput, type AttachKind, type VoiceNote } from '@/components/chat/ChatInput';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { ErrorView } from '@/components/ui/ErrorView';
@@ -12,6 +13,7 @@ import { SkeletonRow } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
 import { callsApi, chatApi, getErrorMessage } from '@/api';
 import { useAuth } from '@/hooks/useAuth';
+import { useKeyboard } from '@/hooks/useKeyboard';
 import { useMessages } from '@/hooks/useMessages';
 import { useCallStore } from '@/store/call';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -22,9 +24,32 @@ import type { AppStackScreenProps } from '@/navigation/types';
 
 type Props = AppStackScreenProps<'Chat'>;
 
+const DOCUMENT_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  rtf: 'application/rtf',
+  zip: 'application/zip',
+  txt: 'text/plain',
+  csv: 'text/csv',
+};
+
+const DOCUMENT_TYPES = Object.values(DOCUMENT_MIME);
+
+/** Android often hands back no MIME type for files picked from cloud providers. */
+function mimeFromName(name?: string) {
+  const ext = name?.split('.').pop()?.toLowerCase();
+  return (ext && DOCUMENT_MIME[ext]) || 'application/pdf';
+}
+
 export function ChatScreen({ navigation, route }: Props) {
   const { conversationId, title, peerId } = route.params;
   const c = useThemeColors();
+  const keyboard = useKeyboard();
   const { user } = useAuth();
   const startCall = useCallStore((s) => s.startCall);
   const { data, isLoading, isError, refetch, send, markRead, fetchNextPage, hasNextPage } =
@@ -87,23 +112,66 @@ export function ChatScreen({ navigation, route }: Props) {
     }
   };
 
-  const onAttach = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
-    if (res.canceled || !res.assets[0]) return;
+  const upload = async (payload: {
+    fileUri: string;
+    mimeType: string;
+    fileName: string;
+    type: string;
+  }) => {
     try {
-      await send.mutateAsync({
-        fileUri: res.assets[0].uri,
-        mimeType: res.assets[0].mimeType ?? 'image/jpeg',
-        fileName: res.assets[0].fileName ?? 'image.jpg',
-        type: 'image',
-      });
+      await send.mutateAsync(payload);
     } catch (err) {
       Alert.alert('Upload failed', getErrorMessage(err));
     }
   };
+
+  const pickMedia = async (kind: 'photo' | 'video') => {
+    const photo = kind === 'photo';
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: photo ? ['images'] : ['videos'],
+      quality: 0.8,
+      // The API caps uploads at 40 MB; a minute of phone video is already close.
+      videoMaxDuration: 60,
+    });
+    const asset = res.canceled ? undefined : res.assets[0];
+    if (!asset) return;
+    await upload({
+      fileUri: asset.uri,
+      mimeType: asset.mimeType ?? (photo ? 'image/jpeg' : 'video/mp4'),
+      fileName: asset.fileName ?? (photo ? 'photo.jpg' : 'video.mp4'),
+      type: photo ? 'image' : 'video',
+    });
+  };
+
+  const pickDocument = async () => {
+    const res = await DocumentPicker.getDocumentAsync({
+      // Mirrors the API allowlist so the picker cannot offer a file the upload
+      // would reject.
+      type: DOCUMENT_TYPES,
+      copyToCacheDirectory: true,
+    });
+    const asset = res.canceled ? undefined : res.assets?.[0];
+    if (!asset) return;
+    await upload({
+      fileUri: asset.uri,
+      mimeType: asset.mimeType || mimeFromName(asset.name),
+      fileName: asset.name || 'document',
+      type: 'file',
+    });
+  };
+
+  const onAttach = (kind: AttachKind) => {
+    if (kind === 'document') void pickDocument();
+    else void pickMedia(kind);
+  };
+
+  const onVoice = (note: VoiceNote) =>
+    upload({
+      fileUri: note.uri,
+      mimeType: note.mimeType,
+      fileName: note.fileName,
+      type: 'voice',
+    });
 
   const call = async (type: CallType) => {
     if (!peerId) {
@@ -127,11 +195,12 @@ export function ChatScreen({ navigation, route }: Props) {
 
   return (
     <Screen padded={false} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={8}
-      >
+      {/* Android has been edge-to-edge since API 35, so `adjustResize` no longer
+          shrinks the window and KeyboardAvoidingView's Android branch was a
+          plain View — the composer stayed buried under the keyboard. This screen
+          reaches the bottom of the display, so the overlap is exactly the
+          keyboard height. */}
+      <View style={{ flex: 1, paddingBottom: keyboard.height }}>
         <View style={{ paddingHorizontal: 16 }}>
           <Header
             title={title ?? 'Chat'}
@@ -215,8 +284,13 @@ export function ChatScreen({ navigation, route }: Props) {
             )}
           />
         )}
-        <ChatInput onSend={onSend} onAttach={onAttach} disabled={send.isPending} />
-      </KeyboardAvoidingView>
+        <ChatInput
+          onSend={onSend}
+          onAttach={onAttach}
+          onVoice={onVoice}
+          disabled={send.isPending}
+        />
+      </View>
     </Screen>
   );
 }

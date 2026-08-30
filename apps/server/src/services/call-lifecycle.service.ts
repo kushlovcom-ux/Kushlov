@@ -19,6 +19,20 @@ function memberIds(call: ICall): string[] {
   return [...new Set([call.caller.toString(), call.callee.toString()])];
 }
 
+/** A consult is ringing against this Ongoing call — do not reap it as empty. */
+async function isParkedForConsult(callId: string): Promise<boolean> {
+  const filter = {
+    targetCallId: callId,
+    status: CallStatus.Ringing,
+    isInterrupt: { $ne: true },
+  };
+  const [audio, video] = await Promise.all([
+    AudioCall.exists(filter),
+    VideoCall.exists(filter),
+  ]);
+  return Boolean(audio || video);
+}
+
 async function forceCloseCall(
   call: ICall,
   reason: 'empty_room' | 'ring_timeout' | 'max_duration' | 'stale' | 'offline',
@@ -77,6 +91,8 @@ async function pruneOneOngoing(call: ICall): Promise<void> {
   }
 
   if (ageMs < CALL_CONNECT_GRACE_MS) return;
+
+  if (await isParkedForConsult(call._id.toString())) return;
 
   const identities = await listRoomIdentities(call.roomName);
   if (identities !== null) {
@@ -160,12 +176,15 @@ export async function pruneCallsForUser(userId: string): Promise<void> {
 
     const identities = await listRoomIdentities(call.roomName);
     if (identities !== null && identities.length === 0) {
+      if (await isParkedForConsult(call._id.toString())) continue;
       await forceCloseCall(call, 'empty_room');
       continue;
     }
     if (identities !== null && !identities.includes(userId)) {
-      // User left LiveKit; if fewer than 2 remain, end the call.
+      // User left LiveKit; if fewer than 2 remain, end the call — unless this
+      // leg is parked behind a consult (holder left to ring someone else).
       if (identities.length < 2) {
+        if (await isParkedForConsult(call._id.toString())) continue;
         await forceCloseCall(call, 'empty_room');
       }
     }

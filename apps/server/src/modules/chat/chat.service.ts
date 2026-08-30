@@ -39,7 +39,16 @@ interface CreateMessageInput {
   senderId: string;
   type?: MessageType;
   text?: string;
-  media?: { url: string; publicId: string; durationSec?: number; width?: number; height?: number };
+  media?: {
+    url: string;
+    publicId: string;
+    durationSec?: number;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    fileName?: string;
+    mimeType?: string;
+  };
   replyTo?: string;
   forwardedFrom?: string;
 }
@@ -153,7 +162,11 @@ export async function createMessage(input: CreateMessageInput) {
       ? 'Sent a photo'
       : input.type === MessageType.Voice
         ? 'Sent a voice note'
-        : 'Sent you an attachment');
+        : input.type === MessageType.Video
+          ? 'Sent a video'
+          : input.type === MessageType.File
+            ? `Sent a file${input.media?.fileName ? `: ${input.media.fileName}` : ''}`
+            : 'Sent you an attachment');
 
   for (const participant of conversation.participants) {
     const id = participant.toString();

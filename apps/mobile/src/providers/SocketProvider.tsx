@@ -65,7 +65,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
         });
       } else {
-        updateSession({ ...session, status: CallStatus.Ongoing });
+        // Peer answered the room we are already in — reusing the current token
+        // keeps LiveKit mounted instead of forcing a disconnect/rejoin.
+        const sameRoom =
+          Boolean(active?.session.token) &&
+          (!session.token ||
+            (Boolean(session.roomName) &&
+              session.roomName === active?.session.roomName));
+        updateSession({
+          ...session,
+          status: CallStatus.Ongoing,
+          token: sameRoom ? active!.session.token : session.token,
+          livekitUrl: session.livekitUrl ?? active?.session.livekitUrl,
+        });
       }
     };
 

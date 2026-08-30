@@ -6,6 +6,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { Avatar } from '@/components/ui/Avatar';
@@ -28,6 +29,7 @@ import type { Room } from 'livekit-client';
 
 export function CallOverlay() {
   const c = useThemeColors();
+  const insets = useSafeAreaInsets();
   const active = useCallStore((s) => s.active);
   const incoming = useCallStore((s) => s.incoming);
   const heldCall = useCallStore((s) => s.heldCall);
@@ -46,6 +48,10 @@ export function CallOverlay() {
   );
   const [room, setRoom] = useState<Room | null>(null);
   const endingRef = useRef(false);
+  const mergingRef = useRef(false);
+  const autoMergedRef = useRef<string | null>(null);
+  /** Timestamp of the last room/token swap — guards LiveKit disconnect races. */
+  const sessionSwapRef = useRef(0);
   useCallRingtone(Boolean(incoming));
 
   const onRoom = useCallback((r: Room | null) => {
@@ -82,6 +88,12 @@ export function CallOverlay() {
     markConnected,
   ]);
 
+  // Hold / merge / call-waiting hand us a new room + token. The old LiveKitRoom
+  // unmounts and reports a disconnect that must not be read as "peer hung up".
+  useEffect(() => {
+    sessionSwapRef.current = Date.now();
+  }, [active?.session.id, active?.session.token, active?.session.roomName]);
+
   // Apply mute/camera-off without restarting an already-correct capturer.
   // Calling setCameraEnabled(true) again while LiveKitRoom is already
   // publishing was racing and killing the host process on some devices.
@@ -111,6 +123,12 @@ export function CallOverlay() {
     haptics.medium();
     const held = useCallStore.getState().heldCall;
     const session = active?.session ?? useCallStore.getState().active?.session;
+    // Consult switch still in flight: the held leg is also the active session.
+    // Ending it here would hang up the person we are trying to keep.
+    if (held && session?.id && String(session.id) === String(held.callId)) {
+      endingRef.current = false;
+      return;
+    }
     // Drop local media immediately so the other side is not left waiting on us.
     try {
       await room?.disconnect();
@@ -187,35 +205,69 @@ export function CallOverlay() {
     clear();
   };
 
-  const mergeHeld = async () => {
-    if (!active || !heldCall) return;
+  const mergeHeld = async (opts?: { silent?: boolean }) => {
+    const state = useCallStore.getState();
+    const current = state.active;
+    const held = state.heldCall;
+    if (!current || !held) return;
+    // Consult switch not finished yet — both ids still point at the held leg.
+    if (String(current.session.id) === String(held.callId)) return;
+    if (mergingRef.current) return;
+    mergingRef.current = true;
     try {
       const session = await callsApi.merge(
-        active.session.type,
-        active.session.id,
-        heldCall.callId,
+        current.session.type,
+        current.session.id,
+        held.callId,
       );
-      const participants = [...(active.participants ?? [])];
-      if (heldCall.peer?.id && !participants.some((p) => p.id === heldCall.peer!.id)) {
+      // Remotes may have joined while the merge was in flight.
+      const latest = useCallStore.getState().active ?? current;
+      const participants = [...(latest.participants ?? [])];
+      if (held.peer?.id && !participants.some((p) => p.id === held.peer!.id)) {
         participants.push({
-          id: heldCall.peer.id,
-          name: heldCall.peer.displayName ?? 'Peer',
+          id: held.peer.id,
+          name: held.peer.displayName ?? 'Peer',
         });
       }
+      const sameRoom =
+        !session.roomName || session.roomName === latest.session.roomName;
       useCallStore.getState().updateSession({
-        id: session.id || active.session.id,
-        token: session.token ?? active.session.token,
-        livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
-        roomName: session.roomName ?? active.session.roomName,
+        id: session.id || latest.session.id,
+        // Keeping the current token when the room is unchanged avoids tearing
+        // down and re-joining LiveKit (which drops audio for a few seconds).
+        token: sameRoom
+          ? latest.session.token
+          : (session.token ?? latest.session.token),
+        livekitUrl: session.livekitUrl ?? latest.session.livekitUrl,
+        roomName: session.roomName ?? latest.session.roomName,
         status: CallStatus.Ongoing,
       });
       useCallStore.getState().setParticipants(participants);
       setHeldCall(null);
-      Alert.alert('Merged', 'Calls merged into one room');
+      if (!opts?.silent) Alert.alert('Merged', 'Calls merged into one room');
     } catch (err) {
-      Alert.alert('Merge failed', getErrorMessage(err));
+      if (!opts?.silent) Alert.alert('Merge failed', getErrorMessage(err));
+    } finally {
+      mergingRef.current = false;
     }
   };
+
+  // "Call another" is how users build a conference: as soon as the new person
+  // answers, fold the held leg into this room so everyone is on one call.
+  useEffect(() => {
+    if (!heldCall) {
+      autoMergedRef.current = null;
+      return;
+    }
+    if (!active) return;
+    if (String(active.session.id) === String(heldCall.callId)) return;
+    if (active.session.status !== CallStatus.Ongoing) return;
+    if (!active.session.token) return;
+    if (autoMergedRef.current === heldCall.callId) return;
+    autoMergedRef.current = heldCall.callId;
+    void mergeHeld({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.session.id, active?.session.status, active?.session.token, heldCall?.callId]);
 
   const acceptIncoming = async () => {
     if (!incoming) return;
@@ -381,11 +433,24 @@ export function CallOverlay() {
             publish
             audioOnly={!isVideo}
             layout="speaker"
-            videoFit="contain"
+            // Fills the screen; pinch to zoom and double-tap swaps to contain.
+            videoFit="cover"
             onDisconnected={() => {
               if (endingRef.current) return;
-              if (useCallStore.getState().parked) return;
-              if (!useCallStore.getState().active) return;
+              const state = useCallStore.getState();
+              if (state.parked) return;
+              const current = state.active;
+              if (!current) return;
+              // Server pulled us out of the old room (hold / merge / call-waiting)
+              // while we were switching. The store already points somewhere else.
+              if (current.session.token !== token) return;
+              if (
+                state.heldCall &&
+                String(state.heldCall.callId) === String(current.session.id)
+              ) {
+                return;
+              }
+              if (Date.now() - sessionSwapRef.current < 4000) return;
               void endCall();
             }}
             onRoom={onRoom}
@@ -453,10 +518,10 @@ export function CallOverlay() {
         ) : null}
         <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
           {!heldCall && !parked ? (
-            <AddCallParticipant callId={active.session.id} type={active.session.type} mode="consult" />
+            <AddCallParticipant callId={active.session.id} type={active.session.type} mode="invite" />
           ) : null}
           {!heldCall && !parked ? (
-            <AddCallParticipant callId={active.session.id} type={active.session.type} mode="invite" />
+            <AddCallParticipant callId={active.session.id} type={active.session.type} mode="consult" />
           ) : null}
         </View>
         {!parked
@@ -522,7 +587,9 @@ export function CallOverlay() {
         </View>
       ) : null}
 
-      <View style={styles.controls}>
+      {/* Edge-to-edge is mandatory on Expo SDK 57, so a fixed offset can leave
+          the row under the Android navigation bar. */}
+      <View style={[styles.controls, { bottom: insets.bottom + 28 }]}>
         <Ctrl
           icon={active.muted ? 'mic-off' : 'mic'}
           label={active.muted ? 'Unmute' : 'Mute'}
@@ -647,9 +714,11 @@ const styles = StyleSheet.create({
   },
   filterBar: {
     position: 'absolute',
-    bottom: 120,
+    bottom: 132,
     left: 0,
     right: 0,
+    zIndex: 50,
+    elevation: 50,
   },
   waitingBanner: {
     position: 'absolute',
@@ -689,12 +758,15 @@ const styles = StyleSheet.create({
   },
   controls: {
     position: 'absolute',
-    bottom: 48,
     left: 0,
     right: 0,
     flexDirection: 'row',
     justifyContent: 'space-evenly',
     paddingHorizontal: 16,
+    // Above the video tiles, the self-view and the filter carousel — the
+    // end-call button must never be covered.
+    zIndex: 60,
+    elevation: 60,
   },
   ctrl: { alignItems: 'center', gap: 6 },
 });

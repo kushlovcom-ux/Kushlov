@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useDeferredValue } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Radio, Users, Eye } from 'lucide-react';
+import { Radio, Users, Eye, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Paginated } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
@@ -40,11 +40,14 @@ export default function LivePage() {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [thumbnail, setThumbnail] = useState<File | null>(null);
+  const [q, setQ] = useState('');
+  const deferredQ = useDeferredValue(q.trim());
   const isApprovedHost = user?.role === 'host' && user?.isHostApproved;
 
   const { data, isLoading } = useQuery({
-    queryKey: ['live'],
-    queryFn: () => unwrap<Paginated<Live>>(api.get('/live')),
+    queryKey: ['live', deferredQ],
+    queryFn: () =>
+      unwrap<Paginated<Live>>(api.get('/live', { params: { q: deferredQ || undefined } })),
     refetchInterval: 15000,
   });
 
@@ -75,8 +78,8 @@ export default function LivePage() {
         title="Live"
         subtitle={
           isApprovedHost
-            ? 'Start a stream or watch other hosts'
-            : 'Watch hosts streaming right now — join any live room'
+            ? 'Start a stream or watch other hosts. Nearby lives stay hidden until you search the host’s name.'
+            : 'Watch hosts streaming right now. Nearby lives stay hidden — search a host’s name to find them.'
         }
         action={
           isApprovedHost && (
@@ -108,6 +111,19 @@ export default function LivePage() {
           )
         }
       />
+
+      <div className="px-6 pt-2">
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search host name…"
+            className="pl-9"
+            aria-label="Search live hosts"
+          />
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-5 p-6 sm:grid-cols-2 lg:grid-cols-3">
         {isLoading &&
@@ -148,7 +164,11 @@ export default function LivePage() {
       {!isLoading && lives.length === 0 && (
         <div className="flex flex-col items-center py-24 text-white/40">
           <Users className="h-10 w-10" />
-          <p className="mt-3">No live streams right now. Check back soon!</p>
+          <p className="mt-3">
+            {deferredQ
+              ? 'No live host matches that name.'
+              : 'No live streams right now. Hosts within 10 km stay hidden — search their name to watch.'}
+          </p>
         </div>
       )}
     </div>

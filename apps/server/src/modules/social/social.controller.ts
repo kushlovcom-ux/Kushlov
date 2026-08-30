@@ -9,6 +9,41 @@ import { ok, created } from '../../utils/response';
 import { notify } from '../../services/notification.service';
 import { assertUsersCanConnect } from '../../services/location.service';
 
+/**
+ * Create — or revive — the match for a mutual pair.
+ *
+ * This cannot be an upsert keyed on `{ users: { $all: [a, b] } }`: while
+ * building the document to insert, MongoDB expands `$all` into one predicate
+ * per element and refuses with "cannot infer query fields to set, path 'users'
+ * is matched twice". Every mutual like therefore failed and no match was ever
+ * stored, which is why the matches page stayed empty.
+ */
+async function ensureMatch(a: string, b: string): Promise<void> {
+  const users = [new Types.ObjectId(a), new Types.ObjectId(b)].sort();
+  // Reading with `$all` stays order-independent, so pairs written before the
+  // ids were sorted are still found instead of being duplicated.
+  const pair = { users: { $all: users, $size: 2 } };
+
+  const existing = await Match.findOne(pair).select('_id active');
+  if (existing) {
+    if (!existing.active) {
+      await Match.updateOne(
+        { _id: existing._id },
+        { $set: { active: true, matchedAt: new Date() } },
+      );
+    }
+    return;
+  }
+
+  try {
+    await Match.create({ users, matchedAt: new Date(), active: true });
+  } catch (err) {
+    // Both sides can like in the same instant; if the other request won the
+    // race the pair now exists and there is nothing left to do.
+    if (!(await Match.exists(pair))) throw err;
+  }
+}
+
 /** POST /social/like/:userId — like a user; creates a Match if mutual. */
 export const likeUser = asyncHandler(async (req: Request, res: Response) => {
   const me = req.user!.id;
@@ -27,12 +62,7 @@ export const likeUser = asyncHandler(async (req: Request, res: Response) => {
   const reciprocal = await Like.exists({ from: target, to: me });
   let matched = false;
   if (reciprocal) {
-    const users = [new Types.ObjectId(me), new Types.ObjectId(target)].sort();
-    await Match.updateOne(
-      { users: { $all: users } },
-      { $setOnInsert: { users, matchedAt: new Date(), active: true } },
-      { upsert: true },
-    );
+    await ensureMatch(me, target);
     matched = true;
     await notify({
       userId: target,
@@ -67,27 +97,59 @@ export const unlikeUser = asyncHandler(async (req: Request, res: Response) => {
   const target = req.params.userId;
   await Like.deleteOne({ from: me, to: target });
   const users = [new Types.ObjectId(me), new Types.ObjectId(target)].sort();
-  await Match.updateOne({ users: { $all: users } }, { active: false });
+  await Match.updateOne({ users: { $all: users, $size: 2 } }, { $set: { active: false } });
   return ok(res, null, 'Unliked');
 });
+
+/**
+ * Recreate matches for pairs that already like each other but have no match.
+ *
+ * Every mutual like taken while the upsert above was broken left two Like rows
+ * and no Match. Neither side is offered the other on Discover again, so those
+ * pairs can never re-trigger the match themselves — repair them on read.
+ */
+async function backfillMissingMatches(userId: string): Promise<void> {
+  const uid = new Types.ObjectId(userId);
+  const [outgoing, incoming, existing] = await Promise.all([
+    Like.find({ from: uid }).select('to').lean(),
+    Like.find({ to: uid }).select('from').lean(),
+    Match.find({ users: uid }).select('users active').lean(),
+  ]);
+
+  const likedByMe = new Set(outgoing.map((l) => l.to.toString()));
+  const mutual = incoming.map((l) => l.from.toString()).filter((id) => likedByMe.has(id));
+  if (!mutual.length) return;
+
+  const matchedWith = new Set(
+    existing
+      .filter((m) => m.active)
+      .map((m) => m.users.find((u) => u.toString() !== userId)?.toString())
+      .filter(Boolean) as string[],
+  );
+
+  for (const other of mutual) {
+    if (!matchedWith.has(other)) await ensureMatch(userId, other);
+  }
+}
 
 /** GET /social/matches — list active matches for the current user. */
 export const listMatches = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
+  await backfillMissingMatches(req.user!.id);
   const filter = { users: req.user!.id, active: true };
   const [matches, total] = await Promise.all([
-    Match.find(filter)
-      .sort({ matchedAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate('users', 'displayName username avatarUrl isOnline'),
+    Match.find(filter).sort({ matchedAt: -1 }).skip(skip).limit(limit).populate('users'),
     Match.countDocuments(filter),
   ]);
-  // Return the "other" user in each match for convenience.
-  const items = matches.map((m) => {
-    const other = (m.users as any[]).find((u) => u._id.toString() !== req.user!.id);
-    return { matchId: m._id, matchedAt: m.matchedAt, user: other };
-  });
+  // Return the "other" user in each match for convenience, in the same public
+  // shape (`id`, not `_id`) every other user-returning endpoint uses.
+  const items = matches
+    .map((m) => {
+      const other = (m.users as any[]).find((u) => u?._id?.toString() !== req.user!.id);
+      if (!other) return null;
+      return { matchId: m._id.toString(), matchedAt: m.matchedAt, user: other.toPublic() };
+    })
+    .filter(Boolean);
   return ok(res, buildPaginated(items, page, limit, total));
 });
 
@@ -96,14 +158,11 @@ export const listLikers = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
   const filter = { to: req.user!.id };
   const [likes, total] = await Promise.all([
-    Like.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate('from', 'displayName username avatarUrl isOnline'),
+    Like.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('from'),
     Like.countDocuments(filter),
   ]);
-  return ok(res, buildPaginated(likes.map((l) => l.from), page, limit, total));
+  const items = likes.map((l) => l.from as any).filter(Boolean).map((u) => u.toPublic());
+  return ok(res, buildPaginated(items, page, limit, total));
 });
 
 /** POST /social/follow/:userId — follow a host. */
@@ -154,12 +213,9 @@ export const listFollowing = asyncHandler(async (req: Request, res: Response) =>
   const { page, limit, skip } = parsePagination(req.query);
   const filter = { follower: req.user!.id };
   const [rows, total] = await Promise.all([
-    Follower.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate('following', 'displayName username avatarUrl isOnline role isHostApproved'),
+    Follower.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('following'),
     Follower.countDocuments(filter),
   ]);
-  return ok(res, buildPaginated(rows.map((r) => r.following), page, limit, total));
+  const items = rows.map((r) => r.following as any).filter(Boolean).map((u) => u.toPublic());
+  return ok(res, buildPaginated(items, page, limit, total));
 });

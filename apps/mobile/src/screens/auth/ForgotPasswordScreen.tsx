@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +14,7 @@ import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/common/Screen';
 import { authApi } from '@/api/auth';
 import { getErrorMessage } from '@/api/client';
+import { useKeyboard } from '@/hooks/useKeyboard';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { isValidEmail } from '@/utils/validation';
 import { spacing } from '@/theme';
@@ -25,6 +24,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
 
 export function ForgotPasswordScreen({ navigation }: Props) {
   const c = useThemeColors();
+  const keyboard = useKeyboard();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -51,10 +51,9 @@ export function ForgotPasswordScreen({ navigation }: Props) {
   return (
     <Screen padded={false}>
       <LinearGradient colors={[...c.gradientNight]} style={StyleSheet.absoluteFill} />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      {/* Android is edge-to-edge since API 35: the window no longer resizes for
+          the keyboard, so screens have to reserve the space themselves. */}
+      <View style={{ flex: 1, paddingBottom: keyboard.height }}>
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
@@ -92,7 +91,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
             <Button title="Send reset link" onPress={submit} loading={loading} fullWidth size="lg" />
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </Screen>
   );
 }
