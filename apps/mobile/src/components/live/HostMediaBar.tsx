@@ -2,6 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
+import {
+  flipCameraFacing,
+  getPreferredCameraFacing,
+  type CameraFacing,
+} from '@/services/livekit';
 import type { Room } from 'livekit-client';
 
 type Props = {
@@ -9,16 +14,18 @@ type Props = {
   audioOnly?: boolean;
 };
 
-/** Mic / camera toggles for the live host, rendered above LiveKit (not under SurfaceView). */
+/** Mic / camera / flip toggles for the live host, above LiveKit (not under SurfaceView). */
 export function HostMediaBar({ room, audioOnly = false }: Props) {
   const [mic, setMic] = useState(true);
   const [cam, setCam] = useState(true);
+  const [facing, setFacing] = useState<CameraFacing>(() => getPreferredCameraFacing());
 
   useEffect(() => {
     const p = room?.localParticipant;
     if (!p) return;
     setMic(p.isMicrophoneEnabled);
     setCam(p.isCameraEnabled);
+    setFacing(getPreferredCameraFacing());
   }, [room]);
 
   if (!room) return null;
@@ -43,12 +50,32 @@ export function HostMediaBar({ room, audioOnly = false }: Props) {
           onPress={() => {
             const next = !cam;
             setCam(next);
-            void room.localParticipant.setCameraEnabled(next);
+            void room.localParticipant.setCameraEnabled(
+              next,
+              next ? { facingMode: getPreferredCameraFacing() } : undefined,
+            );
           }}
           style={[styles.btn, !cam && styles.btnOff]}
         >
           <Ionicons name={cam ? 'videocam' : 'videocam-off'} size={20} color="#fff" />
           <Text style={styles.label}>{cam ? 'Camera' : 'Cam off'}</Text>
+        </Pressable>
+      ) : null}
+      {!audioOnly && cam ? (
+        <Pressable
+          accessibilityLabel={
+            facing === 'user' ? 'Switch to back camera' : 'Switch to front camera'
+          }
+          onPress={() => {
+            void (async () => {
+              const next = await flipCameraFacing(room);
+              if (next) setFacing(next);
+            })();
+          }}
+          style={styles.btn}
+        >
+          <Ionicons name="camera-reverse" size={20} color="#fff" />
+          <Text style={styles.label}>{facing === 'user' ? 'Front' : 'Back'}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -58,6 +85,7 @@ export function HostMediaBar({ room, audioOnly = false }: Props) {
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     paddingHorizontal: 12,
     marginBottom: 8,

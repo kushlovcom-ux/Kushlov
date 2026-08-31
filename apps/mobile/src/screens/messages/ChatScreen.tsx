@@ -187,10 +187,15 @@ export function ChatScreen({ navigation, route }: Props) {
         }
       }
       const session = await callsApi.initiate({ type, calleeId: peerId });
-      startCall(session, 'caller', {
+      const peer: PublicUser = {
         id: peerId,
-        displayName: title ?? session.callee?.displayName ?? 'Call',
-      } as PublicUser);
+        displayName:
+          session.callee?.displayName ||
+          title ||
+          'Call',
+        avatarUrl: session.callee?.avatarUrl,
+      } as PublicUser;
+      startCall(session, 'caller', peer);
     } catch (err) {
       Alert.alert('Call failed', getErrorMessage(err));
     }

@@ -17,7 +17,13 @@ import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublishe
 import { callsApi } from '@/api/calls';
 import { getErrorMessage } from '@/api/client';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import { getLiveKitRn, isLiveKitNativeReady, preloadLiveKitNative } from '@/services/livekit';
+import {
+  flipCameraFacing,
+  getPreferredCameraFacing,
+  getLiveKitRn,
+  isLiveKitNativeReady,
+  preloadLiveKitNative,
+} from '@/services/livekit';
 import { dismissIncomingCallNotification } from '@/services/notifications';
 import { useCallStore } from '@/store/call';
 import { CallStatus, CallType } from '@/types';
@@ -181,7 +187,10 @@ export function CallOverlay() {
           await participant.setMicrophoneEnabled(wantMic);
         }
         if (active.session.type === CallType.Video && participant.isCameraEnabled !== wantCam) {
-          await participant.setCameraEnabled(wantCam);
+          await participant.setCameraEnabled(
+            wantCam,
+            wantCam ? { facingMode: getPreferredCameraFacing() } : undefined,
+          );
         }
       } catch {
         // Permission / device issues — audio may still work
@@ -420,9 +429,23 @@ export function CallOverlay() {
     const next = !active.cameraOff;
     setCameraOff(next);
     try {
-      await room?.localParticipant.setCameraEnabled(!next);
+      const enable = !next;
+      await room?.localParticipant.setCameraEnabled(
+        enable,
+        enable ? { facingMode: getPreferredCameraFacing() } : undefined,
+      );
     } catch {
       // soft fail
+    }
+  };
+
+  const flipCamera = async () => {
+    if (!active || active.session.type !== CallType.Video || active.cameraOff) return;
+    haptics.medium();
+    try {
+      await flipCameraFacing(room);
+    } catch {
+      // soft fail — device may only have one camera
     }
   };
 
@@ -527,7 +550,9 @@ export function CallOverlay() {
               }
               // Still ringing — LiveKit teardown is not a hangup.
               if (current.session.status === CallStatus.Ringing) return;
-              if (Date.now() - sessionSwapRef.current < 4000) return;
+              // Merge / hold room swaps need a longer grace — B often reconnects
+              // into the conference a few seconds after unhold.
+              if (Date.now() - sessionSwapRef.current < 8000) return;
               void endCall();
             }}
             onRoom={onRoom}
@@ -551,8 +576,10 @@ export function CallOverlay() {
         </Text>
         <Text variant="bodyBold">
           {(active.participants?.length
-            ? active.participants.map((p) => p.name)
-            : peer?.displayName
+            ? active.participants.map((p) =>
+                p.name && !/^[a-f0-9]{24}$/i.test(p.name) ? p.name : peer?.displayName || 'Peer',
+              )
+            : peer?.displayName && !/^[a-f0-9]{24}$/i.test(peer.displayName)
               ? [peer.displayName]
               : []
           ).join(' · ') || 'Call'}
@@ -716,6 +743,14 @@ export function CallOverlay() {
             color={c.elevated}
           />
         )}
+        {isVideo && !active.cameraOff ? (
+          <Ctrl
+            icon="camera-reverse"
+            label="Flip"
+            onPress={() => void flipCamera()}
+            color={c.elevated}
+          />
+        ) : null}
         <Ctrl
           icon="call"
           label={

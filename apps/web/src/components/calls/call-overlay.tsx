@@ -586,13 +586,13 @@ export function CallOverlay() {
     }) => {
       const cur = activeRef.current;
       if (
-        payload.mergedFromHold &&
+        (payload.mergedFromHold || payload.merged) &&
         cur &&
         (cur.callId === payload.mergedFromHold || payload.token)
       ) {
+        // Prefer the new conference token; never keep the held-room token.
+        if (!payload.token) return;
         sessionSwapRef.current = Date.now();
-        setParked(false);
-        const sameRoom = Boolean(cur.roomName) && payload.roomName === cur.roomName;
         const fromServer = rosterFromPayload(payload.participants);
         const participants = fromServer.length
           ? fromServer
@@ -602,13 +602,14 @@ export function CallOverlay() {
           callId: payload.callId,
           type: payload.type ?? cur.type,
           roomName: payload.roomName ?? cur.roomName,
-          token: sameRoom ? cur.token : payload.token || cur.token,
+          token: payload.token,
           livekitUrl: payload.livekitUrl ?? cur.livekitUrl,
           maxDurationSec: payload.maxDurationSec ?? cur.maxDurationSec,
           participants,
           peerName: participants.map((p) => p.name).join(' + ') || cur.peerName,
           peerId: participants[0]?.id ?? cur.peerId,
         });
+        setParked(false);
         toast.success('Joined merged call');
         return;
       }
@@ -749,19 +750,44 @@ export function CallOverlay() {
 
     const onUnhold = (payload: {
       callId?: string;
+      heldCallId?: string;
       merged?: boolean;
+      mergedFromHold?: string;
       token?: string;
       roomName?: string;
       livekitUrl?: string;
       maxDurationSec?: number;
+      type?: CallType;
+      participants?: { id?: string; displayName?: string }[];
     }) => {
-      if (payload.merged) {
+      if (payload.merged || payload.mergedFromHold) {
+        const cur = activeRef.current;
+        // Stay on hold until we have the conference room token — unparking
+        // without it rejoins the empty held room ("Waiting for peer").
+        if (!payload.token || !cur) return;
+        sessionSwapRef.current = Date.now();
+        const fromServer = rosterFromPayload(payload.participants);
+        setActive({
+          ...cur,
+          callId: payload.callId || cur.callId,
+          type: payload.type ?? cur.type,
+          roomName: payload.roomName ?? cur.roomName,
+          token: payload.token,
+          livekitUrl: payload.livekitUrl ?? cur.livekitUrl,
+          maxDurationSec: payload.maxDurationSec ?? cur.maxDurationSec,
+          participants: fromServer.length ? fromServer : cur.participants,
+          peerName:
+            (fromServer.length ? fromServer : cur.participants)
+              .map((p) => p.name)
+              .join(' + ') || cur.peerName,
+          peerId: fromServer[0]?.id ?? cur.peerId,
+        });
         setParked(false);
+        toast.success('Joined merged call');
         return;
       }
       const cur = activeRef.current;
       if (!cur || (payload.callId && payload.callId !== cur.callId)) return;
-      setParked(false);
       if (payload.token) {
         sessionSwapRef.current = Date.now();
         const sameRoom = Boolean(cur.roomName) && payload.roomName === cur.roomName;
@@ -773,6 +799,7 @@ export function CallOverlay() {
           maxDurationSec: payload.maxDurationSec ?? cur.maxDurationSec,
         });
       }
+      setParked(false);
       toast.message('Call resumed');
     };
 

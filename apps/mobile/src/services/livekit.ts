@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import type { ComponentType } from 'react';
-import type { Room } from 'livekit-client';
+import type { LocalVideoTrack, Room } from 'livekit-client';
+import { Track } from 'livekit-client';
 
 export type LiveKitConnectParams = {
   url: string;
@@ -10,6 +11,63 @@ export type LiveKitConnectParams = {
   /** Publish local camera after connect (default false). */
   publishVideo?: boolean;
 };
+
+export type CameraFacing = 'user' | 'environment';
+
+/** Preferred facing for the next time the local camera is enabled. */
+let preferredFacing: CameraFacing = 'user';
+
+export function getPreferredCameraFacing(): CameraFacing {
+  return preferredFacing;
+}
+
+function facingFromTrack(track: LocalVideoTrack | undefined): CameraFacing {
+  try {
+    const mode = track?.mediaStreamTrack?.getSettings?.()?.facingMode;
+    if (mode === 'environment' || mode === 'user') return mode;
+  } catch {
+    /* ignore */
+  }
+  return preferredFacing;
+}
+
+/**
+ * Switch between front (`user`) and back (`environment`) camera on an
+ * already-published LiveKit local video track.
+ */
+export async function flipCameraFacing(room: Room | null): Promise<CameraFacing | null> {
+  if (!room?.localParticipant) return null;
+  const participant = room.localParticipant;
+  const pub = participant.getTrackPublication(Track.Source.Camera);
+  const track = pub?.track as LocalVideoTrack | undefined;
+
+  const current = facingFromTrack(track);
+  const next: CameraFacing = current === 'user' ? 'environment' : 'user';
+  preferredFacing = next;
+
+  if (!participant.isCameraEnabled) {
+    // Camera is off — remember facing for the next enable.
+    return next;
+  }
+
+  if (track && typeof track.restartTrack === 'function') {
+    try {
+      await track.restartTrack({ facingMode: next });
+      return next;
+    } catch {
+      /* fall through */
+    }
+  }
+
+  try {
+    await participant.setCameraEnabled(false);
+    await participant.setCameraEnabled(true, { facingMode: next });
+    return next;
+  } catch {
+    preferredFacing = current;
+    return null;
+  }
+}
 
 type LiveKitRn = {
   registerGlobals?: () => void;
@@ -116,7 +174,9 @@ export async function connectRoom(params: LiveKitConnectParams) {
       await room.localParticipant.setMicrophoneEnabled(true);
     }
     if (params.publishVideo) {
-      await room.localParticipant.setCameraEnabled(true);
+      await room.localParticipant.setCameraEnabled(true, {
+        facingMode: preferredFacing,
+      });
     }
   } catch {
     // Permission denial / device missing — room still usable for subscribe

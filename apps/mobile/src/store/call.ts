@@ -46,13 +46,42 @@ export const useCallStore = create<CallState>((set, get) => ({
   setHeldCall: (heldCall) => set({ heldCall }),
   setParked: (parked) => set({ parked }),
   startCall: (session, role, peer) => {
+    const looksLikeId = (v?: string) => Boolean(v && /^[a-f0-9]{24}$/i.test(v.trim()));
+    const labelOf = (p: { id: string; displayName?: string; name?: string }) => {
+      const raw = p.displayName || p.name;
+      if (raw && !looksLikeId(raw)) return raw;
+      return 'Peer';
+    };
     const fromSession = (session.participants ?? [])
       .filter((p) => p.id)
-      .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
+      .map((p) => ({ id: p.id, name: labelOf(p) }));
+    const sessionPeer =
+      role === 'caller'
+        ? session.callee
+        : session.caller ?? session.callee;
+    const resolvedPeer =
+      peer ??
+      (sessionPeer?.id
+        ? ({
+            ...sessionPeer,
+            displayName:
+              sessionPeer.displayName && !looksLikeId(sessionPeer.displayName)
+                ? sessionPeer.displayName
+                : peer?.displayName || 'Peer',
+          } as PublicUser)
+        : undefined);
     const participants = fromSession.length
       ? fromSession
-      : peer?.id
-        ? [{ id: peer.id, name: peer.displayName ?? 'Peer' }]
+      : resolvedPeer?.id
+        ? [
+            {
+              id: resolvedPeer.id,
+              name:
+                resolvedPeer.displayName && !looksLikeId(resolvedPeer.displayName)
+                  ? resolvedPeer.displayName
+                  : 'Peer',
+            },
+          ]
         : [];
     const first = participants[0];
     set({
@@ -61,7 +90,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       active: {
         session,
         role,
-        peer: peer ?? (first
+        peer: resolvedPeer ?? (first
           ? ({ id: first.id, displayName: first.name } as PublicUser)
           : undefined),
         participants,
@@ -80,12 +109,29 @@ export const useCallStore = create<CallState>((set, get) => ({
   setParticipants: (participants: { id: string; name: string }[]) => {
     const active = get().active;
     if (!active) return;
+    const looksLikeId = (v?: string) => Boolean(v && /^[a-f0-9]{24}$/i.test(v.trim()));
+    const cleaned = participants.map((p) => ({
+      ...p,
+      name: p.name && !looksLikeId(p.name) ? p.name : 'Peer',
+    }));
+    const first = cleaned[0];
+    const keepPeerName =
+      active.peer?.displayName && !looksLikeId(active.peer.displayName)
+        ? active.peer.displayName
+        : undefined;
     set({
       active: {
         ...active,
-        participants,
-        peer: participants[0]
-          ? { ...(active.peer ?? { id: participants[0].id }), id: participants[0].id, displayName: participants[0].name }
+        participants: cleaned,
+        peer: first
+          ? {
+              ...(active.peer ?? { id: first.id }),
+              id: first.id,
+              displayName:
+                (first.name !== 'Peer' ? first.name : undefined) ||
+                keepPeerName ||
+                'Peer',
+            }
           : active.peer,
       },
     });

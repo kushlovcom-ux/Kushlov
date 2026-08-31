@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutChangeEvent,
+  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -16,10 +17,32 @@ import {
 } from '@/faceFilters/components/FaceFilterOverlay';
 import { FaceFilterRoomSync } from '@/faceFilters/components/FaceFilterRoomSync';
 import { useFaceFilterStore } from '@/faceFilters/hooks/useFaceFilter';
-import { getLiveKitRn, preloadLiveKitNative } from '@/services/livekit';
+import {
+  flipCameraFacing,
+  getLiveKitRn,
+  getPreferredCameraFacing,
+  preloadLiveKitNative,
+} from '@/services/livekit';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import type { Room } from 'livekit-client';
+import { useCallStore } from '@/store/call';
+import type { LocalVideoTrack, Room } from 'livekit-client';
 import type { Participant } from 'livekit-client';
+import { Track as LkTrack } from 'livekit-client';
+
+/** LiveKit identity is the Mongo user id — never show that as a label. */
+function looksLikeUserId(value?: string | null) {
+  return Boolean(value && /^[a-f0-9]{24}$/i.test(value.trim()));
+}
+
+function friendlyParticipantName(
+  identity?: string,
+  livekitName?: string,
+  aliases?: Map<string, string>,
+) {
+  if (identity && aliases?.get(identity)) return aliases.get(identity)!;
+  if (livekitName && !looksLikeUserId(livekitName)) return livekitName;
+  return 'Peer';
+}
 
 export type StageLayout = 'grid' | 'speaker';
 export type VideoFit = 'cover' | 'contain';
@@ -136,7 +159,13 @@ export function LiveKitStage({
         video={publishVideo}
         audio={publishAudio}
         onDisconnected={onDisconnected}
-        options={{ adaptiveStream: layout !== 'speaker', dynacast: true }}
+        options={{
+          // livekit-client ≥2.19.2 single-PC path blacks out remote video on RN.
+          singlePeerConnection: false,
+          // Multi-party calls need adaptive layers so late joiners stay visible.
+          adaptiveStream: true,
+          dynacast: true,
+        }}
         style={{ flex: 1 }}
       >
         <RoomBinder onRoom={onRoom} />
@@ -161,6 +190,38 @@ function makeRoomBinder(lk: {
       onRoom?.(room);
       return () => onRoom?.(null);
     }, [room, onRoom]);
+
+    // Ensure camera tracks from late joiners are subscribed (A/B must see C).
+    useEffect(() => {
+      if (!room) return;
+      const ensureVideoSubscribed = (participant: Participant) => {
+        if (participant.isLocal) return;
+        for (const pub of participant.trackPublications.values()) {
+          if (pub.source !== LkTrack.Source.Camera) continue;
+          if (pub.isSubscribed) continue;
+          const remotePub = pub as { setSubscribed?: (v: boolean) => void };
+          try {
+            remotePub.setSubscribed?.(true);
+          } catch {
+            /* ignore */
+          }
+        }
+      };
+      const onPub = (_pub: unknown, participant: Participant) => {
+        ensureVideoSubscribed(participant);
+      };
+      const onJoin = (participant: Participant) => {
+        ensureVideoSubscribed(participant);
+      };
+      for (const p of room.remoteParticipants.values()) ensureVideoSubscribed(p);
+      room.on('trackPublished', onPub);
+      room.on('participantConnected', onJoin);
+      return () => {
+        room.off('trackPublished', onPub);
+        room.off('participantConnected', onJoin);
+      };
+    }, [room]);
+
     return <FaceFilterRoomSync room={room} />;
   };
 }
@@ -216,6 +277,26 @@ function AudioRoster({
   };
 }) {
   const room = lk.useRoomContext();
+  const active = useCallStore((s) => s.active);
+  const nameAliases = useMemo(() => {
+    const map = new Map<string, string>();
+    if (active?.peer?.id && active.peer.displayName && !looksLikeUserId(active.peer.displayName)) {
+      map.set(active.peer.id, active.peer.displayName);
+    }
+    for (const p of active?.participants ?? []) {
+      if (p.id && p.name && !looksLikeUserId(p.name)) map.set(p.id, p.name);
+    }
+    const callee = active?.session.callee;
+    if (callee?.id && callee.displayName && !looksLikeUserId(callee.displayName)) {
+      map.set(callee.id, callee.displayName);
+    }
+    const caller = active?.session.caller;
+    if (caller?.id && caller.displayName && !looksLikeUserId(caller.displayName)) {
+      map.set(caller.id, caller.displayName);
+    }
+    return map;
+  }, [active?.peer, active?.participants, active?.session.callee, active?.session.caller]);
+
   const [, bump] = useState(0);
   useEffect(() => {
     const onChange = () => bump((n) => n + 1);
@@ -250,7 +331,7 @@ function AudioRoster({
       ) : (
         remotes.map((p) => (
           <Text key={p.identity} variant="h3" color="#fff">
-            {p.name || p.identity}
+            {friendlyParticipantName(p.identity, p.name, nameAliases)}
           </Text>
         ))
       )}
@@ -317,13 +398,22 @@ function makeVideoGrid(
     // Conference: every remote gets a tile. Rendering only remote[0] is why a
     // third person was audible but never visible.
     const conference = remote.length > 1;
+    // Android SurfaceViews need unique zOrder or extra remotes render black.
+    const localZ = Math.max(remote.length, 1) + 1;
 
     return (
       <View style={[styles.grid, { backgroundColor: '#000' }]}>
         {speaker ? (
           <>
             {remote.length > 0 ? (
-              <View key="main" style={[styles.gridInner, conference && styles.gridStack]}>
+              <View
+                key="main"
+                style={[
+                  styles.gridInner,
+                  conference && styles.gridStack,
+                  conference && remote.length >= 3 && styles.gridConference3,
+                ]}
+              >
                 {remote.map((ref, index) => (
                   <ParticipantVideoTile
                     key={trackKey(ref, index)}
@@ -333,8 +423,9 @@ function makeVideoGrid(
                     elevated={c.elevated}
                     multi={conference}
                     videoFit={conference ? 'cover' : videoFit}
-                    zOrder={0}
+                    zOrder={index}
                     zoomable={!conference}
+                    conferenceSlot={conference}
                   />
                 ))}
               </View>
@@ -358,7 +449,7 @@ function makeVideoGrid(
                   elevated={c.elevated}
                   multi={false}
                   videoFit="cover"
-                  zOrder={remote.length > 0 ? 1 : 0}
+                  zOrder={localZ}
                   pip={remote.length > 0}
                 />
               </View>
@@ -377,6 +468,8 @@ function makeVideoGrid(
                   elevated={c.elevated}
                   multi={multi}
                   videoFit={videoFit}
+                  zOrder={index}
+                  conferenceSlot={multi}
                 />
               );
             })}
@@ -427,11 +520,25 @@ function LivePublisherControls({
           onPress={() => {
             const next = !cam;
             setCam(next);
-            void room.localParticipant.setCameraEnabled(next);
+            void room.localParticipant.setCameraEnabled(
+              next,
+              next ? { facingMode: getPreferredCameraFacing() } : undefined,
+            );
           }}
           style={[styles.avBtn, !cam && styles.avBtnOff]}
         >
           <Ionicons name={cam ? 'videocam' : 'videocam-off'} size={20} color="#fff" />
+        </Pressable>
+      ) : null}
+      {!audioOnly && cam ? (
+        <Pressable
+          accessibilityLabel="Flip camera"
+          onPress={() => {
+            void flipCameraFacing(room);
+          }}
+          style={styles.avBtn}
+        >
+          <Ionicons name="camera-reverse" size={20} color="#fff" />
         </Pressable>
       ) : null}
     </View>
@@ -555,6 +662,7 @@ function ParticipantVideoTile({
   pip,
   zOrder = 0,
   zoomable = false,
+  conferenceSlot = false,
 }: {
   lk: {
     VideoTrack: React.ComponentType<{
@@ -571,11 +679,18 @@ function ParticipantVideoTile({
   multi: boolean;
   videoFit: VideoFit;
   pip?: boolean;
-  /** 0 = normal surface, 1 = media overlay. PiP must sit above the main tile. */
+  /** Unique per surface on Android — shared zOrder blacks out extra remotes. */
   zOrder?: number;
   zoomable?: boolean;
+  /** Conference tiles need a bounded height so Android SurfaceViews layout. */
+  conferenceSlot?: boolean;
 }) {
   const participant = (trackRef as { participant: Participant }).participant;
+  const publication = (
+    trackRef as {
+      publication?: { isSubscribed?: boolean; isMuted?: boolean; track?: unknown };
+    }
+  ).publication;
   const filterId = useLocalOrRemoteFaceFilter(participant);
   const remoteBox = useParticipantFaceBox(isLocal ? null : participant);
   const localBox = useFaceFilterStore((s) => (isLocal ? s.localFaceBox : null));
@@ -588,33 +703,77 @@ function ParticipantVideoTile({
     role = undefined;
   }
   const roleBadge = role === 'cohost' ? 'Co-host' : role === 'host' ? 'Host' : null;
-  const name = isLocal ? 'You' : participant.name || roleBadge || 'Guest';
+  const rawName = isLocal ? 'You' : participant.name || roleBadge || 'Guest';
+  const name =
+    !isLocal && looksLikeUserId(rawName)
+      ? friendlyParticipantName(participant.identity, participant.name)
+      : rawName;
   const { gesture, zoomStyle, onLayout, fitOverride } = useVideoZoom(zoomable);
   const fit = fitOverride ?? videoFit;
+  const hasMedia = Boolean(publication?.track) && !publication?.isMuted;
+  const showFilter = Boolean(filterId);
+  // Mirror selfie (front) only — rear camera should not be mirrored.
+  let mirrorLocal = isLocal;
+  if (isLocal) {
+    try {
+      const localTrack = publication?.track as LocalVideoTrack | undefined;
+      const facing = localTrack?.mediaStreamTrack?.getSettings?.()?.facingMode;
+      if (facing === 'environment') mirrorLocal = false;
+      else if (facing === 'user') mirrorLocal = true;
+      else mirrorLocal = getPreferredCameraFacing() === 'user';
+    } catch {
+      mirrorLocal = getPreferredCameraFacing() === 'user';
+    }
+  }
 
   const tile = (
     <View
-      style={[styles.tile, multi && styles.tileStack, pip && styles.tilePip]}
-      onLayout={zoomable ? onLayout : undefined}
+      style={[
+        styles.tile,
+        multi && styles.tileStack,
+        conferenceSlot && styles.tileConference,
+        pip && styles.tilePip,
+      ]}
+      onLayout={zoomable || conferenceSlot ? onLayout : undefined}
+      collapsable={false}
     >
       {/* Video and overlay share the zoom wrapper so filters stay on the face. */}
-      <View style={zoomStyle}>
-        <lk.VideoTrack
-          trackRef={trackRef}
-          style={StyleSheet.absoluteFill}
-          objectFit={fit}
-          mirror={isLocal}
-          zOrder={zOrder}
-        />
-        <View pointerEvents="none" collapsable={false} style={styles.filterLayer}>
-          <FaceFilterOverlay
-            filterId={filterId}
-            mirrored={isLocal}
-            faceBox={isLocal ? localBox : remoteBox}
+      <View style={zoomStyle} collapsable={false}>
+        {hasMedia ? (
+          <lk.VideoTrack
+            trackRef={trackRef}
+            style={StyleSheet.absoluteFill}
+            objectFit={fit}
+            mirror={mirrorLocal}
+            zOrder={zOrder}
           />
-        </View>
+        ) : (
+          <View style={[styles.tilePlaceholder, { backgroundColor: '#141418' }]}>
+            <Text muted>{name}</Text>
+            <Text muted variant="caption">
+              Connecting video…
+            </Text>
+          </View>
+        )}
+        {showFilter ? (
+          <View
+            pointerEvents="none"
+            collapsable={false}
+            style={[
+              styles.filterLayer,
+              // elevation over SurfaceView paints an opaque black rect on Android.
+              Platform.OS === 'android' && styles.filterLayerAndroid,
+            ]}
+          >
+            <FaceFilterOverlay
+              filterId={filterId}
+              mirrored={mirrorLocal}
+              faceBox={isLocal ? localBox : remoteBox}
+            />
+          </View>
+        ) : null}
       </View>
-      {multi || pip ? (
+      {multi || pip || conferenceSlot ? (
         <View style={styles.labelRow}>
           {roleBadge && !pip ? (
             <Text style={styles.roleBadge} numberOfLines={1}>
@@ -652,6 +811,11 @@ const styles = StyleSheet.create({
   gridStack: {
     flexDirection: 'column',
   },
+  /** 3 remotes: 2 on top row, 1 full-width below (same idea as web). */
+  gridConference3: {
+    flexWrap: 'wrap',
+    flexDirection: 'row',
+  },
   tile: {
     flex: 1,
     overflow: 'hidden',
@@ -660,6 +824,20 @@ const styles = StyleSheet.create({
   tileStack: {
     width: '100%',
     minHeight: 0,
+  },
+  tileConference: {
+    flexGrow: 1,
+    flexBasis: '50%',
+    minHeight: 160,
+    minWidth: '45%',
+    // Fixed bounds help Android SurfaceViews; unconstrained flex often blacks out.
+    overflow: 'hidden',
+  },
+  tilePlaceholder: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   tilePip: {
     borderRadius: 14,
@@ -684,9 +862,10 @@ const styles = StyleSheet.create({
   filterLayer: {
     ...ABSOLUTE_FILL,
     zIndex: 8,
-    // No renderToHardwareTextureAndroid here: an offscreen hardware layer over
-    // the video SurfaceView renders as an opaque black rectangle on Android.
-    elevation: 24,
+  },
+  filterLayerAndroid: {
+    // elevation over a SurfaceView paints an opaque black rect on Android.
+    elevation: 0,
   },
   avRow: {
     position: 'absolute',

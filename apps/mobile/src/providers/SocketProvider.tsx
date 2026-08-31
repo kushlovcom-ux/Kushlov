@@ -35,29 +35,82 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     const onInvite = (payload: unknown) => {
       setIncoming(normalizeCallSession(payload));
     };
+    const applyMergedRoom = (
+      session: ReturnType<typeof normalizeCallSession>,
+      raw: {
+        mergedFromHold?: string;
+        merged?: boolean;
+        heldCallId?: string;
+        callId?: string;
+        token?: string;
+        roomName?: string;
+        livekitUrl?: string;
+        participants?: { id?: string; displayName?: string; name?: string }[];
+      },
+    ) => {
+      const active = useCallStore.getState().active;
+      if (!active) return false;
+      const heldId = String(raw.mergedFromHold || raw.heldCallId || '');
+      const token = session.token || raw.token;
+      const isMerge =
+        Boolean(raw.merged) ||
+        Boolean(heldId) ||
+        (Boolean(token) &&
+          Boolean(session.roomName) &&
+          session.roomName !== active.session.roomName);
+      if (!isMerge) return false;
+      // Must have a conference token — unparking without it rejoins the empty held room.
+      if (!token) return true;
+
+      const roster = (session.participants ?? raw.participants ?? [])
+        .filter((p) => p?.id)
+        .map((p) => ({
+          id: String(p.id),
+          name: p.displayName || p.name || 'Peer',
+        }));
+
+      // Apply media credentials BEFORE unparking so LiveKit mounts into the new room.
+      useCallStore.getState().updateSession({
+        id: session.id || raw.callId || active.session.id,
+        type: session.type ?? active.session.type,
+        token,
+        livekitUrl: session.livekitUrl || raw.livekitUrl || active.session.livekitUrl,
+        roomName: session.roomName || raw.roomName || active.session.roomName,
+        status: CallStatus.Ongoing,
+      });
+      if (roster.length) useCallStore.getState().setParticipants(roster);
+      useCallStore.getState().markConnected();
+      useCallStore.getState().setParked(false);
+      return true;
+    };
+
     const onAccept = (payload: unknown) => {
       const session = normalizeCallSession(payload);
       const active = useCallStore.getState().active;
-      const raw = (payload ?? {}) as { mergedFromHold?: string; merged?: boolean };
+      const raw = (payload ?? {}) as {
+        mergedFromHold?: string;
+        merged?: boolean;
+        heldCallId?: string;
+        callId?: string;
+        token?: string;
+        roomName?: string;
+        livekitUrl?: string;
+        participants?: { id?: string; displayName?: string; name?: string }[];
+      };
       const roster = (session.participants ?? [])
         .filter((p) => p.id)
         .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
+
+      if (active && (raw.merged || raw.mergedFromHold)) {
+        if (applyMergedRoom(session, raw)) return;
+      }
 
       if (
         raw.mergedFromHold &&
         active &&
         (String(active.session.id) === String(raw.mergedFromHold) || Boolean(session.token))
       ) {
-        useCallStore.getState().setParked(false);
-        useCallStore.getState().updateSession({
-          id: session.id || active.session.id,
-          type: session.type ?? active.session.type,
-          token: session.token || active.session.token,
-          livekitUrl: session.livekitUrl || active.session.livekitUrl,
-          roomName: session.roomName || active.session.roomName,
-          status: CallStatus.Ongoing,
-        });
-        if (roster.length) useCallStore.getState().setParticipants(roster);
+        applyMergedRoom(session, raw);
         return;
       }
 
@@ -73,11 +126,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Ignore accepts for a different call while we already have an active leg.
+      // Ignore accepts for a different call — unless this is a room switch
+      // (merge / consult) that brings a new LiveKit token.
+      const roomSwitch =
+        Boolean(session.token) &&
+        Boolean(session.roomName) &&
+        session.roomName !== active.session.roomName;
       if (
         session.id &&
         active.session.id &&
-        String(session.id) !== String(active.session.id)
+        String(session.id) !== String(active.session.id) &&
+        !roomSwitch
       ) {
         return;
       }
@@ -91,6 +150,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         livekitUrl: session.livekitUrl || active.session.livekitUrl,
         roomName: session.roomName || active.session.roomName,
       });
+      if (roomSwitch) useCallStore.getState().setParked(false);
       useCallStore.getState().markConnected();
       if (roster.length) {
         useCallStore.getState().setParticipants(roster);
@@ -188,25 +248,42 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     const onHold = (payload: { callId?: string }) => {
       const active = useCallStore.getState().active;
-      if (!active || (payload.callId && payload.callId !== active.session.id)) return;
+      if (
+        !active ||
+        (payload.callId && String(payload.callId) !== String(active.session.id))
+      ) {
+        return;
+      }
       useCallStore.getState().setParked(true);
     };
 
     const onUnhold = (payload: {
       callId?: string;
+      heldCallId?: string;
       merged?: boolean;
+      mergedFromHold?: string;
       token?: string;
       roomName?: string;
       livekitUrl?: string;
       maxDurationSec?: number;
+      status?: string;
+      type?: string;
+      participants?: { id?: string; displayName?: string; name?: string }[];
     }) => {
-      if (payload.merged) {
-        useCallStore.getState().setParked(false);
+      if (payload.merged || payload.mergedFromHold) {
+        const session = normalizeCallSession(payload);
+        // Stay parked if the server omitted the conference token — CallAccept may follow.
+        if (!payload.token && !session.token) return;
+        applyMergedRoom(session, payload);
         return;
       }
       const active = useCallStore.getState().active;
-      if (!active || (payload.callId && payload.callId !== active.session.id)) return;
-      useCallStore.getState().setParked(false);
+      if (
+        !active ||
+        (payload.callId && String(payload.callId) !== String(active.session.id))
+      ) {
+        return;
+      }
       if (payload.token) {
         useCallStore.getState().updateSession({
           token: payload.token,
@@ -215,6 +292,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           status: CallStatus.Ongoing,
         });
       }
+      useCallStore.getState().setParked(false);
     };
 
     const onParticipantLeft = (payload: {
