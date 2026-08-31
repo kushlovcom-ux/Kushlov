@@ -101,6 +101,12 @@ export function LiveKitStage({
     setMods(ok ? getStageMods() : null);
   }, [mods]);
 
+  // Ensure the native audio session is running before (re)connecting a call room.
+  useEffect(() => {
+    if (!mods) return;
+    preloadLiveKitNative();
+  }, [mods, token, serverUrl]);
+
   useEffect(() => {
     return () => onRoom?.(null);
   }, [onRoom]);
@@ -216,16 +222,23 @@ function AudioRoster({
     room.on('participantConnected', onChange);
     room.on('participantDisconnected', onChange);
     room.on('participantMetadataChanged', onChange);
+    room.on('connectionStateChanged', onChange);
     return () => {
       room.off('participantConnected', onChange);
       room.off('participantDisconnected', onChange);
       room.off('participantMetadataChanged', onChange);
+      room.off('connectionStateChanged', onChange);
     };
   }, [room]);
 
   const remotes = [...room.remoteParticipants.values()].filter(
     (p) => !isPreviewIdentity(p.identity),
   );
+  const state = String(room.state ?? '');
+  const waiting =
+    state === 'connecting' || state === 'reconnecting'
+      ? 'Connecting…'
+      : 'Waiting for peer…';
 
   return (
     <View style={[styles.fallback, { backgroundColor: '#050506', gap: 12 }]}>
@@ -233,7 +246,7 @@ function AudioRoster({
         Audio call
       </Text>
       {remotes.length === 0 ? (
-        <Text muted>Connecting…</Text>
+        <Text muted>{waiting}</Text>
       ) : (
         remotes.map((p) => (
           <Text key={p.identity} variant="h3" color="#fff">

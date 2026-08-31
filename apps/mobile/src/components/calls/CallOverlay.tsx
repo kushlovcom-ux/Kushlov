@@ -115,7 +115,7 @@ export function CallOverlay() {
     }
   }, [clear, room, startCall]);
 
-  // HTTP fallback while we wait for accept/reject — sockets can miss `call:reject`.
+  // HTTP fallback while ringing — sockets often miss `call:accept` / `call:reject`.
   useEffect(() => {
     if (!active?.session.id || !active.session.type) return;
     if (active.session.status !== CallStatus.Ringing) return;
@@ -132,12 +132,27 @@ export function CallOverlay() {
           status === CallStatus.Failed
         ) {
           await leaveBecauseRemoteEnded();
+          return;
+        }
+        if (status === CallStatus.Ongoing || status === 'ongoing') {
+          useCallStore.getState().updateSession({
+            status: CallStatus.Ongoing,
+            token: latest.token || active.session.token,
+            livekitUrl: latest.livekitUrl || active.session.livekitUrl,
+            roomName: latest.roomName || active.session.roomName,
+          });
+          const roster = (latest.participants ?? [])
+            .filter((p) => p.id)
+            .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
+          if (roster.length) useCallStore.getState().setParticipants(roster);
+          // Peer accepted — stop treating this as outbound ringing.
+          useCallStore.getState().markConnected();
         }
       } catch {
         /* still ringing / network */
       }
     };
-    const timer = setInterval(() => void tick(), 2000);
+    const timer = setInterval(() => void tick(), 1500);
     void tick();
     return () => {
       cancelled = true;
@@ -327,10 +342,18 @@ export function CallOverlay() {
           type: session.heldType ?? prev.session.type,
           peer: prev.peer,
         });
-        startCall(session, 'callee', incoming.caller);
+        startCall(
+          { ...session, status: CallStatus.Ongoing },
+          'callee',
+          incoming.caller,
+        );
         setIncoming(null);
       } else {
-        startCall(session, 'callee', incoming.caller);
+        startCall(
+          { ...session, status: CallStatus.Ongoing },
+          'callee',
+          incoming.caller,
+        );
         setIncoming(null);
       }
     } catch (err) {
@@ -454,6 +477,16 @@ export function CallOverlay() {
   const isVideo = active.session.type === CallType.Video;
   const token = active.session.token;
   const url = active.session.livekitUrl;
+  const isOngoing = active.session.status === CallStatus.Ongoing;
+  const isRinging = active.session.status === CallStatus.Ringing;
+  // Caller joins LiveKit while ringing so the room is ready when the peer accepts.
+  // Callee joins only after accept (Ongoing).
+  const canJoinMedia = Boolean(
+    token &&
+      url &&
+      !parked &&
+      (isOngoing || (active.role === 'caller' && isRinging)),
+  );
 
   return (
     <View style={[styles.overlay, { backgroundColor: '#050506' }]}>
@@ -467,11 +500,11 @@ export function CallOverlay() {
             Please wait — you will be reconnected shortly.
           </Text>
         </View>
-      ) : token && url && active.session.status === CallStatus.Ongoing ? (
+      ) : canJoinMedia ? (
         <View style={StyleSheet.absoluteFill}>
           <LiveKitStage
-            token={token}
-            serverUrl={url}
+            token={token!}
+            serverUrl={url!}
             publish
             audioOnly={!isVideo}
             layout="speaker"
@@ -492,6 +525,8 @@ export function CallOverlay() {
               ) {
                 return;
               }
+              // Still ringing — LiveKit teardown is not a hangup.
+              if (current.session.status === CallStatus.Ringing) return;
               if (Date.now() - sessionSwapRef.current < 4000) return;
               void endCall();
             }}
@@ -504,7 +539,7 @@ export function CallOverlay() {
           <Avatar uri={peer?.avatarUrl} name={peer?.displayName} size={88} />
           <Text variant="h2">{peer?.displayName ?? 'Call'}</Text>
           <Text muted style={{ marginTop: 8 }}>
-            {active.session.status === CallStatus.Ringing ? 'Ringing…' : 'Connecting…'}
+            {isRinging ? 'Ringing…' : 'Connecting…'}
           </Text>
           <ActivityIndicator color={c.primary} style={{ marginTop: 12 }} />
         </View>
@@ -574,14 +609,14 @@ export function CallOverlay() {
           </Text>
         ) : null}
         <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-          {!heldCall && !parked ? (
+          {isOngoing && !heldCall && !parked ? (
             <AddCallParticipant callId={active.session.id} type={active.session.type} mode="invite" />
           ) : null}
-          {!heldCall && !parked ? (
+          {isOngoing && !heldCall && !parked ? (
             <AddCallParticipant callId={active.session.id} type={active.session.type} mode="consult" />
           ) : null}
         </View>
-        {!parked
+        {isOngoing && !parked
           ? (active.participants?.length
               ? active.participants
               : active.peer?.id
@@ -650,7 +685,7 @@ export function CallOverlay() {
         </View>
       ) : null}
 
-      {isVideo ? (
+      {isVideo && isOngoing ? (
         <View style={styles.filterBar}>
           <FaceFilterPublisher room={room} />
           <FilterSelector compact />

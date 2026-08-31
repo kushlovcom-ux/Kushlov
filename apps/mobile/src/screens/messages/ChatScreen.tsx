@@ -19,7 +19,7 @@ import { useCallStore } from '@/store/call';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { emitTyping, emitChatFocus, getSocket } from '@/services/socket';
 import { setActiveConversationId } from '@/services/chatFocus';
-import { CallType, SocketEvents } from '@/types';
+import { CallType, SocketEvents, type PublicUser } from '@/types';
 import type { AppStackScreenProps } from '@/navigation/types';
 
 type Props = AppStackScreenProps<'Chat'>;
@@ -187,7 +187,10 @@ export function ChatScreen({ navigation, route }: Props) {
         }
       }
       const session = await callsApi.initiate({ type, calleeId: peerId });
-      startCall(session, 'caller');
+      startCall(session, 'caller', {
+        id: peerId,
+        displayName: title ?? session.callee?.displayName ?? 'Call',
+      } as PublicUser);
     } catch (err) {
       Alert.alert('Call failed', getErrorMessage(err));
     }

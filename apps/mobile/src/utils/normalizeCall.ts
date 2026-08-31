@@ -94,7 +94,10 @@ export function normalizeCallSession(raw: unknown): CallSession {
     idOf(data._id);
 
   const type = (call.type ?? data.type ?? 'audio') as CallType;
-  const status = (call.status ?? data.status ?? 'ringing') as CallStatus;
+  // `call:accept` payloads often omit status but include callId + token.
+  const status = (call.status ??
+    data.status ??
+    (data.token && data.callId ? 'ongoing' : 'ringing')) as CallStatus;
 
   return {
     id,

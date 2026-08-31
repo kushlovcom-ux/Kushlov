@@ -46,42 +46,63 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       if (
         raw.mergedFromHold &&
         active &&
-        (active.session.id === raw.mergedFromHold || Boolean(session.token))
+        (String(active.session.id) === String(raw.mergedFromHold) || Boolean(session.token))
       ) {
         useCallStore.getState().setParked(false);
         useCallStore.getState().updateSession({
           id: session.id || active.session.id,
           type: session.type ?? active.session.type,
-          token: session.token ?? active.session.token,
-          livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
-          roomName: session.roomName ?? active.session.roomName,
+          token: session.token || active.session.token,
+          livekitUrl: session.livekitUrl || active.session.livekitUrl,
+          roomName: session.roomName || active.session.roomName,
           status: CallStatus.Ongoing,
         });
         if (roster.length) useCallStore.getState().setParticipants(roster);
         return;
       }
 
-      if (active && (session.interrupt || !active.session.token)) {
-        useCallStore.getState().updateSession({
-          ...session,
-          status: CallStatus.Ongoing,
-          token: session.token ?? active.session.token,
-          livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
-        });
-      } else {
-        const sameRoom =
-          Boolean(active?.session.token) &&
-          (!session.token ||
-            (Boolean(session.roomName) &&
-              session.roomName === active?.session.roomName));
-        updateSession({
-          ...session,
-          status: CallStatus.Ongoing,
-          token: sameRoom ? active!.session.token : session.token,
-          livekitUrl: session.livekitUrl ?? active?.session.livekitUrl,
-        });
+      if (!active) {
+        if (session.token || session.id) {
+          useCallStore.getState().startCall(
+            { ...session, status: CallStatus.Ongoing },
+            'caller',
+            session.caller ?? session.callee,
+          );
+          if (roster.length) useCallStore.getState().setParticipants(roster);
+        }
+        return;
       }
-      if (roster.length) useCallStore.getState().setParticipants(roster);
+
+      // Ignore accepts for a different call while we already have an active leg.
+      if (
+        session.id &&
+        active.session.id &&
+        String(session.id) !== String(active.session.id)
+      ) {
+        return;
+      }
+
+      // Prefer server accept fields; never wipe a working token with undefined.
+      useCallStore.getState().updateSession({
+        id: session.id || active.session.id,
+        type: session.type || active.session.type,
+        status: CallStatus.Ongoing,
+        token: session.token || active.session.token,
+        livekitUrl: session.livekitUrl || active.session.livekitUrl,
+        roomName: session.roomName || active.session.roomName,
+      });
+      useCallStore.getState().markConnected();
+      if (roster.length) {
+        useCallStore.getState().setParticipants(roster);
+      } else if (session.callee || session.caller) {
+        const peer = active.role === 'caller' ? session.callee : session.caller;
+        if (peer?.id && !(active.participants ?? []).some((p) => p.id === peer.id)) {
+          useCallStore.getState().setParticipants([
+            ...(active.participants ?? []),
+            { id: peer.id, name: peer.displayName ?? 'Peer' },
+          ]);
+        }
+      }
     };
 
     const resumeHeld = async () => {

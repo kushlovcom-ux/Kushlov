@@ -12,6 +12,7 @@ import {
 } from '@/services/notifications';
 import { useAuthStore } from '@/store/auth';
 import { useCallStore } from '@/store/call';
+import { CallStatus } from '@/types';
 import { haptics } from '@/utils/haptics';
 
 /**
@@ -188,10 +189,18 @@ export function useIncomingCallWatcher() {
                 type: session.heldType ?? active.session.type,
                 peer: active.peer,
               });
-              startCall(session, 'callee', incoming?.caller ?? session.caller);
+              startCall(
+                { ...session, status: CallStatus.Ongoing },
+                'callee',
+                incoming?.caller ?? session.caller,
+              );
               setIncoming(null);
             } else {
-              startCall(session, 'callee', incoming?.caller ?? session.caller);
+              startCall(
+                { ...session, status: CallStatus.Ongoing },
+                'callee',
+                incoming?.caller ?? session.caller,
+              );
               setIncoming(null);
             }
             await dismissIncomingCallNotification(data.callId);

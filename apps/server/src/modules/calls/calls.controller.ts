@@ -129,6 +129,7 @@ async function mergeHeldIntoActive(
     const joinPayload = {
       callId: active._id.toString(),
       type: activeType,
+      status: CallStatus.Ongoing,
       roomName: active.roomName,
       livekitUrl,
       maxDurationSec: active.maxDurationSec,
@@ -546,9 +547,27 @@ export const getCall = asyncHandler(async (req: Request, res: Response) => {
   let token: string | undefined;
   let livekitUrl: string | undefined;
   if (call.status === CallStatus.Ongoing && isCallMember(call, uid)) {
-    token = await createLiveKitToken({ identity: uid, roomName: call.roomName });
+    token = await createLiveKitToken({
+      identity: uid,
+      roomName: call.roomName,
+      canPublish: true,
+    });
+    livekitUrl = getLiveKitPublicUrl() ?? undefined;
+  } else if (
+    call.status === CallStatus.Ringing &&
+    isCallMember(call, uid) &&
+    call.caller.toString() === uid
+  ) {
+    // Caller can join the room while ringing so media is ready on accept.
+    token = await createLiveKitToken({
+      identity: uid,
+      roomName: call.roomName,
+      canPublish: true,
+    });
     livekitUrl = getLiveKitPublicUrl() ?? undefined;
   }
+
+  const participants = await rosterOf(call, uid);
 
   return ok(res, {
     call,
@@ -557,6 +576,7 @@ export const getCall = asyncHandler(async (req: Request, res: Response) => {
     roomName: call.roomName,
     livekitUrl,
     maxDurationSec: call.maxDurationSec,
+    participants,
   });
 });
 
@@ -625,6 +645,7 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
         ? {
             callId: call._id.toString(),
             type,
+            status: CallStatus.Ongoing,
             roomName: call.roomName,
             livekitUrl,
             maxDurationSec: call.maxDurationSec,
@@ -638,6 +659,7 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
         : {
             callId: call._id.toString(),
             type,
+            status: CallStatus.Ongoing,
             roomName: call.roomName,
             livekitUrl,
             maxDurationSec: call.maxDurationSec,
@@ -794,6 +816,7 @@ export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) 
   emitToUser(joinerId, SocketEvents.CallAccept, {
     callId: interrupt._id.toString(),
     type,
+    status: CallStatus.Ongoing,
     roomName: interrupt.roomName,
     livekitUrl,
     maxDurationSec: interrupt.maxDurationSec,
