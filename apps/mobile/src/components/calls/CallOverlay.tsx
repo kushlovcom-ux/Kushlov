@@ -49,7 +49,6 @@ export function CallOverlay() {
   const [room, setRoom] = useState<Room | null>(null);
   const endingRef = useRef(false);
   const mergingRef = useRef(false);
-  const autoMergedRef = useRef<string | null>(null);
   /** Timestamp of the last room/token swap — guards LiveKit disconnect races. */
   const sessionSwapRef = useRef(0);
   useCallRingtone(Boolean(incoming));
@@ -87,6 +86,64 @@ export function CallOverlay() {
     active?.connectedAt,
     markConnected,
   ]);
+
+  const leaveBecauseRemoteEnded = useCallback(async () => {
+    if (endingRef.current) return;
+    endingRef.current = true;
+    try {
+      try {
+        await room?.disconnect();
+      } catch {
+        /* ignore */
+      }
+      setRoom(null);
+      const held = useCallStore.getState().heldCall;
+      if (held) {
+        useCallStore.setState({ active: null, incoming: null, parked: false });
+        try {
+          const resumed = await callsApi.unhold(held.type, held.callId);
+          useCallStore.getState().setHeldCall(null);
+          startCall(resumed, 'caller', held.peer);
+        } catch {
+          useCallStore.getState().setHeldCall(null);
+        }
+        return;
+      }
+      clear();
+    } finally {
+      endingRef.current = false;
+    }
+  }, [clear, room, startCall]);
+
+  // HTTP fallback while we wait for accept/reject — sockets can miss `call:reject`.
+  useEffect(() => {
+    if (!active?.session.id || !active.session.type) return;
+    if (active.session.status !== CallStatus.Ringing) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const latest = await callsApi.get(active.session.type, active.session.id);
+        if (cancelled) return;
+        const status = String(latest.status ?? '');
+        if (
+          status === CallStatus.Rejected ||
+          status === CallStatus.Ended ||
+          status === CallStatus.Missed ||
+          status === CallStatus.Failed
+        ) {
+          await leaveBecauseRemoteEnded();
+        }
+      } catch {
+        /* still ringing / network */
+      }
+    };
+    const timer = setInterval(() => void tick(), 2000);
+    void tick();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [active?.session.id, active?.session.status, active?.session.type, leaveBecauseRemoteEnded]);
 
   // Hold / merge / call-waiting hand us a new room + token. The old LiveKitRoom
   // unmounts and reports a disconnect that must not be read as "peer hung up".
@@ -222,7 +279,10 @@ export function CallOverlay() {
       );
       // Remotes may have joined while the merge was in flight.
       const latest = useCallStore.getState().active ?? current;
-      const participants = [...(latest.participants ?? [])];
+      const fromServer = (session.participants ?? [])
+        .filter((p) => p.id)
+        .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
+      const participants = fromServer.length ? [...fromServer] : [...(latest.participants ?? [])];
       if (held.peer?.id && !participants.some((p) => p.id === held.peer!.id)) {
         participants.push({
           id: held.peer.id,
@@ -252,23 +312,6 @@ export function CallOverlay() {
     }
   };
 
-  // "Call another" is how users build a conference: as soon as the new person
-  // answers, fold the held leg into this room so everyone is on one call.
-  useEffect(() => {
-    if (!heldCall) {
-      autoMergedRef.current = null;
-      return;
-    }
-    if (!active) return;
-    if (String(active.session.id) === String(heldCall.callId)) return;
-    if (active.session.status !== CallStatus.Ongoing) return;
-    if (!active.session.token) return;
-    if (autoMergedRef.current === heldCall.callId) return;
-    autoMergedRef.current = heldCall.callId;
-    void mergeHeld({ silent: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.session.id, active?.session.status, active?.session.token, heldCall?.callId]);
-
   const acceptIncoming = async () => {
     if (!incoming) return;
     haptics.success();
@@ -278,14 +321,13 @@ export function CallOverlay() {
         : await callsApi.accept(incoming.type, incoming.id);
       await dismissIncomingCallNotification(incoming.id);
       if (active && incoming.interrupt) {
-        // Stay on current room; merge brings C into the same LiveKit room.
-        useCallStore.getState().updateSession({
-          id: session.id || active.session.id,
-          token: session.token ?? active.session.token,
-          livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
-          roomName: session.roomName ?? active.session.roomName,
-          status: CallStatus.Ongoing,
+        const prev = active;
+        setHeldCall({
+          callId: session.heldCallId || prev.session.id,
+          type: session.heldType ?? prev.session.type,
+          peer: prev.peer,
         });
+        startCall(session, 'callee', incoming.caller);
         setIncoming(null);
       } else {
         startCall(session, 'callee', incoming.caller);
@@ -425,7 +467,7 @@ export function CallOverlay() {
             Please wait — you will be reconnected shortly.
           </Text>
         </View>
-      ) : token && url ? (
+      ) : token && url && active.session.status === CallStatus.Ongoing ? (
         <View style={StyleSheet.absoluteFill}>
           <LiveKitStage
             token={token}
@@ -461,6 +503,9 @@ export function CallOverlay() {
         <View style={styles.centerMeta}>
           <Avatar uri={peer?.avatarUrl} name={peer?.displayName} size={88} />
           <Text variant="h2">{peer?.displayName ?? 'Call'}</Text>
+          <Text muted style={{ marginTop: 8 }}>
+            {active.session.status === CallStatus.Ringing ? 'Ringing…' : 'Connecting…'}
+          </Text>
           <ActivityIndicator color={c.primary} style={{ marginTop: 12 }} />
         </View>
       )}
@@ -469,7 +514,19 @@ export function CallOverlay() {
         <Text variant="caption" muted>
           {active.session.status === CallStatus.Ringing ? 'Ringing…' : formatDuration(elapsed)}
         </Text>
-        <Text variant="bodyBold">{peer?.displayName ?? 'Call'}</Text>
+        <Text variant="bodyBold">
+          {(active.participants?.length
+            ? active.participants.map((p) => p.name)
+            : peer?.displayName
+              ? [peer.displayName]
+              : []
+          ).join(' · ') || 'Call'}
+        </Text>
+        {active.participants.length > 1 ? (
+          <Text variant="caption" color="#a5b4fc" style={{ marginTop: 4 }}>
+            Conference · {active.participants.length + 1} people
+          </Text>
+        ) : null}
         {parked ? (
           <View style={[styles.holdChip, { backgroundColor: 'rgba(245, 158, 11, 0.25)' }]}>
             <Ionicons name="pause" size={14} color="#fbbf24" />
@@ -531,15 +588,28 @@ export function CallOverlay() {
                 ? [{ id: active.peer.id, name: active.peer.displayName ?? 'peer' }]
                 : []
             ).map((p) => (
-              <Pressable
+              <View
                 key={p.id}
-                onPress={() => kickPeer(p.id, p.name)}
-                style={{ marginTop: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                style={{
+                  marginTop: 8,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 999,
+                  backgroundColor: 'rgba(255,255,255,0.12)',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
               >
-                <Text variant="caption" color={c.danger}>
-                  End call for {p.name}
+                <Text variant="caption" color="#fff">
+                  {p.name}
                 </Text>
-              </Pressable>
+                <Pressable onPress={() => kickPeer(p.id, p.name)} hitSlop={8}>
+                  <Text variant="tiny" color={c.danger}>
+                    Remove
+                  </Text>
+                </Pressable>
+              </View>
             ))
           : null}
       </View>
@@ -551,7 +621,7 @@ export function CallOverlay() {
             {incoming.interrupt ? ' (waiting)' : ''}
           </Text>
           <Text muted variant="caption" style={{ marginBottom: 8 }}>
-            {incoming.type === CallType.Video ? 'Video' : 'Audio'} — Accept to merge into this call
+            {incoming.type === CallType.Video ? 'Video' : 'Audio'} — Accept puts your current call on hold
           </Text>
           <View style={{ flexDirection: 'row', gap: 16, justifyContent: 'center' }}>
             <Pressable
@@ -613,7 +683,13 @@ export function CallOverlay() {
         )}
         <Ctrl
           icon="call"
-          label={heldCall ? 'End all' : 'End'}
+          label={
+            heldCall
+              ? 'End all'
+              : (active.participants?.length ?? 0) >= 2
+                ? 'Leave'
+                : 'End'
+          }
           onPress={heldCall ? endAllCalls : endCall}
           color={c.danger}
           rotate

@@ -5,6 +5,7 @@ import { env } from '../config/env';
 import { getRedis } from '../config/redis';
 import { logger } from '../config/logger';
 import { verifyAccessToken } from '../utils/jwt';
+import jwt from 'jsonwebtoken';
 
 const FRIENDLY_429 =
   "You've made several requests in a short time. Please wait a moment and try again.";
@@ -25,14 +26,19 @@ function extractBearer(req: Request): string | null {
 
 /** Prefer authenticated user id; fall back to client IP (via trust proxy). */
 export function clientKey(req: Request): string {
-  try {
-    const token = extractBearer(req);
-    if (token) {
+  const token = extractBearer(req);
+  if (token) {
+    try {
       const payload = verifyAccessToken(token);
       if (payload?.sub) return `u:${payload.sub}`;
+    } catch {
+      // Expired/invalid signature — still attribute the budget to the subject
+      // so a 15m token expiry doesn't dump the user onto the tiny IP bucket.
+      const decoded = jwt.decode(token);
+      if (decoded && typeof decoded === 'object' && typeof decoded.sub === 'string') {
+        return `u:${decoded.sub}`;
+      }
     }
-  } catch {
-    /* unauthenticated or invalid token — use IP */
   }
   return `ip:${normalizeIp(req.ip)}`;
 }
@@ -41,12 +47,36 @@ function ipOnlyKey(req: Request): string {
   return `ip:${normalizeIp(req.ip)}`;
 }
 
+function pathOf(req: Request): string {
+  return (req.originalUrl || req.url || '').split('?')[0];
+}
+
 function shouldSkipGlobal(req: Request): boolean {
   if (req.method === 'OPTIONS') return true;
-  const path = (req.originalUrl || req.url || '').split('?')[0];
+  const path = pathOf(req);
   // Payment provider retries must not be blocked by IP limits.
   if (path === '/api/payments/webhook' || path.endsWith('/payments/webhook')) return true;
+  // Refresh has its own limiter. Blocking it here logs the user out of every screen.
+  if (path === '/api/auth/refresh' || path.endsWith('/auth/refresh')) return true;
+  // Heartbeat — cheap and frequent; must not consume the browsing budget.
+  if (path.endsWith('/users/me/presence')) return true;
+  if (path === '/health' || path.endsWith('/health')) return true;
   return false;
+}
+
+/**
+ * Logged-in clients (mobile tabs + polling) easily exceed a 300/15m cap.
+ * Keep RATE_LIMIT_MAX for anonymous IPs; floor authenticated users higher so
+ * a stale production env of 300 cannot freeze the app after a few minutes.
+ */
+const AUTH_GLOBAL_FLOOR = 2000;
+
+function globalMax(req: Request): number {
+  const configured = env.RATE_LIMIT_MAX;
+  if (clientKey(req).startsWith('u:')) {
+    return Math.max(configured, AUTH_GLOBAL_FLOOR);
+  }
+  return configured;
 }
 
 function retryAfterSeconds(res: Response, windowMs: number): number {
@@ -90,7 +120,7 @@ type BuildOpts = Partial<Options> & {
   /** Unique Redis key prefix (required when using Redis). */
   name: string;
   windowMs: number;
-  max: number;
+  max: Options['max'];
 };
 
 /**
@@ -152,7 +182,7 @@ function buildLimiter(opts: BuildOpts): RateLimitRequestHandler {
 export const globalLimiter = buildLimiter({
   name: 'global',
   windowMs: env.RATE_LIMIT_WINDOW_MS,
-  max: env.RATE_LIMIT_MAX,
+  max: globalMax,
   skip: shouldSkipGlobal,
 });
 

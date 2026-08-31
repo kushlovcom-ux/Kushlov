@@ -51,7 +51,7 @@ export function HomeScreen() {
   const badges = useBadges();
   const popular = usePopularHosts();
   const topRated = useTopRatedHosts();
-  const online = useDiscover({ online: true, limit: 16 }, { refetchInterval: 20_000 });
+  const online = useDiscover({ online: true, limit: 16 }, { refetchInterval: 45_000 });
   const stats = usePlatformStats();
   const settings = useSettings();
   const { wallet } = useWallet();
@@ -242,7 +242,7 @@ export function HomeScreen() {
             <View style={{ paddingHorizontal: spacing.screen }}>
               <SkeletonRow />
             </View>
-          ) : popular.isError ? (
+          ) : popular.isError && popularItems.length === 0 ? (
             <View style={{ paddingHorizontal: spacing.screen }}>
               <ErrorView message="Could not load popular" onRetry={() => popular.refetch()} />
             </View>

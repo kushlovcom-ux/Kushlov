@@ -57,7 +57,7 @@ export function DiscoverScreen() {
     { limit: 20 },
     {
       enabled: hasLocation && !isSearching,
-      refetchInterval: focused && hasLocation && !isSearching ? 15_000 : false,
+      refetchInterval: focused && hasLocation && !isSearching ? 30_000 : false,
     },
   );
 
@@ -76,7 +76,9 @@ export function DiscoverScreen() {
   }, [browse.data, isSearching, search.data]);
 
   const listLoading = isSearching ? search.isLoading : browse.isLoading;
-  const listError = isSearching ? search.isError : browse.isError;
+  const listError = isSearching
+    ? search.isError && items.length === 0
+    : browse.isError && items.length === 0;
   const refetchList = () => (isSearching ? search.refetch() : browse.refetch());
 
   const onRefresh = useCallback(async () => {

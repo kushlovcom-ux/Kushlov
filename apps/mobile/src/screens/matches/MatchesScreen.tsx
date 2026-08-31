@@ -59,7 +59,7 @@ export function MatchesScreen() {
             <SkeletonRow />
             <SkeletonRow />
           </>
-        ) : active.isError ? (
+        ) : active.isError && items.length === 0 ? (
           <ErrorView message="Could not load" onRetry={() => active.refetch()} />
         ) : items.length === 0 ? (
           <EmptyState

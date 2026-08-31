@@ -316,6 +316,7 @@ export interface CallSession {
   heldCallId?: string;
   heldType?: CallType;
   mergedFromHold?: string;
+  participants?: { id: string; displayName?: string; name?: string }[];
 }
 
 export interface LiveRoom {

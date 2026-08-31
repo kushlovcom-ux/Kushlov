@@ -65,6 +65,21 @@ function asPublicUser(value: unknown): PublicUser | undefined {
   };
 }
 
+function rosterOf(data: RawCallPayload): { id: string; displayName?: string; name?: string }[] | undefined {
+  const raw = (data as { participants?: unknown }).participants;
+  if (!Array.isArray(raw)) return undefined;
+  const items = raw
+    .map((p) => {
+      if (!p || typeof p !== 'object') return null;
+      const row = p as { id?: string; displayName?: string; name?: string };
+      const id = idOf(row);
+      if (!id) return null;
+      return { id, displayName: row.displayName ?? row.name, name: row.name ?? row.displayName };
+    })
+    .filter((p): p is { id: string; displayName?: string; name?: string } => Boolean(p));
+  return items;
+}
+
 export function normalizeCallSession(raw: unknown): CallSession {
   const data = (raw ?? {}) as RawCallPayload;
   const call = data.call ?? data;
@@ -104,5 +119,6 @@ export function normalizeCallSession(raw: unknown): CallSession {
     heldCallId: data.heldCallId ? String(data.heldCallId) : undefined,
     heldType: data.heldType as CallType | undefined,
     mergedFromHold: data.mergedFromHold ? String(data.mergedFromHold) : undefined,
+    participants: rosterOf(data),
   };
 }

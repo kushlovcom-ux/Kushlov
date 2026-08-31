@@ -17,5 +17,6 @@ export function useDiscover(
     refetchOnMount: false,
     refetchOnReconnect: true,
     refetchInterval: options?.refetchInterval ?? false,
+    refetchIntervalInBackground: false,
   });
 }

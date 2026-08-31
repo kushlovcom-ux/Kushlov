@@ -50,7 +50,7 @@ export function TransactionsScreen({ navigation }: Props) {
       >
         {active.isLoading ? (
           <SkeletonRow />
-        ) : active.isError ? (
+        ) : active.isError && items.length === 0 ? (
           <ErrorView message={getErrorMessage(active.error)} onRetry={() => active.refetch()} />
         ) : items.length === 0 ? (
           <EmptyState title="No transactions" />

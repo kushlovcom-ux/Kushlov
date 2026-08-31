@@ -21,6 +21,7 @@ import { haptics } from '@/utils/haptics';
 export function useIncomingCallWatcher() {
   const token = useAuthStore((s) => s.accessToken);
   const setIncoming = useCallStore((s) => s.setIncoming);
+  const setHeldCall = useCallStore((s) => s.setHeldCall);
   const startCall = useCallStore((s) => s.startCall);
   const notifiedId = useRef<string | null>(null);
 
@@ -181,13 +182,13 @@ export function useIncomingCallWatcher() {
               ? await callsApi.acceptInterrupt(callType, callId)
               : await callsApi.accept(callType, callId);
             const active = useCallStore.getState().active;
-            if (active && (incoming?.interrupt || session.interrupt)) {
-              useCallStore.getState().updateSession({
-                id: session.id || active.session.id,
-                token: session.token ?? active.session.token,
-                livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
-                roomName: session.roomName ?? active.session.roomName,
+            if (active && (incoming?.interrupt || session.heldCallId)) {
+              setHeldCall({
+                callId: session.heldCallId || active.session.id,
+                type: session.heldType ?? active.session.type,
+                peer: active.peer,
               });
+              startCall(session, 'callee', incoming?.caller ?? session.caller);
               setIncoming(null);
             } else {
               startCall(session, 'callee', incoming?.caller ?? session.caller);

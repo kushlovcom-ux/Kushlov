@@ -39,12 +39,11 @@ function MainTabs() {
   return (
     <Tab.Navigator
       tabBar={(props) => <PremiumTabBar {...props} />}
-      lazy={false}
-      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        freezeOnBlur: false,
+        freezeOnBlur: true,
+        lazy: true,
       }}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home' }} />

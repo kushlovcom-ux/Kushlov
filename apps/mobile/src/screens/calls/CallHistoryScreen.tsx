@@ -51,7 +51,7 @@ export function CallHistoryScreen({ navigation }: Props) {
       >
         {history.isLoading ? (
           <SkeletonRow />
-        ) : history.isError ? (
+        ) : history.isError && items.length === 0 ? (
           <ErrorView message={getErrorMessage(history.error)} onRetry={() => history.refetch()} />
         ) : items.length === 0 ? (
           <EmptyState title="No calls yet" />

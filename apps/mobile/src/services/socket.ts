@@ -11,24 +11,27 @@ export function getSocket(): Socket | null {
 
 export function connectSocket(token?: string | null): Socket {
   const accessToken = token ?? useAuthStore.getState().accessToken;
-  if (socket?.connected) {
-    if (accessToken) socket.auth = { token: accessToken };
-    return socket;
-  }
+
+  const authCb = (cb: (data: { token?: string }) => void) => {
+    const latest = useAuthStore.getState().accessToken ?? accessToken;
+    cb(latest ? { token: latest } : {});
+  };
 
   if (socket) {
-    socket.disconnect();
-    socket = null;
+    socket.auth = authCb;
+    if (!socket.connected) socket.connect();
+    return socket;
   }
 
   socket = io(env.socketUrl, {
     // polling first helps behind some proxies; websocket upgrades when available
     transports: ['polling', 'websocket'],
     autoConnect: true,
-    auth: accessToken ? { token: accessToken } : undefined,
+    auth: authCb,
     reconnection: true,
-    reconnectionAttempts: 12,
+    reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
+    reconnectionDelayMax: 15_000,
   });
 
   socket.on(SocketEvents.Connected, () => {

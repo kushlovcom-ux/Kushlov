@@ -12,8 +12,10 @@ import { usePresence } from '@/hooks/usePresence';
 import { useIncomingCallWatcher } from '@/hooks/useIncomingCallWatcher';
 import { usePushTokenSync } from '@/hooks/usePushTokenSync';
 import { useNotificationNavigation } from '@/hooks/useNotificationNavigation';
+import { useSessionKeepAlive } from '@/hooks/useSessionKeepAlive';
 import { useFaceFilterStore } from '@/faceFilters/hooks/useFaceFilter';
 import { preloadLiveKitNative } from '@/services/livekit';
+import { isRetryableQueryError } from '@/api/client';
 
 function ThemeBridge({ children }: { children: React.ReactNode }) {
   const syncSystem = useThemeStore((s) => s.syncSystem);
@@ -22,6 +24,7 @@ function ThemeBridge({ children }: { children: React.ReactNode }) {
   useIncomingCallWatcher();
   usePushTokenSync();
   useNotificationNavigation();
+  useSessionKeepAlive();
   const hydrateFilters = useFaceFilterStore((s) => s.hydrate);
   const filtersHydrated = useFaceFilterStore((s) => s.hydrated);
 
@@ -52,10 +55,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            retry: 1,
+            retry: (count, err) => isRetryableQueryError(err) && count < 2,
+            retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
             staleTime: 60_000,
             gcTime: 10 * 60_000,
-            refetchOnWindowFocus: false,
+            refetchOnWindowFocus: true,
+            refetchOnReconnect: true,
             placeholderData: keepPreviousData,
           },
         },

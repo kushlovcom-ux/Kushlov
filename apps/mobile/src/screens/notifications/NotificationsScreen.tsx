@@ -74,7 +74,7 @@ export function NotificationsScreen({ navigation }: Props) {
       >
         {list.isLoading ? (
           <SkeletonRow />
-        ) : list.isError ? (
+        ) : list.isError && items.length === 0 ? (
           <ErrorView message="Could not load notifications" onRetry={() => list.refetch()} />
         ) : items.length === 0 ? (
           <EmptyState title="You're all caught up" />

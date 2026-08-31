@@ -6,6 +6,7 @@ import axios, {
 } from 'axios';
 import { env } from '@/config/env';
 import { useAuthStore } from '@/store/auth';
+import { connectSocket } from '@/services/socket';
 
 export class ApiError extends Error {
   status?: number;
@@ -43,6 +44,21 @@ function isAuthCredentialUrl(url = ''): boolean {
   );
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryAfterMs(err: AxiosError): number {
+  const raw = err.response?.headers?.['retry-after'];
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0) {
+    // Header may be seconds or an HTTP date; treat small numbers as seconds.
+    const sec = n > 1_000_000_000 ? Math.max(1, n - Math.floor(Date.now() / 1000)) : n;
+    return Math.min(Math.max(sec, 1) * 1000, 12_000);
+  }
+  return 2000;
+}
+
 export async function refreshAccessToken(): Promise<string | null> {
   const { refreshToken, setTokens, clear } = useAuthStore.getState();
   if (!refreshToken) {
@@ -64,6 +80,7 @@ export async function refreshAccessToken(): Promise<string | null> {
     const nextAccess = res.data.data.accessToken;
     const nextRefresh = res.data.data.refreshToken ?? refreshToken;
     setTokens(nextAccess, nextRefresh);
+    connectSocket(nextAccess);
     return nextAccess;
   } catch (err) {
     const status = axios.isAxiosError(err) ? err.response?.status : undefined;
@@ -75,6 +92,11 @@ export async function refreshAccessToken(): Promise<string | null> {
     return null;
   }
 }
+
+type RetryConfig = InternalAxiosRequestConfig & {
+  _retry?: boolean;
+  _retryTransient?: boolean;
+};
 
 function getClient(): AxiosInstance {
   const client = axios.create({
@@ -105,14 +127,15 @@ function getClient(): AxiosInstance {
       return response;
     },
     async (error: AxiosError<Envelope<unknown>>) => {
-      const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+      const original = error.config as RetryConfig | undefined;
       const status = error.response?.status;
+      const url = `${original?.baseURL ?? ''}${original?.url ?? ''}`;
 
       if (
         status === 401 &&
         original &&
         !original._retry &&
-        !isAuthCredentialUrl(original.url ?? '')
+        !isAuthCredentialUrl(url)
       ) {
         original._retry = true;
         if (!refreshPromise) {
@@ -125,6 +148,14 @@ function getClient(): AxiosInstance {
           original.headers.Authorization = `Bearer ${token}`;
           return client(original);
         }
+      }
+
+      const transient =
+        status === 429 || status === 502 || status === 503 || status === 504 || !error.response;
+      if (original && !original._retryTransient && transient && !isAuthCredentialUrl(url)) {
+        original._retryTransient = true;
+        await sleep(status === 429 ? retryAfterMs(error) : 1200);
+        return client(original);
       }
 
       const data = error.response?.data;
@@ -173,14 +204,34 @@ export async function apiDelete<T>(url: string, config?: AxiosRequestConfig) {
   return unwrap<T>(api.delete(url, config));
 }
 
+export function isRetryableQueryError(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    if (err.status === 429 || err.status === 502 || err.status === 503 || err.status === 504) {
+      return true;
+    }
+    if (!err.status) return true;
+    if (err.status >= 500) return true;
+    return false;
+  }
+  return true;
+}
+
 export function getErrorMessage(err: unknown, fallback = 'Something went wrong'): string {
   if (err instanceof ApiError) {
     if (err.status === 429 || err.code === 'RATE_LIMITED') {
       return "You've made several requests in a short time. Please wait a moment and try again.";
     }
+    if (!err.status && /network/i.test(err.message)) {
+      return 'Connection lost. Check your internet and try again.';
+    }
     return err.message;
   }
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) {
+    if (/network/i.test(err.message)) {
+      return 'Connection lost. Check your internet and try again.';
+    }
+    return err.message;
+  }
   return fallback;
 }
 

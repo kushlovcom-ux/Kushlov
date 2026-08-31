@@ -234,7 +234,7 @@ export function ChatScreen({ navigation, route }: Props) {
             <SkeletonRow />
             <SkeletonRow />
           </View>
-        ) : isError ? (
+        ) : isError && messages.length === 0 ? (
           <ErrorView message="Could not load messages" onRetry={() => refetch()} />
         ) : (
           <FlatList

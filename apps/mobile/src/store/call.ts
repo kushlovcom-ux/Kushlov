@@ -45,23 +45,33 @@ export const useCallStore = create<CallState>((set, get) => ({
   setIncoming: (incoming) => set({ incoming }),
   setHeldCall: (heldCall) => set({ heldCall }),
   setParked: (parked) => set({ parked }),
-  startCall: (session, role, peer) =>
+  startCall: (session, role, peer) => {
+    const fromSession = (session.participants ?? [])
+      .filter((p) => p.id)
+      .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
+    const participants = fromSession.length
+      ? fromSession
+      : peer?.id
+        ? [{ id: peer.id, name: peer.displayName ?? 'Peer' }]
+        : [];
+    const first = participants[0];
     set({
       incoming: null,
       parked: false,
       active: {
         session,
         role,
-        peer,
-        participants: peer?.id
-          ? [{ id: peer.id, name: peer.displayName ?? 'Peer' }]
-          : [],
+        peer: peer ?? (first
+          ? ({ id: first.id, displayName: first.name } as PublicUser)
+          : undefined),
+        participants,
         muted: false,
         cameraOff: session.type === ('audio' as CallType),
         speakerOn: session.type === ('audio' as CallType),
         connectedAt: undefined,
       },
-    }),
+    });
+  },
   updateSession: (partial) => {
     const active = get().active;
     if (!active) return;

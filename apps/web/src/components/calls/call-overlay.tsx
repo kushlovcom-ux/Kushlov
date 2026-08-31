@@ -265,7 +265,6 @@ export function CallOverlay() {
   const intentionalLeaveRef = useRef(false);
   const parkedRef = useRef(false);
   const mergingRef = useRef(false);
-  const autoMergedRef = useRef<string | null>(null);
   /** Last time call id / token / room changed — stale LiveKit disconnects in this window are not hangups. */
   const sessionSwapRef = useRef(0);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -459,19 +458,7 @@ export function CallOverlay() {
     }
   }, []);
 
-  // "Call another" is how a conference is built: as soon as the new person
-  // answers, fold the held 1:1 into this room so nobody has to tap Merge.
-  useEffect(() => {
-    if (!heldCall) {
-      autoMergedRef.current = null;
-      return;
-    }
-    if (!active?.token) return;
-    if (active.callId === heldCall.callId) return;
-    if (autoMergedRef.current === heldCall.callId) return;
-    autoMergedRef.current = heldCall.callId;
-    void mergeHeld({ silent: true });
-  }, [active?.callId, active?.token, heldCall?.callId, mergeHeld]);
+  // Conference is built by tapping Merge after the new person answers.
 
   const endConsultAndResumeHeld = useCallback(async () => {
     const c = activeRef.current;
@@ -635,9 +622,6 @@ export function CallOverlay() {
           const participants = fromServer.length
             ? [...fromServer]
             : rosterFromPeer(prev.peerId, prev.peerName);
-          if (held?.peerId && !participants.some((p) => p.id === held.peerId)) {
-            participants.push({ id: held.peerId, name: held.peerName });
-          }
           setActive({
             callId: payload.callId,
             type: payload.type ?? prev.type,
@@ -1098,32 +1082,44 @@ export function CallOverlay() {
         call?: { _id?: string };
         type?: CallType;
         merged?: boolean;
+        parked?: boolean;
+        heldCallId?: string;
+        heldType?: CallType;
         participants?: { id?: string; displayName?: string }[];
       }>(api.post(path));
 
       if (active && incoming.interrupt) {
-        const joinerId = incoming.from?.id;
-        const joinerName = incoming.from?.displayName ?? 'Caller';
+        const held: HeldCall = {
+          callId: data.heldCallId || active.callId,
+          type: (data.heldType as CallType) ?? active.type,
+          peerName: active.peerName,
+          peerId: active.peerId,
+          peerIsHost: active.peerIsHost,
+        };
+        const peerId = incoming.from?.id;
+        const peerName = incoming.from?.displayName ?? 'Caller';
         const fromServer = rosterFromPayload(data.participants);
-        const participants = fromServer.length ? [...fromServer] : [...active.participants];
-        if (joinerId && !participants.some((p) => p.id === joinerId)) {
-          participants.push({ id: joinerId, name: joinerName });
-        }
-        const sameRoom = Boolean(active.roomName) && data.roomName === active.roomName;
+        const participants = fromServer.length
+          ? fromServer
+          : rosterFromPeer(peerId, peerName);
+        sessionSwapRef.current = Date.now();
+        heldCallRef.current = held;
+        setHeldCall(held);
         setActive({
-          ...active,
-          callId: data.call?._id ?? active.callId,
-          type: data.type ?? active.type,
-          roomName: data.roomName ?? active.roomName,
-          token: sameRoom ? active.token : data.token || active.token,
-          livekitUrl: data.livekitUrl ?? active.livekitUrl,
-          maxDurationSec: data.maxDurationSec ?? active.maxDurationSec,
+          callId: data.call?._id ?? incoming.callId,
+          type: data.type ?? incoming.type,
+          roomName: data.roomName,
+          token: data.token,
+          livekitUrl: data.livekitUrl,
+          maxDurationSec: data.maxDurationSec,
+          peerName,
+          peerId,
+          peerIsHost: isApprovedHostPeer(incoming.from?.role, incoming.from?.isHostApproved),
+          role: 'callee',
           participants,
-          peerName: participants.map((p) => p.name).join(' + ') || active.peerName,
-          peerId: participants[0]?.id ?? active.peerId,
         });
         setIncoming(null);
-        toast.success('Merged into your call');
+        toast.message(`On hold: ${held.peerName}`, { description: `Talking to ${peerName}` });
         return;
       }
 
@@ -1239,7 +1235,7 @@ export function CallOverlay() {
                   <Phone className="h-4 w-4" />
                 )}
                 Incoming {incoming.type} call
-                {incoming.interrupt ? ' (waiting)' : ''}
+                {incoming.interrupt ? ' (waiting — current call will be held)' : ''}
               </p>
               <div className="mt-6 flex justify-center gap-8">
                 <div className="flex flex-col items-center gap-2">

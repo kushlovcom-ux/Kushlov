@@ -41,7 +41,7 @@ export function ConversationsScreen() {
             <SkeletonRow />
             <SkeletonRow />
           </>
-        ) : isError ? (
+        ) : isError && items.length === 0 ? (
           <ErrorView message="Could not load conversations" onRetry={() => refetch()} />
         ) : items.length === 0 ? (
           <EmptyState

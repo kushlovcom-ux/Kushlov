@@ -377,7 +377,7 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     );
   }
 
-  if (live.isError) {
+  if (live.isError && !live.data) {
     return (
       <Screen>
         <Header title="Live" onBack={() => navigation.goBack()} />

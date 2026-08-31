@@ -45,6 +45,35 @@ function isCallMember(call: ICall, userId: string): boolean {
   return participantIdsOf(call).includes(userId);
 }
 
+/** Mute everyone on an Ongoing call and tell remotes they are on hold. */
+async function parkOngoingCall(
+  call: ICall,
+  heldBy: string,
+  extra?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await setParticipantMuted(call.roomName, heldBy, true);
+  } catch {
+    /* already left */
+  }
+  const payload = {
+    callId: call._id.toString(),
+    type: call.type,
+    heldBy,
+    held: true,
+    ...extra,
+  };
+  for (const memberId of participantIdsOf(call)) {
+    if (memberId === heldBy) continue;
+    try {
+      await setParticipantMuted(call.roomName, memberId, true);
+    } catch {
+      /* ignore */
+    }
+    emitToUser(memberId, SocketEvents.CallHold, payload);
+  }
+}
+
 type MergeRosterMember = { id: string; displayName?: string; avatarUrl?: string };
 
 /**
@@ -578,21 +607,6 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
   call.participants = [...parts] as unknown as typeof call.participants;
   await call.save();
 
-  let mergedFromHold: string | undefined;
-  if (call.targetCallId && !call.isInterrupt) {
-    try {
-      const merged = await mergeHeldIntoActive(
-        call,
-        call.caller.toString(),
-        call.targetCallId.toString(),
-        { skipNotifyUserId: call.caller.toString() },
-      );
-      if (merged) mergedFromHold = merged.heldId;
-    } catch {
-      /* held already gone — consult continues as 1:1 with the new callee */
-    }
-  }
-
   const joinerToken = await createLiveKitToken({
     identity: uid,
     name: (await User.findById(uid).select('displayName'))?.displayName,
@@ -620,8 +634,6 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
               canPublish: true,
             }),
             participants: allRoster.filter((p) => p.id !== memberId),
-            merged: Boolean(mergedFromHold),
-            mergedFromHold,
           }
         : {
             callId: call._id.toString(),
@@ -654,8 +666,6 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
       livekitUrl,
       maxDurationSec: call.maxDurationSec,
       participants: allRoster.filter((p) => p.id !== uid),
-      merged: Boolean(mergedFromHold),
-      mergedFromHold,
     },
     'Call accepted',
   );
@@ -699,13 +709,19 @@ export const rejectCall = asyncHandler(async (req: Request, res: Response) => {
   call.status = CallStatus.Rejected;
   call.endedAt = new Date();
   await call.save();
-  emitToUser(call.caller.toString(), SocketEvents.CallReject, { callId: call._id.toString() });
+  const rejectPayload = { callId: call._id.toString(), reason: 'rejected' };
+  emitToUser(call.caller.toString(), SocketEvents.CallReject, rejectPayload);
+  for (const memberId of participantIdsOf(call)) {
+    if (memberId === uid) continue;
+    emitToUser(memberId, SocketEvents.CallReject, rejectPayload);
+  }
   return ok(res, call, 'Call rejected');
 });
 
 /**
  * POST /calls/:type/:id/accept-interrupt
- * Busy user A accepts C's call-waiting invite → merge C into A's ongoing room.
+ * Busy user A accepts C's call-waiting invite → park A↔B and talk to C.
+ * A can later merge the held leg with C.
  */
 export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
@@ -721,7 +737,6 @@ export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) 
   }
   if (!interrupt.targetCallId) throw ApiError.badRequest('Missing target call');
 
-  // Prefer same type as interrupt; fall back to any ongoing for this user.
   let target =
     (await modelFor(type).findById(interrupt.targetCallId)) ||
     (await AudioCall.findById(interrupt.targetCallId)) ||
@@ -735,16 +750,13 @@ export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) 
       interrupt.status = CallStatus.Failed;
       interrupt.endedAt = new Date();
       await interrupt.save();
-      throw ApiError.badRequest('Your current call ended — cannot merge');
+      throw ApiError.badRequest('Your current call ended — cannot answer');
     }
     target = fallback.call;
     targetType = fallback.type;
   }
 
   if (!isCallMember(target, uid)) throw ApiError.forbidden('Not on the ongoing call');
-  if (participantIdsOf(target).length >= MAX_CALL_PARTICIPANTS) {
-    throw ApiError.badRequest('Call is full');
-  }
 
   const joinerId = interrupt.caller.toString();
   if (isCallMember(target, joinerId)) {
@@ -754,67 +766,58 @@ export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) 
     throw ApiError.badRequest('Caller is already on this call');
   }
 
-  target.pendingInvites = (target.pendingInvites ?? []).filter((p) => p.toString() !== joinerId);
-  const parts = new Set(participantIdsOf(target));
-  parts.add(joinerId);
-  target.participants = [...parts] as unknown as typeof target.participants;
-  await target.save();
+  await parkOngoingCall(target, uid, { consultCallId: interrupt._id.toString() });
 
-  interrupt.status = CallStatus.Ended;
-  interrupt.endedAt = new Date();
+  interrupt.status = CallStatus.Ongoing;
+  interrupt.startedAt = new Date();
+  interrupt.isInterrupt = false;
   interrupt.pendingInvites = [];
+  interrupt.participants = [uid, joinerId] as unknown as typeof interrupt.participants;
+  interrupt.targetCallId = target._id;
   await interrupt.save();
 
   const livekitUrl = getLiveKitPublicUrl();
   const joinerToken = await createLiveKitToken({
     identity: joinerId,
-    roomName: target.roomName,
+    name: (await User.findById(joinerId).select('displayName'))?.displayName,
+    roomName: interrupt.roomName,
     canPublish: true,
   });
   const acceptorToken = await createLiveKitToken({
     identity: uid,
-    roomName: target.roomName,
+    name: (await User.findById(uid).select('displayName'))?.displayName,
+    roomName: interrupt.roomName,
     canPublish: true,
   });
-
-  const joiner = await User.findById(joinerId).select('displayName avatarUrl');
-  const joinPayload = {
-    callId: target._id.toString(),
-    type: targetType,
-    roomName: target.roomName,
-    livekitUrl,
-    maxDurationSec: target.maxDurationSec,
-    mergedFromInterrupt: interrupt._id.toString(),
-    participant: {
-      id: joinerId,
-      displayName: joiner?.displayName,
-      avatarUrl: joiner?.avatarUrl,
-    },
-  };
+  const allRoster = await rosterOf(interrupt);
 
   emitToUser(joinerId, SocketEvents.CallAccept, {
-    ...joinPayload,
+    callId: interrupt._id.toString(),
+    type,
+    roomName: interrupt.roomName,
+    livekitUrl,
+    maxDurationSec: interrupt.maxDurationSec,
     token: joinerToken,
-    interrupt: true,
-    call: target,
+    call: interrupt,
+    participants: allRoster.filter((p) => p.id !== joinerId),
+    heldCallId: target._id.toString(),
   });
-  for (const memberId of participantIdsOf(target)) {
-    if (memberId === joinerId) continue;
-    emitToUser(memberId, SocketEvents.CallParticipantJoined, joinPayload);
-  }
 
   return ok(
     res,
     {
-      call: target,
-      type: targetType,
+      call: interrupt,
+      type,
       token: acceptorToken,
-      roomName: target.roomName,
+      roomName: interrupt.roomName,
       livekitUrl,
-      maxDurationSec: target.maxDurationSec,
-      merged: true,
+      maxDurationSec: interrupt.maxDurationSec,
+      parked: true,
+      heldCallId: target._id.toString(),
+      heldType: targetType,
+      participants: allRoster.filter((p) => p.id !== uid),
     },
-    'Merged into call',
+    'Answered — previous call on hold',
   );
 });
 
@@ -1099,6 +1102,34 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const endedAt = new Date();
+  const uid = req.user!.id;
+  const membersNow = participantIdsOf(call);
+  const remaining = membersNow.filter((id) => id !== uid);
+
+  // Conference: one person leaving must not drop everyone else.
+  if (
+    call.status === CallStatus.Ongoing &&
+    !call.isInterrupt &&
+    remaining.length >= 2
+  ) {
+    call.participants = remaining as unknown as typeof call.participants;
+    call.pendingInvites = (call.pendingInvites ?? []).filter((p) => p.toString() !== uid);
+    await call.save();
+    try {
+      await removeParticipant(call.roomName, uid);
+    } catch {
+      /* already gone */
+    }
+    for (const memberId of remaining) {
+      emitToUser(memberId, SocketEvents.CallParticipantLeft, {
+        callId: call._id.toString(),
+        type,
+        userId: uid,
+      });
+    }
+    return ok(res, { call, left: true, ended: false }, 'Left call');
+  }
+
   let durationSec = call.startedAt
     ? Math.max(0, Math.floor((endedAt.getTime() - call.startedAt.getTime()) / 1000))
     : 0;

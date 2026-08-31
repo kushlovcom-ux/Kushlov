@@ -68,7 +68,7 @@ export function LiveListScreen() {
       >
         {list.isLoading ? (
           <Skeleton height={200} />
-        ) : list.isError ? (
+        ) : list.isError && items.length === 0 ? (
           <ErrorView message="Could not load live rooms" onRetry={() => list.refetch()} />
         ) : items.length === 0 ? (
           <EmptyState

@@ -160,7 +160,7 @@ export function WalletScreen() {
     );
   }
 
-  if (wallet.error) {
+  if (wallet.error && !wallet.data) {
     return (
       <Screen>
         <Header title="Wallet" showBack />

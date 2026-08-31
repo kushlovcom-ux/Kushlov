@@ -40,7 +40,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
       >
         {blocks.isLoading ? (
           <SkeletonRow />
-        ) : blocks.isError ? (
+        ) : blocks.isError && items.length === 0 ? (
           <ErrorView message={getErrorMessage(blocks.error)} onRetry={() => blocks.refetch()} />
         ) : items.length === 0 ? (
           <EmptyState title="No blocked users" />

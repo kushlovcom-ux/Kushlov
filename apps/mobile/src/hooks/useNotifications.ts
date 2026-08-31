@@ -11,7 +11,8 @@ export function useNotifications() {
     queryKey: queryKeys.notifications,
     queryFn: () => notificationsApi.list({ limit: 50 }),
     enabled: !!token,
-    refetchInterval: 30_000,
+    refetchInterval: 45_000,
+    refetchIntervalInBackground: false,
   });
 
   const markRead = useMutation({

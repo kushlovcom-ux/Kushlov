@@ -55,7 +55,7 @@ const EnvSchema = z.object({
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
-  RATE_LIMIT_MAX: z.coerce.number().default(300),
+  RATE_LIMIT_MAX: z.coerce.number().default(2000),
 
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().optional(),
@@ -110,7 +110,7 @@ export const env = parsed.success
       RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
       RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
       RATE_LIMIT_WINDOW_MS: 900_000,
-      RATE_LIMIT_MAX: 300,
+      RATE_LIMIT_MAX: 2000,
       ADMIN_EMAIL: process.env.ADMIN_EMAIL,
       ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
       FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,

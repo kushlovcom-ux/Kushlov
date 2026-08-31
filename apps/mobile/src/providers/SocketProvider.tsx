@@ -39,6 +39,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const session = normalizeCallSession(payload);
       const active = useCallStore.getState().active;
       const raw = (payload ?? {}) as { mergedFromHold?: string; merged?: boolean };
+      const roster = (session.participants ?? [])
+        .filter((p) => p.id)
+        .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
 
       if (
         raw.mergedFromHold &&
@@ -54,6 +57,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           roomName: session.roomName ?? active.session.roomName,
           status: CallStatus.Ongoing,
         });
+        if (roster.length) useCallStore.getState().setParticipants(roster);
         return;
       }
 
@@ -65,8 +69,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           livekitUrl: session.livekitUrl ?? active.session.livekitUrl,
         });
       } else {
-        // Peer answered the room we are already in — reusing the current token
-        // keeps LiveKit mounted instead of forcing a disconnect/rejoin.
         const sameRoom =
           Boolean(active?.session.token) &&
           (!session.token ||
@@ -79,6 +81,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           livekitUrl: session.livekitUrl ?? active?.session.livekitUrl,
         });
       }
+      if (roster.length) useCallStore.getState().setParticipants(roster);
     };
 
     const resumeHeld = async () => {
@@ -93,7 +96,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    const onRejectOrEnd = (payload?: { callId?: string; interrupt?: boolean }) => {
+    const idsMatch = (a?: string, b?: string) => Boolean(a) && Boolean(b) && String(a) === String(b);
+
+    const hangUpActive = (resumeIfHeld: boolean) => {
+      const heldNow = useCallStore.getState().heldCall;
+      if (resumeIfHeld && heldNow) {
+        useCallStore.setState({ active: null, incoming: null, parked: false });
+        void resumeHeld();
+        return;
+      }
+      clearCall();
+    };
+
+    const onRejectOrEnd = (payload?: { callId?: string; interrupt?: boolean; userId?: string }) => {
       const id = payload?.callId ? String(payload.callId) : undefined;
       const active = useCallStore.getState().active;
       const incoming = useCallStore.getState().incoming;
@@ -101,44 +116,51 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const activeId = active?.session?.id ? String(active.session.id) : '';
       const incomingId = incoming?.id ? String(incoming.id) : '';
       const heldId = held?.callId ? String(held.callId) : '';
+      const ringing =
+        active?.session.status === CallStatus.Ringing ||
+        String(active?.session.status ?? '') === 'ringing';
 
-      if (id && heldId && id === heldId) {
+      if (idsMatch(id, heldId)) {
         useCallStore.getState().setHeldCall(null);
         return;
       }
 
-      // Ending/rejecting a call-waiting interrupt must not wipe A↔B.
-      if (id && activeId && id !== activeId) {
-        if (incomingId && id === incomingId) setIncoming(null);
+      // Incoming invite / call-waiting for US was declined — keep the current call.
+      if (idsMatch(id, incomingId) && !idsMatch(id, activeId)) {
+        setIncoming(null);
         return;
       }
-      if (payload?.interrupt && active) {
-        if (!id || id === incomingId) setIncoming(null);
-        return;
-      }
-
-      if (incoming && (!id || id === incomingId) && !active) {
+      if (payload?.interrupt && incoming && (!id || idsMatch(id, incomingId)) && !idsMatch(id, activeId)) {
         setIncoming(null);
         return;
       }
 
-      // Active consult ended while a held line exists → resume held.
-      if (held && active && (!id || id === activeId)) {
-        useCallStore.setState({ active: null, incoming: null, parked: false });
-        void resumeHeld();
+      // We are the caller still ringing (1:1 or consult / call-waiting we placed).
+      // Peer reject must drop this overlay — do not leave A sitting in LiveKit.
+      if (active && ringing && (!id || !activeId || idsMatch(id, activeId))) {
+        hangUpActive(true);
         return;
       }
 
-      // Consult already cleared locally; CallEnd arrived mid-resume.
-      if (!active && held && id && id !== heldId) {
-        void resumeHeld();
+      if (!active) {
+        if (incoming && (!id || idsMatch(id, incomingId))) setIncoming(null);
         return;
       }
 
-      // Hang up for everyone on this call (or clear if payload has no id).
-      if (!active || !id || id === activeId) {
-        clearCall();
-      } else if (id === incomingId) {
+      // Secondary invitee declined an ongoing conference — do not hang up A↔B.
+      if (payload?.userId && active.session.status === CallStatus.Ongoing && idsMatch(id, activeId)) {
+        return;
+      }
+
+      // Consult we placed ended while a held line exists → resume held.
+      if (held && (!id || idsMatch(id, activeId))) {
+        hangUpActive(true);
+        return;
+      }
+
+      if (!id || idsMatch(id, activeId)) {
+        hangUpActive(false);
+      } else if (idsMatch(id, incomingId)) {
         setIncoming(null);
       }
     };

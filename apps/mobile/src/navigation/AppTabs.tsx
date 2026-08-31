@@ -21,9 +21,7 @@ export function AppTabs() {
   return (
     <Tab.Navigator
       tabBar={(props) => <PremiumTabBar {...props} />}
-      lazy={false}
-      detachInactiveScreens={false}
-      screenOptions={{ headerShown: false, tabBarHideOnKeyboard: true, freezeOnBlur: false }}
+      screenOptions={{ headerShown: false, tabBarHideOnKeyboard: true, freezeOnBlur: true, lazy: true }}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home' }} />
       <Tab.Screen name="Discover" component={DiscoverScreen} options={{ title: 'Discover' }} />

@@ -202,6 +202,49 @@ function dedupeCameraTracks(tracks: unknown[]) {
   return [...byIdentity.values()];
 }
 
+function AudioRoster({
+  lk,
+}: {
+  lk: {
+    useRoomContext: () => Room;
+  };
+}) {
+  const room = lk.useRoomContext();
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const onChange = () => bump((n) => n + 1);
+    room.on('participantConnected', onChange);
+    room.on('participantDisconnected', onChange);
+    room.on('participantMetadataChanged', onChange);
+    return () => {
+      room.off('participantConnected', onChange);
+      room.off('participantDisconnected', onChange);
+      room.off('participantMetadataChanged', onChange);
+    };
+  }, [room]);
+
+  const remotes = [...room.remoteParticipants.values()].filter(
+    (p) => !isPreviewIdentity(p.identity),
+  );
+
+  return (
+    <View style={[styles.fallback, { backgroundColor: '#050506', gap: 12 }]}>
+      <Text variant="caption" muted>
+        Audio call
+      </Text>
+      {remotes.length === 0 ? (
+        <Text muted>Connecting…</Text>
+      ) : (
+        remotes.map((p) => (
+          <Text key={p.identity} variant="h3" color="#fff">
+            {p.name || p.identity}
+          </Text>
+        ))
+      )}
+    </View>
+  );
+}
+
 function makeVideoGrid(
   lk: {
     useTracks: (sources: unknown[], opts?: unknown) => unknown[];
@@ -240,11 +283,7 @@ function makeVideoGrid(
     );
 
     if (audioOnly) {
-      return (
-        <View style={[styles.fallback, { backgroundColor: '#050506' }]}>
-          <Text muted>Audio connected</Text>
-        </View>
-      );
+      return <AudioRoster lk={lk} />;
     }
 
     if (tracks.length === 0) {

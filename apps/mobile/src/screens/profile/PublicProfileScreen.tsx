@@ -154,7 +154,7 @@ export function PublicProfileScreen({ navigation, route }: Props) {
     );
   }
 
-  if (userQ.isError || !userQ.data) {
+  if (!userQ.data) {
     return (
       <Screen>
         <Header title="Profile" showBack />

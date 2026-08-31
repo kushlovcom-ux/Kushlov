@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatApi } from '@/api/chat';
 import { queryKeys } from '@/constants/queryKeys';
+import { getSocket } from '@/services/socket';
 
 export function useMessages(conversationId: string) {
   const qc = useQueryClient();
@@ -12,8 +13,11 @@ export function useMessages(conversationId: string) {
     initialPageParam: 1,
     getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
     enabled: !!conversationId,
-    // Fallback when Socket.io is unavailable (e.g. Vercel API host).
-    refetchInterval: conversationId ? 3_000 : false,
+    // Fallback when Socket.io is unavailable. Live updates come from MessageNew.
+    refetchInterval: () => {
+      if (!conversationId) return false;
+      return getSocket()?.connected ? 45_000 : 12_000;
+    },
     refetchIntervalInBackground: false,
   });
 
