@@ -409,9 +409,12 @@ function makeVideoGrid(
     // Conference: every remote gets a tile. Rendering only remote[0] is why a
     // third person was audible but never visible.
     const conference = remote.length > 1;
-    // Keep local PiP at zOrder 0 so FaceFilterOverlay (RN views) can sit on top.
-    // zOrder ≥ 1 is Android "media overlay" and hides all React overlays on self-view.
-    const localZ = 0;
+    // Android renders each video as a SurfaceView, which composites outside the
+    // React view tree: `zIndex`/`elevation` on the wrapper do nothing, and two
+    // surfaces sharing a zOrder occlude each other arbitrarily. The self-view
+    // must therefore sit above every remote surface, or the full-screen remote
+    // simply covers the PiP and you never see your own camera.
+    const localZ = remote.length;
 
     const localTile =
       localRef && remote.length > 0 ? (
@@ -426,6 +429,8 @@ function makeVideoGrid(
           pip
         />
       ) : localRef ? (
+        // No remote surface to compete with, so keep zOrder 0 and let the
+        // face-filter overlay paint over the preview.
         <ParticipantVideoTile
           lk={lk}
           trackRef={localRef}
@@ -433,7 +438,7 @@ function makeVideoGrid(
           elevated={c.elevated}
           multi={false}
           videoFit="cover"
-          zOrder={localZ}
+          zOrder={0}
         />
       ) : null;
 
@@ -459,7 +464,7 @@ function makeVideoGrid(
                     elevated={c.elevated}
                     multi={conference}
                     videoFit={conference ? 'cover' : videoFit}
-                    zOrder={0}
+                    zOrder={index}
                     zoomable={!conference}
                     conferenceSlot={conference}
                   />
@@ -831,6 +836,9 @@ function ParticipantVideoTile({
   const { gesture, zoomStyle, onLayout, fitOverride } = useVideoZoom(zoomable);
   const fit = fitOverride ?? videoFit;
   const hasMedia = Boolean(publication?.track) && !publication?.isMuted;
+  // "Connecting video…" was shown for a camera that is simply switched off,
+  // which reads as a broken call rather than a deliberate choice.
+  const placeholderLabel = publication?.isMuted ? 'Camera off' : 'Connecting video…';
   // Always try to paint local filters; empty string / none means off.
   const showFilter = Boolean(filterId && filterId !== 'none');
   // Mirror selfie (front) only — rear camera should not be mirrored.
@@ -872,7 +880,7 @@ function ParticipantVideoTile({
           <View style={[styles.tilePlaceholder, { backgroundColor: '#141418' }]}>
             <Text muted>{name}</Text>
             <Text muted variant="caption">
-              Connecting video…
+              {placeholderLabel}
             </Text>
           </View>
         )}

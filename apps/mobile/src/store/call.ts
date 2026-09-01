@@ -78,7 +78,7 @@ export const useCallStore = create<CallState>((set, get) => ({
             displayName:
               sessionPeer.displayName && !looksLikeId(sessionPeer.displayName)
                 ? sessionPeer.displayName
-                : peer?.displayName || 'Peer',
+                : 'Peer',
           } as PublicUser)
         : undefined);
     const participants = fromSession.length
@@ -136,14 +136,14 @@ export const useCallStore = create<CallState>((set, get) => ({
         ...active,
         participants: cleaned,
         peer: first
-          ? {
+          ? ({
               ...(active.peer ?? { id: first.id }),
               id: first.id,
               displayName:
                 (first.name !== 'Peer' ? first.name : undefined) ||
                 keepPeerName ||
                 'Peer',
-            }
+            } as PublicUser)
           : active.peer,
       },
     });

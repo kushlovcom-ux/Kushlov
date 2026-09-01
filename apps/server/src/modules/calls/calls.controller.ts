@@ -68,6 +68,36 @@ function isCallMember(call: ICall, userId: string): boolean {
   return participantIdsOf(call).includes(userId);
 }
 
+/** Structured signalling trace. Ids only — never tokens or credentials. */
+function logCall(event: string, fields: Record<string, unknown>): void {
+  const parts = Object.entries(fields)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : String(v)}`);
+  console.info(`[CALL] event=${event} ${parts.join(' ')}`);
+}
+
+async function findCallById(id: string): Promise<ICall | null> {
+  if (!id) return null;
+  return (await AudioCall.findById(id)) || (await VideoCall.findById(id));
+}
+
+/**
+ * Follow `mergedInto` to the call that actually owns the LiveKit room.
+ * A merged-away leg keeps its id so clients can still ask about it, but every
+ * token/room answer must come from the canonical conference.
+ */
+async function resolveConference(call: ICall): Promise<ICall> {
+  let current = call;
+  for (let hop = 0; hop < 4; hop += 1) {
+    const nextId = current.mergedInto?.toString();
+    if (!nextId) return current;
+    const next = await findCallById(nextId);
+    if (!next || next._id.toString() === current._id.toString()) return current;
+    current = next;
+  }
+  return current;
+}
+
 /** Mute everyone on an Ongoing call and tell remotes they are on hold. */
 async function parkOngoingCall(
   call: ICall,
@@ -86,6 +116,13 @@ async function parkOngoingCall(
     held: true,
     ...extra,
   };
+  logCall('park', {
+    callId: call._id.toString(),
+    room: call.roomName,
+    heldBy,
+    members: participantIdsOf(call),
+    ...extra,
+  });
   for (const memberId of participantIdsOf(call)) {
     if (memberId === heldBy) continue;
     try {
@@ -110,10 +147,13 @@ async function mergeHeldIntoActive(
   heldCallId: string,
   opts?: { skipNotifyUserId?: string },
 ): Promise<{ heldId: string; members: MergeRosterMember[] } | null> {
-  const held =
-    (await AudioCall.findById(heldCallId)) || (await VideoCall.findById(heldCallId));
-  if (!held || held.status !== CallStatus.Ongoing) return null;
+  const held = await findCallById(heldCallId);
+  if (!held) return null;
   if (!isCallMember(held, uid)) return null;
+  // Re-running a merge must be safe: a retried request (or a second click)
+  // should re-deliver the join payloads, not fail with "not ongoing".
+  const alreadyMerged = held.mergedInto?.toString() === active._id.toString();
+  if (held.status !== CallStatus.Ongoing && !alreadyMerged) return null;
 
   const heldMembers = participantIdsOf(held).filter((id) => id !== uid);
   const activeMembers = participantIdsOf(active);
@@ -127,9 +167,23 @@ async function mergeHeldIntoActive(
   await active.save();
 
   held.status = CallStatus.Ended;
-  held.endedAt = new Date();
+  held.endedAt = held.endedAt ?? new Date();
   held.pendingInvites = [];
+  // Point the dead leg at the conference before anyone can ask about it, so a
+  // client that only knows the held id still resolves to the room with media.
+  held.mergedInto = active._id as unknown as typeof held.mergedInto;
+  held.mergedIntoType = active.type as CallType;
   await held.save();
+
+  logCall('merge', {
+    by: uid,
+    conferenceId: active._id.toString(),
+    heldId: held._id.toString(),
+    room: active.roomName,
+    joining: heldMembers,
+    participants: participantIdsOf(active),
+    replay: alreadyMerged,
+  });
 
   const livekitUrl = getLiveKitPublicUrl();
   const activeType = active.type as CallType;
@@ -581,12 +635,21 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
 /** GET /calls/:type/:id — poll call status (HTTP fallback when sockets are off). */
 export const getCall = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
-  const call = await modelFor(type).findById(req.params.id);
-  if (!call) throw ApiError.notFound('Call not found');
   const uid = req.user!.id;
-  if (!isCallMember(call, uid) && !isPendingInvitee(call, uid)) {
+  // Fall back to an id lookup across both collections: after a merge the held
+  // leg and the conference can be different types, and the client only knows
+  // the type it started with.
+  const requested =
+    (await modelFor(type).findById(req.params.id)) || (await findCallById(req.params.id));
+  if (!requested) throw ApiError.notFound('Call not found');
+  if (!isCallMember(requested, uid) && !isPendingInvitee(requested, uid)) {
     throw ApiError.forbidden('Not your call');
   }
+
+  // A merged-away leg answers on behalf of the conference that owns the room.
+  const conference = await resolveConference(requested);
+  const redirected = conference._id.toString() !== requested._id.toString();
+  const call = redirected && isCallMember(conference, uid) ? conference : requested;
 
   let token: string | undefined;
   let livekitUrl: string | undefined;
@@ -613,6 +676,10 @@ export const getCall = asyncHandler(async (req: Request, res: Response) => {
     livekitUrl,
     maxDurationSec: call.maxDurationSec,
     participants,
+    mergedFromHold: call.status === CallStatus.Ongoing && call !== requested
+      ? requested._id.toString()
+      : undefined,
+    merged: call !== requested ? true : undefined,
   });
 });
 
@@ -803,10 +870,9 @@ export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) 
   }
   if (!interrupt.targetCallId) throw ApiError.badRequest('Missing target call');
 
-  let target =
+  let target: ICall | null =
     (await modelFor(type).findById(interrupt.targetCallId)) ||
-    (await AudioCall.findById(interrupt.targetCallId)) ||
-    (await VideoCall.findById(interrupt.targetCallId));
+    (await findCallById(interrupt.targetCallId.toString()));
   let targetType = type;
   if (target && target.type) targetType = target.type as CallType;
 
@@ -924,10 +990,53 @@ export const holdCall = asyncHandler(async (req: Request, res: Response) => {
 /** POST /calls/:type/:id/unhold — resume a parked call. */
 export const unholdCall = asyncHandler(async (req: Request, res: Response) => {
   const type = req.params.type as CallType;
-  const call = await modelFor(type).findById(req.params.id);
-  if (!call) throw ApiError.notFound('Call not found');
+  const uid = req.user!.id;
+  const requested =
+    (await modelFor(type).findById(req.params.id)) || (await findCallById(req.params.id));
+  if (!requested) throw ApiError.notFound('Call not found');
+  if (!isCallMember(requested, uid)) throw ApiError.forbidden('Not your call');
+
+  // Resuming a leg that was merged away must land in the conference. Failing
+  // here is what stranded the resumed peer alone on "Waiting for peer".
+  const conference = await resolveConference(requested);
+  if (
+    conference._id.toString() !== requested._id.toString() &&
+    conference.status === CallStatus.Ongoing &&
+    isCallMember(conference, uid)
+  ) {
+    try {
+      await setParticipantMuted(conference.roomName, uid, false);
+    } catch {
+      /* not in the room yet */
+    }
+    logCall('unhold-redirect', {
+      by: uid,
+      requestedId: requested._id.toString(),
+      conferenceId: conference._id.toString(),
+      room: conference.roomName,
+    });
+    return ok(
+      res,
+      {
+        call: conference,
+        callId: conference._id.toString(),
+        type: conference.type,
+        status: CallStatus.Ongoing,
+        held: false,
+        merged: true,
+        mergedFromHold: requested._id.toString(),
+        token: await liveKitTokenFor(uid, conference.roomName),
+        roomName: conference.roomName,
+        livekitUrl: getLiveKitPublicUrl(),
+        maxDurationSec: conference.maxDurationSec,
+        participants: await rosterOf(conference, uid),
+      },
+      'Joined merged call',
+    );
+  }
+
+  const call = requested;
   if (call.status !== CallStatus.Ongoing) throw ApiError.badRequest('Call is not ongoing');
-  if (!isCallMember(call, req.user!.id)) throw ApiError.forbidden('Not your call');
 
   const livekitUrl = getLiveKitPublicUrl();
   const token = await liveKitTokenFor(req.user!.id, call.roomName);
@@ -982,8 +1091,12 @@ export const mergeCalls = asyncHandler(async (req: Request, res: Response) => {
   const { heldCallId } = req.body as { heldCallId: string };
   const uid = req.user!.id;
 
-  const active = await modelFor(type).findById(req.params.id);
-  if (!active) throw ApiError.notFound('Active call not found');
+  const requested =
+    (await modelFor(type).findById(req.params.id)) || (await findCallById(req.params.id));
+  if (!requested) throw ApiError.notFound('Active call not found');
+  if (!isCallMember(requested, uid)) throw ApiError.forbidden('Not on the active call');
+  // Merging twice (retry, double tap) must converge on the same conference.
+  const active = await resolveConference(requested);
   if (active.status !== CallStatus.Ongoing) throw ApiError.badRequest('Active call is not ongoing');
   if (!isCallMember(active, uid)) throw ApiError.forbidden('Not on the active call');
 
@@ -999,12 +1112,15 @@ export const mergeCalls = asyncHandler(async (req: Request, res: Response) => {
     res,
     {
       call: active,
+      callId: active._id.toString(),
       type: activeType,
+      status: CallStatus.Ongoing,
       token: selfToken,
       roomName: active.roomName,
       livekitUrl,
       maxDurationSec: active.maxDurationSec,
       merged: true,
+      mergedFromHold: merged.heldId,
       participants,
     },
     'Calls merged',

@@ -15,6 +15,13 @@ export interface ICall extends Document {
   isInterrupt?: boolean;
   /** Ongoing call this interrupt should merge into when accepted. */
   targetCallId?: Types.ObjectId;
+  /**
+   * Canonical conference this call was folded into by a merge. Set on the leg
+   * that ends so clients holding the stale id can be redirected to the room
+   * that actually has the media instead of sitting alone in a dead room.
+   */
+  mergedInto?: Types.ObjectId;
+  mergedIntoType?: CallType;
   startedAt?: Date;
   endedAt?: Date;
   durationSec: number;
@@ -53,6 +60,8 @@ function callSchema(type: CallType) {
       },
       isInterrupt: { type: Boolean, default: false, index: true },
       targetCallId: { type: Schema.Types.ObjectId, index: true },
+      mergedInto: { type: Schema.Types.ObjectId, index: true },
+      mergedIntoType: { type: String, enum: Object.values(CallType) },
       startedAt: Date,
       endedAt: Date,
       durationSec: { type: Number, default: 0 },

@@ -17,10 +17,10 @@ import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublishe
 import { callsApi } from '@/api/calls';
 import { getErrorMessage } from '@/api/client';
 import { useThemeColors } from '@/hooks/useThemeColors';
+import { useCallRoomReconciler } from '@/hooks/useCallRoomReconciler';
 import {
   flipCameraFacing,
   getPreferredCameraFacing,
-  getLiveKitRn,
   isLiveKitNativeReady,
   preloadLiveKitNative,
 } from '@/services/livekit';
@@ -123,149 +123,10 @@ export function CallOverlay() {
     }
   }, [clear, room, startCall]);
 
-  // While parked (peer put us on hold / started a consult), poll so a missed
-  // merge socket still pulls us into the conference room instead of leaving us
-  // alone on "Waiting for peer…".
-  useEffect(() => {
-    if (!parked || !active?.session.id || !active.session.type) return;
-    let cancelled = false;
-
-    const joinConference = (session: Awaited<ReturnType<typeof callsApi.get>>) => {
-      if (cancelled) return;
-      if (!session.token || !session.livekitUrl) return;
-      const heldId = active.session.id;
-      if (session.id && String(session.id) === String(heldId)) return;
-      if (
-        session.roomName &&
-        active.session.roomName &&
-        session.roomName === active.session.roomName &&
-        session.token === active.session.token
-      ) {
-        return;
-      }
-      const roster = (session.participants ?? [])
-        .filter((p) => p.id)
-        .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
-      useCallStore.getState().updateSession({
-        id: session.id || active.session.id,
-        type: session.type || active.session.type,
-        token: session.token,
-        livekitUrl: session.livekitUrl,
-        roomName: session.roomName || active.session.roomName,
-        status: CallStatus.Ongoing,
-      });
-      if (roster.length) useCallStore.getState().setParticipants(roster);
-      useCallStore.getState().markConnected();
-      useCallStore.getState().setParkedConsult(null);
-      useCallStore.getState().setParked(false);
-    };
-
-    const tick = async () => {
-      const state = useCallStore.getState();
-      if (!state.parked || !state.active) return;
-      const heldType = state.active.session.type;
-      const heldId = state.active.session.id;
-      const consult = state.parkedConsult;
-
-      let heldEnded = false;
-      try {
-        const held = await callsApi.get(heldType, heldId);
-        if (cancelled) return;
-        const status = String(held.status ?? '');
-        heldEnded =
-          status === CallStatus.Ended ||
-          status === CallStatus.Rejected ||
-          status === CallStatus.Missed ||
-          status === CallStatus.Failed ||
-          status === 'ended';
-      } catch {
-        // Forbidden after merge can mean the held leg is gone — try conference.
-        heldEnded = true;
-      }
-
-      if (!heldEnded && !consult) return;
-
-      if (consult?.callId) {
-        try {
-          const conf = await callsApi.get(consult.type, consult.callId);
-          if (cancelled) return;
-          if (String(conf.status ?? '') === CallStatus.Ongoing || String(conf.status) === 'ongoing') {
-            joinConference(conf);
-            return;
-          }
-        } catch {
-          /* try active list */
-        }
-      }
-
-      if (!heldEnded) return;
-
-      try {
-        const { items } = await callsApi.active();
-        if (cancelled) return;
-        const conf = items.find(
-          (i) =>
-            i.id &&
-            String(i.id) !== String(heldId) &&
-            Boolean(i.token) &&
-            (String(i.status) === CallStatus.Ongoing || String(i.status) === 'ongoing'),
-        );
-        if (conf) joinConference(conf);
-      } catch {
-        /* still waiting */
-      }
-    };
-
-    const timer = setInterval(() => void tick(), 1500);
-    void tick();
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [parked, active?.session.id, active?.session.type, active?.session.roomName, active?.session.token]);
-
-  // If we somehow unparked without consuming parkedConsult (stale empty room),
-  // keep polling the conference until we get a real token switch.
-  useEffect(() => {
-    if (parked) return;
-    const consult = useCallStore.getState().parkedConsult;
-    if (!consult?.callId || !active?.session.id) return;
-    let cancelled = false;
-    const tick = async () => {
-      const state = useCallStore.getState();
-      if (!state.parkedConsult || !state.active) return;
-      try {
-        const conf = await callsApi.get(consult.type, consult.callId);
-        if (cancelled || !conf.token) return;
-        if (String(conf.status) !== CallStatus.Ongoing && String(conf.status) !== 'ongoing') {
-          return;
-        }
-        if (conf.token === state.active.session.token) return;
-        const roster = (conf.participants ?? [])
-          .filter((p) => p.id)
-          .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
-        useCallStore.getState().updateSession({
-          id: conf.id || state.active.session.id,
-          type: conf.type || state.active.session.type,
-          token: conf.token,
-          livekitUrl: conf.livekitUrl || state.active.session.livekitUrl,
-          roomName: conf.roomName || state.active.session.roomName,
-          status: CallStatus.Ongoing,
-        });
-        if (roster.length) useCallStore.getState().setParticipants(roster);
-        useCallStore.getState().markConnected();
-        useCallStore.getState().setParkedConsult(null);
-      } catch {
-        /* ignore */
-      }
-    };
-    const timer = setInterval(() => void tick(), 1500);
-    void tick();
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [parked, active?.session.id, active?.session.token]);
+  // Hold / merge / call-waiting hand us a different room. This follows the
+  // server's canonical conference whenever we end up alone or parked, so a
+  // dropped socket cannot strand us in the room the merge already emptied.
+  useCallRoomReconciler(room);
 
   // HTTP fallback while ringing — sockets often miss `call:accept` / `call:reject`.
   useEffect(() => {

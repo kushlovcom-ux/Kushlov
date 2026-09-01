@@ -68,15 +68,20 @@ function asPublicUser(value: unknown): PublicUser | undefined {
 function rosterOf(data: RawCallPayload): { id: string; displayName?: string; name?: string }[] | undefined {
   const raw = (data as { participants?: unknown }).participants;
   if (!Array.isArray(raw)) return undefined;
-  const items = raw
-    .map((p) => {
-      if (!p || typeof p !== 'object') return null;
-      const row = p as { id?: string; displayName?: string; name?: string };
-      const id = idOf(row);
-      if (!id) return null;
-      return { id, displayName: row.displayName ?? row.name, name: row.name ?? row.displayName };
-    })
-    .filter((p): p is { id: string; displayName?: string; name?: string } => Boolean(p));
+  const items: { id: string; displayName?: string; name?: string }[] = [];
+  for (const p of raw) {
+    if (!p || typeof p !== 'object') continue;
+    const row = p as { id?: string; displayName?: string; name?: string };
+    const id = idOf(row);
+    if (!id) continue;
+    const label = row.displayName ?? row.name;
+    const entry: { id: string; displayName?: string; name?: string } = { id };
+    if (label !== undefined) {
+      entry.displayName = label;
+      entry.name = row.name ?? label;
+    }
+    items.push(entry);
+  }
   return items;
 }
 

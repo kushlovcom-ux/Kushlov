@@ -389,6 +389,66 @@ export function CallOverlay() {
     toast.message(`Ended held call with ${held.peerName}`);
   }, [heldCall]);
 
+  /**
+   * Follow the server's canonical conference. Hold / merge / call-waiting move
+   * a peer to a different LiveKit room, and the socket carrying that hand-off
+   * can be missed — which left the peer alone in the room the merge emptied.
+   * Only an actual room change is adopted, so a fresh token per poll never
+   * remounts the stage and cuts the audio.
+   */
+  useEffect(() => {
+    if (!active?.callId) return;
+    let cancelled = false;
+
+    const tick = async () => {
+      const current = activeRef.current;
+      if (!current) return;
+      try {
+        const data = await unwrap<{
+          call?: { _id?: string; status?: string };
+          status?: string;
+          token?: string;
+          roomName?: string;
+          livekitUrl?: string;
+          maxDurationSec?: number;
+          participants?: { id?: string; displayName?: string }[];
+        }>(api.get(`/calls/${current.type}/${current.callId}`));
+        if (cancelled) return;
+        const status = String(data.status ?? data.call?.status ?? '').toLowerCase();
+        if (status !== 'ongoing') return;
+        if (!data.token || !data.roomName || data.roomName === current.roomName) return;
+
+        const participants = rosterFromPayload(data.participants);
+        sessionSwapRef.current = Date.now();
+        setActive({
+          ...current,
+          callId: data.call?._id ?? current.callId,
+          roomName: data.roomName,
+          token: data.token,
+          livekitUrl: data.livekitUrl ?? current.livekitUrl,
+          maxDurationSec: data.maxDurationSec ?? current.maxDurationSec,
+          peerName: participants.map((p) => p.name).join(' + ') || current.peerName,
+          peerId: participants[0]?.id ?? current.peerId,
+          participants: participants.length ? participants : current.participants,
+        });
+        setParked(false);
+        const held = heldCallRef.current;
+        if (held && held.callId === current.callId) {
+          heldCallRef.current = null;
+          setHeldCall(null);
+        }
+      } catch {
+        /* transient — the next tick retries */
+      }
+    };
+
+    const timer = setInterval(() => void tick(), 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [active?.callId]);
+
   const mergeHeld = useCallback(async (opts?: { silent?: boolean }) => {
     const current = activeRef.current;
     const held = heldCallRef.current;
