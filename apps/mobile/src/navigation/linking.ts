@@ -1,9 +1,27 @@
 import * as Linking from 'expo-linking';
+import { getStateFromPath as defaultGetStateFromPath } from '@react-navigation/native';
 import type { LinkingOptions } from '@react-navigation/native';
 import type { RootStackParamList } from './types';
 import { env } from '@/config/env';
+import { setPendingCallLink } from '@/services/pendingCallLink';
 
 const prefix = Linking.createURL('/');
+
+function rewritePath(path: string): string {
+  const stripped = path.replace(/^\//, '');
+  if (stripped.startsWith('likes')) return 'matches';
+  if (stripped.startsWith('profile/')) return stripped.replace(/^profile/, 'u');
+  if (stripped.startsWith('call/')) {
+    const [idPart, query] = stripped.slice('call/'.length).split('?');
+    const params = new URLSearchParams(query ?? '');
+    setPendingCallLink({
+      callId: idPart,
+      callType: params.get('type') ?? 'audio',
+    });
+    return 'home';
+  }
+  return stripped;
+}
 
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [
@@ -15,6 +33,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
     'https://www.genzone.cloud',
     'https://genzone.cloud',
   ],
+  getStateFromPath: (path, options) => defaultGetStateFromPath(rewritePath(path), options),
   config: {
     screens: {
       Auth: {
@@ -37,7 +56,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
               Messages: 'messages',
               Live: 'live',
               Wallet: 'wallet',
-              Profile: 'profile',
+              Profile: 'profile-tab',
             },
           },
           PublicProfile: 'u/:userId',
@@ -49,6 +68,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
           Settings: 'settings',
           BecomeHost: 'become-host',
           Contact: 'contact',
+          CallHistory: 'calls',
         },
       },
     },

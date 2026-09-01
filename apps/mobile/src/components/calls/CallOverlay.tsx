@@ -49,6 +49,8 @@ export function CallOverlay() {
   const setSpeakerOn = useCallStore((s) => s.setSpeakerOn);
   const markConnected = useCallStore((s) => s.markConnected);
   const [elapsed, setElapsed] = useState(0);
+  const [peopleMenuOpen, setPeopleMenuOpen] = useState(false);
+  const [addPeopleMode, setAddPeopleMode] = useState<'invite' | 'consult' | null>(null);
   const [nativeOk, setNativeOk] = useState<boolean | null>(() =>
     isLiveKitNativeReady() ? true : null,
   );
@@ -120,6 +122,150 @@ export function CallOverlay() {
       endingRef.current = false;
     }
   }, [clear, room, startCall]);
+
+  // While parked (peer put us on hold / started a consult), poll so a missed
+  // merge socket still pulls us into the conference room instead of leaving us
+  // alone on "Waiting for peer…".
+  useEffect(() => {
+    if (!parked || !active?.session.id || !active.session.type) return;
+    let cancelled = false;
+
+    const joinConference = (session: Awaited<ReturnType<typeof callsApi.get>>) => {
+      if (cancelled) return;
+      if (!session.token || !session.livekitUrl) return;
+      const heldId = active.session.id;
+      if (session.id && String(session.id) === String(heldId)) return;
+      if (
+        session.roomName &&
+        active.session.roomName &&
+        session.roomName === active.session.roomName &&
+        session.token === active.session.token
+      ) {
+        return;
+      }
+      const roster = (session.participants ?? [])
+        .filter((p) => p.id)
+        .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
+      useCallStore.getState().updateSession({
+        id: session.id || active.session.id,
+        type: session.type || active.session.type,
+        token: session.token,
+        livekitUrl: session.livekitUrl,
+        roomName: session.roomName || active.session.roomName,
+        status: CallStatus.Ongoing,
+      });
+      if (roster.length) useCallStore.getState().setParticipants(roster);
+      useCallStore.getState().markConnected();
+      useCallStore.getState().setParkedConsult(null);
+      useCallStore.getState().setParked(false);
+    };
+
+    const tick = async () => {
+      const state = useCallStore.getState();
+      if (!state.parked || !state.active) return;
+      const heldType = state.active.session.type;
+      const heldId = state.active.session.id;
+      const consult = state.parkedConsult;
+
+      let heldEnded = false;
+      try {
+        const held = await callsApi.get(heldType, heldId);
+        if (cancelled) return;
+        const status = String(held.status ?? '');
+        heldEnded =
+          status === CallStatus.Ended ||
+          status === CallStatus.Rejected ||
+          status === CallStatus.Missed ||
+          status === CallStatus.Failed ||
+          status === 'ended';
+      } catch {
+        // Forbidden after merge can mean the held leg is gone — try conference.
+        heldEnded = true;
+      }
+
+      if (!heldEnded && !consult) return;
+
+      if (consult?.callId) {
+        try {
+          const conf = await callsApi.get(consult.type, consult.callId);
+          if (cancelled) return;
+          if (String(conf.status ?? '') === CallStatus.Ongoing || String(conf.status) === 'ongoing') {
+            joinConference(conf);
+            return;
+          }
+        } catch {
+          /* try active list */
+        }
+      }
+
+      if (!heldEnded) return;
+
+      try {
+        const { items } = await callsApi.active();
+        if (cancelled) return;
+        const conf = items.find(
+          (i) =>
+            i.id &&
+            String(i.id) !== String(heldId) &&
+            Boolean(i.token) &&
+            (String(i.status) === CallStatus.Ongoing || String(i.status) === 'ongoing'),
+        );
+        if (conf) joinConference(conf);
+      } catch {
+        /* still waiting */
+      }
+    };
+
+    const timer = setInterval(() => void tick(), 1500);
+    void tick();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [parked, active?.session.id, active?.session.type, active?.session.roomName, active?.session.token]);
+
+  // If we somehow unparked without consuming parkedConsult (stale empty room),
+  // keep polling the conference until we get a real token switch.
+  useEffect(() => {
+    if (parked) return;
+    const consult = useCallStore.getState().parkedConsult;
+    if (!consult?.callId || !active?.session.id) return;
+    let cancelled = false;
+    const tick = async () => {
+      const state = useCallStore.getState();
+      if (!state.parkedConsult || !state.active) return;
+      try {
+        const conf = await callsApi.get(consult.type, consult.callId);
+        if (cancelled || !conf.token) return;
+        if (String(conf.status) !== CallStatus.Ongoing && String(conf.status) !== 'ongoing') {
+          return;
+        }
+        if (conf.token === state.active.session.token) return;
+        const roster = (conf.participants ?? [])
+          .filter((p) => p.id)
+          .map((p) => ({ id: p.id, name: p.displayName || p.name || 'Peer' }));
+        useCallStore.getState().updateSession({
+          id: conf.id || state.active.session.id,
+          type: conf.type || state.active.session.type,
+          token: conf.token,
+          livekitUrl: conf.livekitUrl || state.active.session.livekitUrl,
+          roomName: conf.roomName || state.active.session.roomName,
+          status: CallStatus.Ongoing,
+        });
+        if (roster.length) useCallStore.getState().setParticipants(roster);
+        useCallStore.getState().markConnected();
+        useCallStore.getState().setParkedConsult(null);
+      } catch {
+        /* ignore */
+      }
+    };
+    const timer = setInterval(() => void tick(), 1500);
+    void tick();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [parked, active?.session.id, active?.session.token]);
 
   // HTTP fallback while ringing — sockets often miss `call:accept` / `call:reject`.
   useEffect(() => {
@@ -533,6 +679,7 @@ export function CallOverlay() {
             layout="speaker"
             // Fills the screen; pinch to zoom and double-tap swaps to contain.
             videoFit="cover"
+            draggablePip={isVideo}
             onDisconnected={() => {
               if (endingRef.current) return;
               const state = useCallStore.getState();
@@ -635,14 +782,12 @@ export function CallOverlay() {
             LiveKit native modules unavailable in Expo Go. Use a dev client / EAS build for media.
           </Text>
         ) : null}
-        <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-          {isOngoing && !heldCall && !parked ? (
+        {!isVideo && isOngoing && !heldCall && !parked ? (
+          <View style={{ marginTop: 12, flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
             <AddCallParticipant callId={active.session.id} type={active.session.type} mode="invite" />
-          ) : null}
-          {isOngoing && !heldCall && !parked ? (
             <AddCallParticipant callId={active.session.id} type={active.session.type} mode="consult" />
-          ) : null}
-        </View>
+          </View>
+        ) : null}
         {isOngoing && !parked
           ? (active.participants?.length
               ? active.participants
@@ -722,17 +867,64 @@ export function CallOverlay() {
       {/* Edge-to-edge is mandatory on Expo SDK 57, so a fixed offset can leave
           the row under the Android navigation bar. */}
       <View style={[styles.controls, { bottom: insets.bottom + 28 }]}>
+        {isVideo && isOngoing && !heldCall && !parked ? (
+          <View style={styles.peopleCtrl}>
+            {peopleMenuOpen ? (
+              <View style={[styles.peopleMenu, { backgroundColor: 'rgba(20,20,24,0.96)', borderColor: c.border }]}>
+                <Pressable
+                  onPress={() => {
+                    setPeopleMenuOpen(false);
+                    setAddPeopleMode('consult');
+                  }}
+                  style={styles.peopleMenuItem}
+                  accessibilityLabel="Call Another"
+                >
+                  <Ionicons name="call-outline" size={16} color="#fff" />
+                  <Text variant="caption" color="#fff">
+                    Call Another
+                  </Text>
+                </Pressable>
+                <View style={[styles.peopleMenuDivider, { backgroundColor: c.border }]} />
+                <Pressable
+                  onPress={() => {
+                    setPeopleMenuOpen(false);
+                    setAddPeopleMode('invite');
+                  }}
+                  style={styles.peopleMenuItem}
+                  accessibilityLabel="Add Person"
+                >
+                  <Ionicons name="person-add-outline" size={16} color="#fff" />
+                  <Text variant="caption" color="#fff">
+                    Add Person
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <Ctrl
+              icon="person-add"
+              label="People"
+              onPress={() => setPeopleMenuOpen((v) => !v)}
+              color={peopleMenuOpen ? c.pink : c.elevated}
+            />
+          </View>
+        ) : null}
         <Ctrl
           icon={active.muted ? 'mic-off' : 'mic'}
           label={active.muted ? 'Unmute' : 'Mute'}
-          onPress={toggleMute}
+          onPress={() => {
+            setPeopleMenuOpen(false);
+            void toggleMute();
+          }}
           color={c.elevated}
         />
         {isVideo ? (
           <Ctrl
             icon={active.cameraOff ? 'videocam-off' : 'videocam'}
             label="Camera"
-            onPress={toggleCamera}
+            onPress={() => {
+              setPeopleMenuOpen(false);
+              void toggleCamera();
+            }}
             color={c.elevated}
           />
         ) : (
@@ -747,7 +939,10 @@ export function CallOverlay() {
           <Ctrl
             icon="camera-reverse"
             label="Flip"
-            onPress={() => void flipCamera()}
+            onPress={() => {
+              setPeopleMenuOpen(false);
+              void flipCamera();
+            }}
             color={c.elevated}
           />
         ) : null}
@@ -760,11 +955,28 @@ export function CallOverlay() {
                 ? 'Leave'
                 : 'End'
           }
-          onPress={heldCall ? endAllCalls : endCall}
+          onPress={() => {
+            setPeopleMenuOpen(false);
+            if (heldCall) void endAllCalls();
+            else void endCall();
+          }}
           color={c.danger}
           rotate
         />
       </View>
+
+      {addPeopleMode ? (
+        <AddCallParticipant
+          callId={active.session.id}
+          type={active.session.type}
+          mode={addPeopleMode}
+          hideTrigger
+          open
+          onOpenChange={(next) => {
+            if (!next) setAddPeopleMode(null);
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -908,6 +1120,7 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     justifyContent: 'space-evenly',
+    alignItems: 'flex-end',
     paddingHorizontal: 16,
     // Above the video tiles, the self-view and the filter carousel — the
     // end-call button must never be covered.
@@ -915,4 +1128,29 @@ const styles = StyleSheet.create({
     elevation: 60,
   },
   ctrl: { alignItems: 'center', gap: 6 },
+  peopleCtrl: {
+    alignItems: 'center',
+    zIndex: 80,
+  },
+  peopleMenu: {
+    position: 'absolute',
+    bottom: 72,
+    minWidth: 168,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    zIndex: 90,
+    elevation: 90,
+  },
+  peopleMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  peopleMenuDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 10,
+  },
 });

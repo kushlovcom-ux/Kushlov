@@ -38,6 +38,11 @@ export const callsApi = {
   },
   get: async (type: CallType | string, id: string) =>
     normalizeCallSession(await apiGet<unknown>(`/calls/${type}/${id}`)),
+  /** Ongoing calls for the current user (parked → merge HTTP fallback). */
+  active: async () => {
+    const res = await apiGet<{ items?: unknown[] }>('/calls/active');
+    return { items: (res.items ?? []).map((i) => normalizeCallSession(i)) };
+  },
   accept: async (type: CallType | string, id: string) =>
     normalizeCallSession(await apiPost<unknown>(`/calls/${type}/${id}/accept`)),
   acceptInterrupt: async (type: CallType | string, id: string) =>

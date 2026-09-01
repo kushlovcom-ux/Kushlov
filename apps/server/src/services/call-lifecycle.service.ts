@@ -1,14 +1,18 @@
-import { CallStatus, SocketEvents } from '@kushlov/types';
+import { CallStatus, CallType, SocketEvents } from '@kushlov/types';
 import { AudioCall, VideoCall, User } from '../models';
 import type { ICall } from '../models/call.model';
 import { closeRoom, listRoomIdentities } from './livekit.service';
 import { emitToUser } from '../socket/io';
 import { PRESENCE_ONLINE_MS } from './presence.service';
+import { notifyMissedCall } from './notification.service';
 
 /** Allow LiveKit connect after accept before treating the room as abandoned. */
 const CALL_CONNECT_GRACE_MS = 90_000;
-/** Unanswered ringing calls should not linger forever. */
-const RINGING_TIMEOUT_MS = 120_000;
+/** Unanswered ringing calls — WhatsApp-like window (configurable via env). */
+const RINGING_TIMEOUT_MS = Math.max(
+  15_000,
+  Number(process.env.CALL_RING_TIMEOUT_MS ?? 45_000) || 45_000,
+);
 /** Hard ceiling for ghost Ongoing rows (regardless of LiveKit). */
 const ONGOING_HARD_MAX_MS = 2 * 60 * 60_000;
 
@@ -49,6 +53,9 @@ async function forceCloseCall(
     ? Math.max(0, Math.floor((endedAt.getTime() - call.startedAt.getTime()) / 1000))
     : 0;
 
+  const pendingBefore = (call.pendingInvites ?? []).map((p) => p.toString());
+  const becameMissed = !call.startedAt;
+
   // Pruned / abandoned calls: no diamond billing — mark ended/missed only.
   call.endedAt = endedAt;
   call.durationSec = durationSec;
@@ -70,6 +77,31 @@ async function forceCloseCall(
   };
   for (const memberId of memberIds(call)) {
     emitToUser(memberId, SocketEvents.CallEnd, payload);
+  }
+
+  // Ring timeout → missed-call push for the callee (and pending invitees).
+  if (reason === 'ring_timeout' && becameMissed) {
+    const callerId = call.caller.toString();
+    const callType = call.type === CallType.Video ? 'video' : 'audio';
+    void User.findById(callerId)
+      .select('displayName')
+      .then((caller) => {
+        const name = caller?.displayName ?? 'Someone';
+        const recipients = new Set(memberIds(call));
+        recipients.add(call.callee.toString());
+        for (const invitee of pendingBefore) recipients.add(invitee);
+        for (const uid of recipients) {
+          if (uid === callerId) continue;
+          void notifyMissedCall({
+            userId: uid,
+            callId: call._id.toString(),
+            callerId,
+            callerName: name,
+            callType,
+          });
+        }
+      })
+      .catch(() => undefined);
   }
 }
 

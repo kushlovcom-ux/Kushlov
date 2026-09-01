@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutChangeEvent,
-  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -59,6 +58,8 @@ type Props = {
   videoFit?: VideoFit;
   /** Mic/camera toggles for the local publisher (live host). */
   showAvControls?: boolean;
+  /** Drag the local PiP anywhere (video calls). */
+  draggablePip?: boolean;
   onDisconnected?: () => void;
   onRoom?: (room: Room | null) => void;
   style?: ViewStyle;
@@ -72,9 +73,15 @@ type StageMods = {
     layout: StageLayout;
     videoFit: VideoFit;
     showAvControls?: boolean;
+    draggablePip?: boolean;
   }>;
   RoomBinder: React.ComponentType<{ onRoom?: (room: Room | null) => void }>;
 };
+
+const PIP_W = 108;
+const PIP_H = 152;
+const PIP_MARGIN = 12;
+const PIP_BOTTOM_CLEARANCE = 168;
 
 let cachedStageMods: StageMods | null | undefined;
 
@@ -106,6 +113,7 @@ export function LiveKitStage({
   layout = 'grid',
   videoFit = 'cover',
   showAvControls = false,
+  draggablePip = false,
   onDisconnected,
   onRoom,
   style,
@@ -175,6 +183,7 @@ export function LiveKitStage({
           layout={layout}
           videoFit={videoFit}
           showAvControls={showAvControls && publish}
+          draggablePip={draggablePip}
         />
       </LiveKitRoom>
     </View>
@@ -360,12 +369,14 @@ function makeVideoGrid(
     layout,
     videoFit,
     showAvControls,
+    draggablePip,
   }: {
     isHost?: boolean;
     audioOnly?: boolean;
     layout: StageLayout;
     videoFit: VideoFit;
     showAvControls?: boolean;
+    draggablePip?: boolean;
   }) {
     const c = useThemeColors();
     const tracks = dedupeCameraTracks(
@@ -398,8 +409,33 @@ function makeVideoGrid(
     // Conference: every remote gets a tile. Rendering only remote[0] is why a
     // third person was audible but never visible.
     const conference = remote.length > 1;
-    // Android SurfaceViews need unique zOrder or extra remotes render black.
-    const localZ = Math.max(remote.length, 1) + 1;
+    // Keep local PiP at zOrder 0 so FaceFilterOverlay (RN views) can sit on top.
+    // zOrder ≥ 1 is Android "media overlay" and hides all React overlays on self-view.
+    const localZ = 0;
+
+    const localTile =
+      localRef && remote.length > 0 ? (
+        <ParticipantVideoTile
+          lk={lk}
+          trackRef={localRef}
+          isLocal
+          elevated={c.elevated}
+          multi={false}
+          videoFit="cover"
+          zOrder={localZ}
+          pip
+        />
+      ) : localRef ? (
+        <ParticipantVideoTile
+          lk={lk}
+          trackRef={localRef}
+          isLocal
+          elevated={c.elevated}
+          multi={false}
+          videoFit="cover"
+          zOrder={localZ}
+        />
+      ) : null;
 
     return (
       <View style={[styles.grid, { backgroundColor: '#000' }]}>
@@ -423,7 +459,7 @@ function makeVideoGrid(
                     elevated={c.elevated}
                     multi={conference}
                     videoFit={conference ? 'cover' : videoFit}
-                    zOrder={index}
+                    zOrder={0}
                     zoomable={!conference}
                     conferenceSlot={conference}
                   />
@@ -437,22 +473,20 @@ function makeVideoGrid(
             {/* Same tree slot in both states: moving this tile between a
                 full-screen and a PiP parent tore down the Android surface,
                 which is what made the peer flash over the local preview. */}
-            {localRef ? (
-              <View
-                key="self"
-                style={remote.length > 0 ? styles.pip : StyleSheet.absoluteFill}
-              >
-                <ParticipantVideoTile
-                  lk={lk}
-                  trackRef={localRef}
-                  isLocal
-                  elevated={c.elevated}
-                  multi={false}
-                  videoFit="cover"
-                  zOrder={localZ}
-                  pip={remote.length > 0}
-                />
-              </View>
+            {localTile ? (
+              remote.length > 0 ? (
+                draggablePip ? (
+                  <DraggablePip key="self">{localTile}</DraggablePip>
+                ) : (
+                  <View key="self" style={styles.pip}>
+                    {localTile}
+                  </View>
+                )
+              ) : (
+                <View key="self" style={StyleSheet.absoluteFill}>
+                  {localTile}
+                </View>
+              )
             ) : null}
           </>
         ) : (
@@ -652,6 +686,92 @@ function useVideoZoom(enabled: boolean) {
   return { gesture, zoomStyle, onLayout, fitOverride };
 }
 
+/** Drag the local self-view PiP anywhere inside the call stage. */
+function DraggablePip({ children }: { children: React.ReactNode }) {
+  const [parent, setParent] = useState({ w: 0, h: 0 });
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const startRef = useRef({ x: 0, y: 0 });
+  const posRef = useRef<{ x: number; y: number } | null>(null);
+  const parentRef = useRef(parent);
+  parentRef.current = parent;
+  posRef.current = pos;
+
+  const defaultPos = useMemo(() => {
+    if (parent.w < 8 || parent.h < 8) {
+      return { x: PIP_MARGIN, y: PIP_MARGIN };
+    }
+    return {
+      x: Math.max(PIP_MARGIN, parent.w - PIP_W - PIP_MARGIN),
+      y: Math.max(PIP_MARGIN, parent.h - PIP_H - PIP_BOTTOM_CLEARANCE),
+    };
+  }, [parent.w, parent.h]);
+
+  const current = pos ?? defaultPos;
+
+  const clampPos = useCallback((x: number, y: number) => {
+    const { w, h } = parentRef.current;
+    const maxX = Math.max(PIP_MARGIN, w - PIP_W - PIP_MARGIN);
+    const maxY = Math.max(PIP_MARGIN, h - PIP_H - PIP_MARGIN);
+    return {
+      x: Math.min(maxX, Math.max(PIP_MARGIN, x)),
+      y: Math.min(maxY, Math.max(PIP_MARGIN, y)),
+    };
+  }, []);
+
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .minDistance(2)
+        .onStart(() => {
+          const { w, h } = parentRef.current;
+          const fallback = {
+            x: Math.max(PIP_MARGIN, w - PIP_W - PIP_MARGIN),
+            y: Math.max(PIP_MARGIN, h - PIP_H - PIP_BOTTOM_CLEARANCE),
+          };
+          startRef.current = posRef.current ?? fallback;
+        })
+        .onUpdate((e) => {
+          setPos(clampPos(startRef.current.x + e.translationX, startRef.current.y + e.translationY));
+        })
+        .onEnd((e) => {
+          setPos(clampPos(startRef.current.x + e.translationX, startRef.current.y + e.translationY));
+        }),
+    [clampPos],
+  );
+
+  return (
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents="box-none"
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        if (width < 8 || height < 8) return;
+        setParent((prev) =>
+          prev.w === width && prev.h === height ? prev : { w: width, h: height },
+        );
+      }}
+    >
+      <GestureDetector gesture={pan}>
+        <View
+          style={[
+            styles.pipDraggable,
+            {
+              left: current.x,
+              top: current.y,
+              width: PIP_W,
+              height: PIP_H,
+            },
+          ]}
+          accessibilityLabel="Your video — drag to move"
+        >
+          {children}
+        </View>
+      </GestureDetector>
+    </View>
+  );
+}
+
 function ParticipantVideoTile({
   lk,
   trackRef,
@@ -711,7 +831,8 @@ function ParticipantVideoTile({
   const { gesture, zoomStyle, onLayout, fitOverride } = useVideoZoom(zoomable);
   const fit = fitOverride ?? videoFit;
   const hasMedia = Boolean(publication?.track) && !publication?.isMuted;
-  const showFilter = Boolean(filterId);
+  // Always try to paint local filters; empty string / none means off.
+  const showFilter = Boolean(filterId && filterId !== 'none');
   // Mirror selfie (front) only — rear camera should not be mirrored.
   let mirrorLocal = isLocal;
   if (isLocal) {
@@ -759,11 +880,9 @@ function ParticipantVideoTile({
           <View
             pointerEvents="none"
             collapsable={false}
-            style={[
-              styles.filterLayer,
-              // elevation over SurfaceView paints an opaque black rect on Android.
-              Platform.OS === 'android' && styles.filterLayerAndroid,
-            ]}
+            // Must stay a normal window view (zOrder 0 video). Media-overlay
+            // video (zOrder ≥ 1) draws above this and hides local filters.
+            style={[styles.filterLayer, isLocal && styles.filterLayerLocal]}
           >
             <FaceFilterOverlay
               filterId={filterId}
@@ -844,28 +963,37 @@ const styles = StyleSheet.create({
   },
   pip: {
     position: 'absolute',
-    right: 12,
+    right: PIP_MARGIN,
     // Clears the call control row; at bottom: 16 it sat on top of the
     // end-call button in the bottom-right corner.
-    bottom: 168,
-    width: 108,
-    height: 152,
+    bottom: PIP_BOTTOM_CLEARANCE,
+    width: PIP_W,
+    height: PIP_H,
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
-    // Above the main tile's filter layer (24) so a full-screen filter
-    // background does not tint or cover the self view.
     zIndex: 30,
     elevation: 30,
+  },
+  pipDraggable: {
+    position: 'absolute',
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    zIndex: 40,
+    elevation: 40,
+    backgroundColor: '#000',
   },
   filterLayer: {
     ...ABSOLUTE_FILL,
     zIndex: 8,
   },
-  filterLayerAndroid: {
-    // elevation over a SurfaceView paints an opaque black rect on Android.
-    elevation: 0,
+  filterLayerLocal: {
+    // Keep above the local SurfaceView siblings without Android elevation
+    // (elevation over RTCView paints an opaque black rect).
+    zIndex: 20,
   },
   avRow: {
     position: 'absolute',

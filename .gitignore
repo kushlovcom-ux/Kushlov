@@ -14,6 +14,11 @@ out/
 .env.local
 .env.*.local
 
+# Apple Push / signing secrets — never commit
+*.p8
+*.p12
+AuthKey_*.p8
+
 # logs
 logs/
 *.log

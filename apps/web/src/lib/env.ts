@@ -66,6 +66,8 @@ export const clientEnv = {
   siteUrl:
     process.env.NEXT_PUBLIC_SITE_URL ??
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
+  /** Meta Pixel ID (public). Override with NEXT_PUBLIC_META_PIXEL_ID if needed. */
+  metaPixelId: process.env.NEXT_PUBLIC_META_PIXEL_ID ?? '2887900641565745',
   firebase: {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
     authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? '',

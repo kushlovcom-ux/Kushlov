@@ -16,6 +16,12 @@ export const listNotifications = asyncHandler(async (req: Request, res: Response
   return ok(res, { ...buildPaginated(items, page, limit, total), unread });
 });
 
+/** GET /notifications/unread-count */
+export const unreadCount = asyncHandler(async (req: Request, res: Response) => {
+  const unread = await Notification.countDocuments({ user: req.user!.id, isRead: false });
+  return ok(res, { unread });
+});
+
 /** PATCH /notifications/:id/read — mark a single notification read. */
 export const markRead = asyncHandler(async (req: Request, res: Response) => {
   await Notification.updateOne({ _id: req.params.id, user: req.user!.id }, { isRead: true });

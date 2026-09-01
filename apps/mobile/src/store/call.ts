@@ -19,14 +19,23 @@ export type HeldCall = {
   peer?: PublicUser;
 };
 
+/** Consult/conference the holder switched to while we are parked. */
+export type ParkedConsult = {
+  callId: string;
+  type: CallType;
+};
+
 type CallState = {
   active: ActiveCall | null;
   incoming: CallSession | null;
   heldCall: HeldCall | null;
   parked: boolean;
+  /** Set from `call:hold` so a parked peer can HTTP-join after merge. */
+  parkedConsult: ParkedConsult | null;
   setIncoming: (call: CallSession | null) => void;
   setHeldCall: (held: HeldCall | null) => void;
   setParked: (parked: boolean) => void;
+  setParkedConsult: (consult: ParkedConsult | null) => void;
   startCall: (session: CallSession, role: 'caller' | 'callee', peer?: PublicUser) => void;
   updateSession: (session: Partial<CallSession>) => void;
   setParticipants: (participants: { id: string; name: string }[]) => void;
@@ -42,9 +51,11 @@ export const useCallStore = create<CallState>((set, get) => ({
   incoming: null,
   heldCall: null,
   parked: false,
+  parkedConsult: null,
   setIncoming: (incoming) => set({ incoming }),
   setHeldCall: (heldCall) => set({ heldCall }),
   setParked: (parked) => set({ parked }),
+  setParkedConsult: (parkedConsult) => set({ parkedConsult }),
   startCall: (session, role, peer) => {
     const looksLikeId = (v?: string) => Boolean(v && /^[a-f0-9]{24}$/i.test(v.trim()));
     const labelOf = (p: { id: string; displayName?: string; name?: string }) => {
@@ -87,6 +98,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     set({
       incoming: null,
       parked: false,
+      parkedConsult: null,
       active: {
         session,
         role,
@@ -156,5 +168,12 @@ export const useCallStore = create<CallState>((set, get) => ({
     if (!active) return;
     set({ active: { ...active, connectedAt: Date.now() } });
   },
-  clear: () => set({ active: null, incoming: null, heldCall: null, parked: false }),
+  clear: () =>
+    set({
+      active: null,
+      incoming: null,
+      heldCall: null,
+      parked: false,
+      parkedConsult: null,
+    }),
 }));

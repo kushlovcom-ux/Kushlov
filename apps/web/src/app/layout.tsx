@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from '@/components/providers';
+import { MetaPixel } from '@/components/meta-pixel';
 import { clientEnv } from '@/lib/env';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // inject attributes/styles before React hydrates.
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="min-h-screen font-sans" suppressHydrationWarning>
+        <MetaPixel />
         <Providers>{children}</Providers>
       </body>
     </html>

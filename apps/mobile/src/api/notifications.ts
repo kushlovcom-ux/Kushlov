@@ -31,4 +31,5 @@ export const notificationsApi = {
   },
   markRead: (id: string) => apiPatch<{ ok: boolean }>(`/notifications/${id}/read`),
   markAllRead: () => apiPatch<{ ok: boolean }>('/notifications/read-all'),
+  unreadCount: () => apiGet<{ unread: number }>('/notifications/unread-count'),
 };

@@ -5,11 +5,13 @@ import { callsApi } from '@/api/calls';
 import {
   CALL_ACTION_ACCEPT,
   CALL_ACTION_DECLINE,
+  addNotificationReceivedListener,
   addNotificationResponseListener,
   dismissIncomingCallNotification,
   presentIncomingCallNotification,
   setupCallNotifications,
 } from '@/services/notifications';
+import { consumePendingCallLink } from '@/services/pendingCallLink';
 import { useAuthStore } from '@/store/auth';
 import { useCallStore } from '@/store/call';
 import { CallStatus } from '@/types';
@@ -84,6 +86,19 @@ export function useIncomingCallWatcher() {
       }
     };
 
+    const pending = consumePendingCallLink();
+    if (pending?.callId) {
+      void (async () => {
+        try {
+          const { items } = await callsApi.incoming();
+          const match = items.find((i) => i.id === pending.callId) ?? items[0];
+          if (match) setIncoming(match);
+        } catch {
+          /* watcher interval will retry */
+        }
+      })();
+    }
+
     void syncIncoming();
     const interval = setInterval(() => void syncIncoming(), 3500);
 
@@ -135,6 +150,21 @@ export function useIncomingCallWatcher() {
 
   useEffect(() => {
     if (!token) return;
+
+    const received = addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data as {
+        kind?: string;
+        type?: string;
+        callId?: string;
+      };
+      const cancelled =
+        data?.kind === 'call_cancelled' || data?.type === 'CALL_CANCELLED';
+      if (!cancelled || !data.callId) return;
+      void dismissIncomingCallNotification(data.callId);
+      const incoming = useCallStore.getState().incoming;
+      if (incoming?.id === data.callId) setIncoming(null);
+      if (notifiedId.current === data.callId) notifiedId.current = null;
+    });
 
     const sub = addNotificationResponseListener((response) => {
       const data = response.notification.request.content.data as {
@@ -218,6 +248,9 @@ export function useIncomingCallWatcher() {
       })();
     });
 
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      received.remove();
+    };
   }, [token, setIncoming, startCall]);
 }

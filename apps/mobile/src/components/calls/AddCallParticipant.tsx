@@ -24,16 +24,33 @@ type Props = {
   type: CallType;
   /** invite = same-room add; consult = hold current call and ring someone else */
   mode?: 'invite' | 'consult';
+  /** When set, the picker is controlled by the parent (no built-in trigger). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 };
 
-export function AddCallParticipant({ callId, type, mode = 'invite' }: Props) {
+export function AddCallParticipant({
+  callId,
+  type,
+  mode = 'invite',
+  open: openProp,
+  onOpenChange,
+  hideTrigger,
+}: Props) {
   const c = useThemeColors();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [q, setQ] = useState('');
   const isConsult = mode === 'consult';
   const startCall = useCallStore((s) => s.startCall);
   const setHeldCall = useCallStore((s) => s.setHeldCall);
   const active = useCallStore((s) => s.active);
+  const open = openProp ?? internalOpen;
+
+  const setOpen = (next: boolean) => {
+    onOpenChange?.(next);
+    if (openProp === undefined) setInternalOpen(next);
+  };
 
   const discover = useQuery({
     queryKey: ['call-invite-users', q],
@@ -86,11 +103,13 @@ export function AddCallParticipant({ callId, type, mode = 'invite' }: Props) {
 
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} style={styles.trigger}>
-        <Text variant="caption" color="#fff">
-          {isConsult ? 'Hold & call' : 'Add person'}
-        </Text>
-      </Pressable>
+      {hideTrigger ? null : (
+        <Pressable onPress={() => setOpen(true)} style={styles.trigger}>
+          <Text variant="caption" color="#fff">
+            {isConsult ? 'Call Another' : 'Add Person'}
+          </Text>
+        </Pressable>
+      )}
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
           <Pressable
@@ -98,7 +117,7 @@ export function AddCallParticipant({ callId, type, mode = 'invite' }: Props) {
             onPress={() => undefined}
           >
             <Text variant="h3" style={{ marginBottom: spacing.sm }}>
-              {isConsult ? 'Hold current & call' : 'Add to call'}
+              {isConsult ? 'Call Another' : 'Add Person'}
             </Text>
             <TextInput
               value={q}

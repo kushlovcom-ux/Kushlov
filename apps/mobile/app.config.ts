@@ -133,6 +133,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           color: '#ec4899',
           sounds: ['./assets/sounds/incoming_call.wav'],
           defaultChannel: 'default',
+          // Required for background/terminated remote push (not Expo Go).
+          enableBackgroundRemoteNotifications: true,
         },
       ],
       [

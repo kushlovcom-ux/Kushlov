@@ -10,6 +10,7 @@ import { CallStatus, SocketEvents } from '@/types';
 import { normalizeCallSession } from '@/utils/normalizeCall';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/constants/queryKeys';
+import { dismissIncomingCallNotification } from '@/services/notifications';
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.accessToken);
@@ -69,17 +70,30 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           name: p.displayName || p.name || 'Peer',
         }));
 
+      const nextRoom = session.roomName || raw.roomName || active.session.roomName;
+      // Consult merge always changes rooms — reject stale tokens for the held room.
+      if (
+        (raw.merged || heldId) &&
+        nextRoom &&
+        active.session.roomName &&
+        nextRoom !== active.session.roomName &&
+        token === active.session.token
+      ) {
+        return true;
+      }
+
       // Apply media credentials BEFORE unparking so LiveKit mounts into the new room.
       useCallStore.getState().updateSession({
         id: session.id || raw.callId || active.session.id,
         type: session.type ?? active.session.type,
         token,
         livekitUrl: session.livekitUrl || raw.livekitUrl || active.session.livekitUrl,
-        roomName: session.roomName || raw.roomName || active.session.roomName,
+        roomName: nextRoom,
         status: CallStatus.Ongoing,
       });
       if (roster.length) useCallStore.getState().setParticipants(roster);
       useCallStore.getState().markConnected();
+      useCallStore.getState().setParkedConsult(null);
       useCallStore.getState().setParked(false);
       return true;
     };
@@ -209,10 +223,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       // Incoming invite / call-waiting for US was declined — keep the current call.
       if (idsMatch(id, incomingId) && !idsMatch(id, activeId)) {
         setIncoming(null);
+        void dismissIncomingCallNotification(id);
         return;
       }
       if (payload?.interrupt && incoming && (!id || idsMatch(id, incomingId)) && !idsMatch(id, activeId)) {
         setIncoming(null);
+        void dismissIncomingCallNotification(incomingId || id);
         return;
       }
 
@@ -224,7 +240,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!active) {
-        if (incoming && (!id || idsMatch(id, incomingId))) setIncoming(null);
+        if (incoming && (!id || idsMatch(id, incomingId))) {
+          setIncoming(null);
+          void dismissIncomingCallNotification(incomingId || id);
+        }
         return;
       }
 
@@ -243,10 +262,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         hangUpActive(false);
       } else if (idsMatch(id, incomingId)) {
         setIncoming(null);
+        void dismissIncomingCallNotification(id);
       }
     };
 
-    const onHold = (payload: { callId?: string }) => {
+    const onHold = (payload: {
+      callId?: string;
+      type?: string;
+      consultCallId?: string;
+      consultType?: string;
+    }) => {
       const active = useCallStore.getState().active;
       if (
         !active ||
@@ -255,6 +280,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       useCallStore.getState().setParked(true);
+      const consultId = payload.consultCallId ? String(payload.consultCallId) : '';
+      if (consultId) {
+        useCallStore.getState().setParkedConsult({
+          callId: consultId,
+          type: (payload.consultType || payload.type || active.session.type) as typeof active.session.type,
+        });
+      }
     };
 
     const onUnhold = (payload: {

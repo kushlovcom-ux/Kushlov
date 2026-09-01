@@ -32,6 +32,11 @@ export {
 } from './payment.model';
 export { Gift, Subscription, type IGift, type ISubscription } from './gift.model';
 export { Notification, type INotification } from './notification.model';
+export {
+  UserDeviceToken,
+  type IUserDeviceToken,
+  type DevicePlatform,
+} from './user-device-token.model';
 export { Report, Block, type IReport, type IBlock } from './report.model';
 export {
   VerificationRequest,

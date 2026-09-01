@@ -21,7 +21,12 @@ import { assertUsersCanConnect } from '../../services/location.service';
 import { getLiveKitPublicUrl } from '../../config/env';
 import { getBusyUserIds } from '../../services/call-busy.service';
 import { pruneStaleCalls } from '../../services/call-lifecycle.service';
-import { notify } from '../../services/notification.service';
+import {
+  notify,
+  notifyCallCancelled,
+  notifyIncomingCall,
+  notifyMissedCall,
+} from '../../services/notification.service';
 import {
   computeCallDiamondCost,
   isApprovedHost,
@@ -391,21 +396,14 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
     };
     emitToUser(primaryCalleeId, SocketEvents.CallWaiting, waitingPayload);
     emitToUser(primaryCalleeId, SocketEvents.CallInvite, waitingPayload);
-    void notify({
+    void notifyIncomingCall({
       userId: primaryCalleeId,
-      type: NotificationType.Call,
-      title: type === CallType.Video ? 'Incoming video call' : 'Incoming audio call',
-      body: `${caller?.displayName ?? 'Someone'} is calling (call waiting)`,
-      actor: req.user!.id,
-      data: {
-        kind: 'incoming_call',
-        interrupt: true,
-        callId: interrupt._id.toString(),
-        callType: type,
-        targetCallId: ongoing.call._id.toString(),
-        callerName: caller?.displayName,
-        callerAvatar: caller?.avatarUrl,
-      },
+      callId: interrupt._id.toString(),
+      callerId: req.user!.id,
+      callerName: caller?.displayName ?? 'Someone',
+      callerAvatar: caller?.avatarUrl,
+      callType: type === CallType.Video ? 'video' : 'audio',
+      interrupt: true,
     });
 
     return created(
@@ -506,19 +504,13 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
   };
   for (const id of groupIds) {
     emitToUser(id, SocketEvents.CallInvite, invitePayload);
-    void notify({
+    void notifyIncomingCall({
       userId: id,
-      type: NotificationType.Call,
-      title: type === CallType.Video ? 'Incoming video call' : 'Incoming audio call',
-      body: `${caller?.displayName ?? 'Someone'} is calling you`,
-      actor: req.user!.id,
-      data: {
-        kind: 'incoming_call',
-        callId: call._id.toString(),
-        callType: type,
-        callerName: caller?.displayName,
-        callerAvatar: caller?.avatarUrl,
-      },
+      callId: call._id.toString(),
+      callerId: req.user!.id,
+      callerName: caller?.displayName ?? 'Someone',
+      callerAvatar: caller?.avatarUrl,
+      callType: type === CallType.Video ? 'video' : 'audio',
     });
   }
 
@@ -538,6 +530,7 @@ export const initiateCall = asyncHandler(async (req: Request, res: Response) => 
       heldBy: req.user!.id,
       held: true,
       consultCallId: call._id.toString(),
+      consultType: type,
     };
     for (const memberId of participantIdsOf(heldCall)) {
       if (memberId === req.user!.id) continue;
@@ -713,6 +706,13 @@ export const acceptCall = asyncHandler(async (req: Request, res: Response) => {
     );
   }
 
+  // Stop the incoming-call UI on this user's other devices.
+  void notifyCallCancelled({
+    userId: uid,
+    callId: call._id.toString(),
+    callType: type === CallType.Video ? 'video' : 'audio',
+  });
+
   return ok(
     res,
     {
@@ -748,6 +748,11 @@ export const rejectCall = asyncHandler(async (req: Request, res: Response) => {
       interrupt: true,
       reason: 'busy_declined',
     });
+    void notifyCallCancelled({
+      userId: uid,
+      callId: call._id.toString(),
+      callType: type === CallType.Video ? 'video' : 'audio',
+    });
     return ok(res, call, 'Call waiting declined');
   }
 
@@ -771,6 +776,11 @@ export const rejectCall = asyncHandler(async (req: Request, res: Response) => {
     if (memberId === uid) continue;
     emitToUser(memberId, SocketEvents.CallReject, rejectPayload);
   }
+  void notifyCallCancelled({
+    userId: uid,
+    callId: call._id.toString(),
+    callType: type === CallType.Video ? 'video' : 'audio',
+  });
   return ok(res, call, 'Call rejected');
 });
 
@@ -822,7 +832,10 @@ export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) 
     throw ApiError.badRequest('Caller is already on this call');
   }
 
-  await parkOngoingCall(target, uid, { consultCallId: interrupt._id.toString() });
+  await parkOngoingCall(target, uid, {
+    consultCallId: interrupt._id.toString(),
+    consultType: type,
+  });
 
   interrupt.status = CallStatus.Ongoing;
   interrupt.startedAt = new Date();
@@ -848,6 +861,12 @@ export const acceptInterrupt = asyncHandler(async (req: Request, res: Response) 
     call: interrupt,
     participants: allRoster.filter((p) => p.id !== joinerId),
     heldCallId: target._id.toString(),
+  });
+
+  void notifyCallCancelled({
+    userId: uid,
+    callId: interrupt._id.toString(),
+    callType: type === CallType.Video ? 'video' : 'audio',
   });
 
   return ok(
@@ -1107,19 +1126,13 @@ export const inviteToCall = asyncHandler(async (req: Request, res: Response) => 
     },
     maxDurationSec: call.maxDurationSec,
   });
-  void notify({
+  void notifyIncomingCall({
     userId,
-    type: NotificationType.Call,
-    title: type === CallType.Video ? 'Incoming video call' : 'Incoming audio call',
-    body: `${from?.displayName ?? 'Someone'} invited you to a call`,
-    actor: req.user!.id,
-    data: {
-      kind: 'incoming_call',
-      callId: call._id.toString(),
-      callType: type,
-      callerName: from?.displayName,
-      callerAvatar: from?.avatarUrl,
-    },
+    callId: call._id.toString(),
+    callerId: req.user!.id,
+    callerName: from?.displayName ?? 'Someone',
+    callerAvatar: from?.avatarUrl,
+    callType: type === CallType.Video ? 'video' : 'audio',
   });
 
   return ok(res, { call }, 'Invite sent');
@@ -1214,6 +1227,34 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
 
   await call.save();
 
+  // Caller cancelled while still ringing → stop callee's incoming-call UI + push.
+  const wasRingingOnly = !call.startedAt && call.status === CallStatus.Missed;
+  if (wasRingingOnly) {
+    const callerId = call.caller.toString();
+    const calleeId = call.callee.toString();
+    const endedByCaller = uid === callerId;
+    if (endedByCaller) {
+      for (const memberId of [...participantIdsOf(call), calleeId]) {
+        if (memberId === uid) continue;
+        void notifyCallCancelled({
+          userId: memberId,
+          callId: call._id.toString(),
+          callType: type === CallType.Video ? 'video' : 'audio',
+        });
+      }
+    } else {
+      // Callee never answered → missed for callee (they already know); notify inbox.
+      const callerUser = await User.findById(callerId).select('displayName');
+      void notifyMissedCall({
+        userId: calleeId,
+        callId: call._id.toString(),
+        callerId,
+        callerName: callerUser?.displayName ?? 'Someone',
+        callType: type === CallType.Video ? 'video' : 'audio',
+      });
+    }
+  }
+
   // Call-waiting interrupt: only notify the waiting caller. Never emit CallEnd
   // to the busy callee — they are still on their Ongoing A↔B call.
   if (call.isInterrupt) {
@@ -1233,6 +1274,7 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
     emitToUser(memberId, SocketEvents.CallEnd, {
       callId: call._id.toString(),
       durationSec,
+      cancelled: wasRingingOnly && uid === call.caller.toString(),
     });
   }
 
@@ -1244,6 +1286,47 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
   }
 
   return ok(res, call, 'Call ended');
+});
+
+/**
+ * GET /calls/active — Ongoing calls the user is on, with LiveKit tokens.
+ * Used by parked clients after a peer merges them into a consult room when
+ * `call:accept` / `call:unhold` sockets were missed.
+ */
+export const listActiveCalls = asyncHandler(async (req: Request, res: Response) => {
+  const uid = req.user!.id;
+  const filter = {
+    status: CallStatus.Ongoing,
+    $or: [{ participants: uid }, { caller: uid }, { callee: uid }],
+  };
+  const [audio, video] = await Promise.all([
+    AudioCall.find(filter).sort({ updatedAt: -1 }).limit(5),
+    VideoCall.find(filter).sort({ updatedAt: -1 }).limit(5),
+  ]);
+
+  const rows = [...audio, ...video].sort(
+    (a, b) => new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime(),
+  );
+
+  const items = [];
+  for (const call of rows) {
+    if (!isCallMember(call, uid)) continue;
+    const type = call.type as CallType;
+    const token = await liveKitTokenFor(uid, call.roomName);
+    const participants = await rosterOf(call, uid);
+    items.push({
+      call,
+      type,
+      status: call.status,
+      token,
+      roomName: call.roomName,
+      livekitUrl: getLiveKitPublicUrl(),
+      maxDurationSec: call.maxDurationSec,
+      participants,
+    });
+  }
+
+  return ok(res, { items });
 });
 
 /** GET /calls/history — combined audio + video call history. */

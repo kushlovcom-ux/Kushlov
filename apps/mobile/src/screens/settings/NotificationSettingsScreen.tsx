@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Linking, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Text } from '@/components/ui/Text';
@@ -46,12 +46,19 @@ export function NotificationSettingsScreen({ navigation }: Props) {
   const enableSystem = async () => {
     const ok = await ensureNotificationPermissions();
     if (!ok) {
-      Alert.alert('Permissions', 'Notifications are disabled in system settings.');
+      Alert.alert(
+        'Notifications disabled',
+        'Kushlov cannot show messages or incoming calls until you enable notifications in system settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+        ],
+      );
       return;
     }
     const t = await getExpoPushToken();
     setToken(t);
-    Alert.alert('Enabled', t ? 'Push token ready.' : 'Permissions granted.');
+    Alert.alert('Enabled', t ? 'This device will receive push notifications.' : 'Permissions granted.');
   };
 
   return (
@@ -86,11 +93,18 @@ export function NotificationSettingsScreen({ navigation }: Props) {
         Device token: {token ? `${token.slice(0, 24)}…` : 'not registered'}
       </Text>
       <View style={{ height: spacing.md }} />
-      <Text
-        color="#ec4899"
-        onPress={enableSystem}
-      >
+      <Text muted variant="caption">
+        If you previously denied permission, use Open Settings to enable alerts, sound, and badge.
+        Incoming calls need notification permission (and on Android 14+, Full screen notifications
+        for lock-screen ringing).
+      </Text>
+      <View style={{ height: spacing.md }} />
+      <Text color="#ec4899" onPress={enableSystem}>
         Enable system notifications
+      </Text>
+      <View style={{ height: spacing.sm }} />
+      <Text color="#ec4899" onPress={() => void Linking.openSettings()}>
+        Open system settings
       </Text>
     </Screen>
   );

@@ -21,6 +21,8 @@ const initiateSchema = z.object({
 router.post('/initiate', validate({ body: initiateSchema }), ctrl.initiateCall);
 router.get('/incoming', ctrl.listIncomingCalls);
 router.get('/history', ctrl.callHistory);
+/** Ongoing calls for this user (HTTP fallback while parked / after merge). */
+router.get('/active', ctrl.listActiveCalls);
 router.get('/:type/:id', ctrl.getCall);
 router.post('/:type/:id/accept', ctrl.acceptCall);
 router.post('/:type/:id/accept-interrupt', ctrl.acceptInterrupt);

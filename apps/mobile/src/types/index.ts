@@ -122,6 +122,7 @@ export enum MessageType {
 export enum NotificationType {
   Message = 'message',
   Call = 'call',
+  MissedCall = 'missed_call',
   Match = 'match',
   Like = 'like',
   Follower = 'follower',

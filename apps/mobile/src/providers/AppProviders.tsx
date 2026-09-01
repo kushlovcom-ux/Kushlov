@@ -13,6 +13,7 @@ import { useIncomingCallWatcher } from '@/hooks/useIncomingCallWatcher';
 import { usePushTokenSync } from '@/hooks/usePushTokenSync';
 import { useNotificationNavigation } from '@/hooks/useNotificationNavigation';
 import { useSessionKeepAlive } from '@/hooks/useSessionKeepAlive';
+import { useBadges } from '@/hooks/useBadges';
 import { useFaceFilterStore } from '@/faceFilters/hooks/useFaceFilter';
 import { preloadLiveKitNative } from '@/services/livekit';
 import { isRetryableQueryError } from '@/api/client';
@@ -25,6 +26,7 @@ function ThemeBridge({ children }: { children: React.ReactNode }) {
   usePushTokenSync();
   useNotificationNavigation();
   useSessionKeepAlive();
+  useBadges();
   const hydrateFilters = useFaceFilterStore((s) => s.hydrate);
   const filtersHydrated = useFaceFilterStore((s) => s.hydrated);
 

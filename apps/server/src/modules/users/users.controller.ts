@@ -1,7 +1,16 @@
 import { Request, Response } from 'express';
 import { Role } from '@kushlov/types';
 import { buildPaginated, parsePagination } from '@kushlov/utils';
-import { Block, Conversation, Follower, Like, Notification, Profile, User } from '../../models';
+import {
+  Block,
+  Conversation,
+  Follower,
+  Like,
+  Notification,
+  Profile,
+  User,
+  UserDeviceToken,
+} from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok } from '../../utils/response';
@@ -26,8 +35,13 @@ export const registerPushToken = asyncHandler(async (req: Request, res: Response
   if (!token.startsWith('ExponentPushToken')) {
     throw ApiError.badRequest('Invalid Expo push token');
   }
-  const platform = typeof req.body.platform === 'string' ? req.body.platform : undefined;
-  const deviceId = typeof req.body.deviceId === 'string' ? req.body.deviceId : undefined;
+  const platformRaw =
+    typeof req.body.platform === 'string' ? req.body.platform.toLowerCase() : 'android';
+  const platform = platformRaw === 'ios' ? 'ios' : 'android';
+  const deviceId =
+    typeof req.body.deviceId === 'string' && req.body.deviceId.trim()
+      ? req.body.deviceId.trim()
+      : `anon-${token.slice(-12)}`;
   const user = await User.findById(req.user!.id).select('+expoPushToken +expoPushDevices');
   if (!user) throw ApiError.notFound('User not found');
 
@@ -44,9 +58,28 @@ export const registerPushToken = asyncHandler(async (req: Request, res: Response
   await User.findByIdAndUpdate(req.user!.id, {
     $set: {
       expoPushToken: token,
-      expoPushDevices: devices.slice(-8),
+      expoPushDevices: devices.slice(-12),
     },
   });
+
+  await UserDeviceToken.updateMany(
+    { deviceId, userId: { $ne: req.user!.id }, isActive: true },
+    { $set: { isActive: false } },
+  );
+  await UserDeviceToken.findOneAndUpdate(
+    { userId: req.user!.id, deviceId },
+    {
+      $set: {
+        pushToken: token,
+        platform,
+        isActive: true,
+        lastUsedAt: now,
+      },
+      $setOnInsert: { userId: req.user!.id, deviceId },
+    },
+    { upsert: true },
+  );
+
   return ok(res, { ok: true });
 });
 
@@ -55,21 +88,22 @@ export const clearPushToken = asyncHandler(async (req: Request, res: Response) =
   const token = String(req.body.token ?? '').trim();
   const user = await User.findById(req.user!.id).select('+expoPushToken +expoPushDevices');
   if (!user) throw ApiError.notFound('User not found');
-  if (token) {
-    const remaining = (user.expoPushDevices ?? []).filter((d) => d.token !== token);
-    await User.findByIdAndUpdate(req.user!.id, {
-      $set: {
-        expoPushDevices: remaining,
-        expoPushToken:
-          user.expoPushToken === token ? remaining.at(-1)?.token : user.expoPushToken,
-      },
-    });
-  } else {
-    await User.findByIdAndUpdate(req.user!.id, {
-      $unset: { expoPushToken: 1 },
-      $set: { expoPushDevices: [] },
-    });
+  if (!token) {
+    // Logout without a stored token must not disable every other device.
+    return ok(res, { ok: true });
   }
+  const remaining = (user.expoPushDevices ?? []).filter((d) => d.token !== token);
+  await User.findByIdAndUpdate(req.user!.id, {
+    $set: {
+      expoPushDevices: remaining,
+      expoPushToken:
+        user.expoPushToken === token ? remaining.at(-1)?.token : user.expoPushToken,
+    },
+  });
+  await UserDeviceToken.updateMany(
+    { userId: req.user!.id, pushToken: token },
+    { $set: { isActive: false } },
+  );
   return ok(res, { ok: true });
 });
 

@@ -80,7 +80,19 @@ export function FaceFilterPublisher({ room }: Props) {
           setLocalFaceBox(null);
           lastBoxRef.current = null;
         } else if (!isFaceTrackNativeAvailable()) {
+          // No native landmarks — still show the local overlay via heuristic box.
           setFaceDetected(true);
+          if (!lastBoxRef.current) {
+            const fallback = boxFromDetection({
+              cx: 0.5,
+              cy: 0.42,
+              width: 0.42,
+              height: 0.54,
+              rotation: 0,
+            });
+            lastBoxRef.current = fallback;
+            setLocalFaceBox(fallback);
+          }
         }
       } catch {
         startingRef.current = null;

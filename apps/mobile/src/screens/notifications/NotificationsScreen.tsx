@@ -27,19 +27,45 @@ export function NotificationsScreen({ navigation }: Props) {
     markRead.mutate(n.id);
     const data = n.data as {
       kind?: string;
+      type?: string;
       callId?: string;
       callType?: string;
       conversationId?: string;
+      senderId?: string;
+      callerId?: string;
     } | undefined;
-    const isCall =
-      n.type === NotificationType.Call ||
-      data?.kind === 'incoming_call' ||
-      /call/i.test(n.title ?? '');
+    const kind = String(data?.kind ?? '');
+    const type = String(data?.type ?? n.type ?? '');
 
-    if (data?.kind === 'message' && data.conversationId) {
-      navigation.navigate('Chat', { conversationId: String(data.conversationId) });
+    if (kind === 'message' || type === 'MESSAGE' || n.type === NotificationType.Message) {
+      if (data?.conversationId) {
+        navigation.navigate('Chat', { conversationId: String(data.conversationId) });
+      }
       return;
     }
+
+    if (kind === 'like' || type === 'LIKE' || n.type === NotificationType.Like || n.type === NotificationType.Match) {
+      navigation.navigate('MainTabs', { screen: 'Matches' });
+      return;
+    }
+
+    if (
+      kind === 'missed_call' ||
+      type === 'MISSED_AUDIO_CALL' ||
+      type === 'MISSED_VIDEO_CALL' ||
+      n.type === NotificationType.MissedCall
+    ) {
+      const userId = data?.callerId || data?.senderId;
+      if (userId) navigation.navigate('PublicProfile', { userId: String(userId) });
+      else navigation.navigate('CallHistory');
+      return;
+    }
+
+    const isCall =
+      n.type === NotificationType.Call ||
+      kind === 'incoming_call' ||
+      type === 'AUDIO_CALL' ||
+      type === 'VIDEO_CALL';
 
     if (!isCall) return;
 

@@ -6,7 +6,7 @@ import { Follower, Like, Match, Profile, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
-import { notify } from '../../services/notification.service';
+import { notify, notifyLike } from '../../services/notification.service';
 import { assertUsersCanConnect } from '../../services/location.service';
 
 /**
@@ -79,12 +79,12 @@ export const likeUser = asyncHandler(async (req: Request, res: Response) => {
       body: `You and ${targetUser.displayName} liked each other`,
     });
   } else {
-    await notify({
+    const meUser = await User.findById(me).select('displayName avatarUrl');
+    await notifyLike({
       userId: target,
-      actor: me,
-      type: NotificationType.Like,
-      title: 'Someone likes you 💖',
-      body: 'Open Kushlov to find out who',
+      senderId: me,
+      senderName: meUser?.displayName ?? 'Someone',
+      senderAvatar: meUser?.avatarUrl,
     });
   }
 

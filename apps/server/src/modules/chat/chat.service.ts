@@ -1,9 +1,9 @@
 import { Types } from 'mongoose';
-import { MessageType, NotificationType, Role, SocketEvents, DiamondTxnReason, GoldTxnReason } from '@kushlov/types';
+import { MessageType, Role, SocketEvents, DiamondTxnReason, GoldTxnReason } from '@kushlov/types';
 import { Block, Conversation, Message, MessageCredit, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { emitToUser } from '../../socket/io';
-import { notify } from '../../services/notification.service';
+import { notifyMessage } from '../../services/notification.service';
 import { isUserFocusedOnChat } from '../../services/chat-focus.service';
 import { assertUsersCanConnect } from '../../services/location.service';
 import { spendDiamonds } from '../../services/wallet.service';
@@ -172,18 +172,16 @@ export async function createMessage(input: CreateMessageInput) {
     const id = participant.toString();
     if (id !== input.senderId) {
       emitToUser(id, SocketEvents.MessageNew, populated);
+      // Push only when recipient is not actively viewing this conversation
+      // (Socket.IO still delivers MessageNew for in-app UI).
       if (!isUserFocusedOnChat(id, conversation._id.toString())) {
-        await notify({
+        await notifyMessage({
           userId: id,
-          actor: input.senderId,
-          type: NotificationType.Message,
-          title: senderName,
-          body: preview,
-          data: {
-            kind: 'message',
-            conversationId: conversation._id.toString(),
-            senderId: input.senderId,
-          },
+          senderId: input.senderId,
+          senderName,
+          conversationId: conversation._id.toString(),
+          messageId: String((populated as { _id?: unknown })._id ?? ''),
+          preview,
         });
       }
     }
