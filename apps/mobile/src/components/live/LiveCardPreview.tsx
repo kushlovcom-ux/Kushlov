@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import type { RemoteAudioTrack, Room } from 'livekit-client';
+import { RoomEvent } from 'livekit-client';
 import { Text } from '@/components/ui/Text';
 import { liveApi } from '@/api/live';
 import { getLiveKitRn, preloadLiveKitNative } from '@/services/livekit';
@@ -17,6 +19,7 @@ type Props = {
 type PreviewMods = {
   LiveKitRoom: React.ComponentType<Record<string, unknown>>;
   PreviewVideo: React.ComponentType;
+  PreviewSilencer: React.ComponentType;
 };
 
 let cachedPreviewMods: PreviewMods | null | undefined;
@@ -31,6 +34,7 @@ function getPreviewMods(): PreviewMods | null {
   cachedPreviewMods = {
     LiveKitRoom: lk.LiveKitRoom,
     PreviewVideo: makePreviewVideo(lk, lk.Track),
+    PreviewSilencer: makePreviewSilencer(lk),
   };
   return cachedPreviewMods;
 }
@@ -79,7 +83,7 @@ export function LiveCardPreview({ liveId, thumbnailUrl, active, style }: Props) 
     );
   }
 
-  const { LiveKitRoom, PreviewVideo } = mods!;
+  const { LiveKitRoom, PreviewVideo, PreviewSilencer } = mods!;
 
   return (
     <View style={[styles.fill, style, { overflow: 'hidden' }]} pointerEvents="none">
@@ -94,10 +98,55 @@ export function LiveCardPreview({ liveId, thumbnailUrl, active, style }: Props) 
         style={StyleSheet.absoluteFill}
         onError={() => setFailed(true)}
       >
+        <PreviewSilencer />
         <PreviewVideo />
       </LiveKitRoom>
     </View>
   );
+}
+
+/**
+ * Keeps list previews silent. `audio={false}` on LiveKitRoom only stops the
+ * mic from being *published*; LiveKit still auto-subscribes to remote audio,
+ * so up to MAX_PREVIEWS hosts stay audible on the list — most obviously right
+ * after a viewer leaves a live room and lands back here.
+ */
+function makePreviewSilencer(lk: { useRoomContext: () => Room }) {
+  return function PreviewSilencer() {
+    const room = lk.useRoomContext();
+
+    useEffect(() => {
+      if (!room) return;
+
+      const silence = () => {
+        room.remoteParticipants.forEach((participant) => {
+          participant.audioTrackPublications.forEach((pub) => {
+            try {
+              // Volume first so an already-playing track cuts out immediately,
+              // then drop the subscription so we stop paying for the audio.
+              (pub.track as RemoteAudioTrack | undefined)?.setVolume(0);
+              if (pub.isSubscribed) pub.setSubscribed(false);
+            } catch {
+              /* a preview must never break the list */
+            }
+          });
+        });
+      };
+
+      silence();
+      room.on(RoomEvent.TrackSubscribed, silence);
+      room.on(RoomEvent.TrackPublished, silence);
+      room.on(RoomEvent.ParticipantConnected, silence);
+
+      return () => {
+        room.off(RoomEvent.TrackSubscribed, silence);
+        room.off(RoomEvent.TrackPublished, silence);
+        room.off(RoomEvent.ParticipantConnected, silence);
+      };
+    }, [room]);
+
+    return null;
+  };
 }
 
 function makePreviewVideo(

@@ -50,22 +50,24 @@ function previewOf(last: Conversation['lastMessage']) {
 /**
  * Per-message delete menu. "Delete for everyone" is only offered on your own
  * messages — the API rejects it otherwise, so showing it would be a dead option.
+ *
+ * The dropdown anchors to the message row (which owns the `relative`), not to
+ * this trigger: the scroll list is `overflow-y-auto`, so CSS also clips the x
+ * axis and a menu measured from the trigger runs off the edge on long messages.
  */
 function MessageMenu({
   open,
   mine,
-  align,
   onToggle,
   onDelete,
 }: {
   open: boolean;
   mine: boolean;
-  align: 'left' | 'right';
   onToggle: () => void;
   onDelete: (forEveryone: boolean) => void;
 }) {
   return (
-    <div className="relative shrink-0">
+    <div className="shrink-0">
       {open && (
         <>
           <button
@@ -76,8 +78,8 @@ function MessageMenu({
           />
           <div
             className={cn(
-              'absolute bottom-8 z-20 w-52 overflow-hidden rounded-xl border border-white/10 bg-card shadow-xl',
-              align === 'right' ? 'left-0' : 'right-0',
+              'absolute bottom-full z-20 mb-1 w-52 overflow-hidden rounded-xl border border-white/10 bg-card shadow-xl',
+              mine ? 'right-0' : 'left-0',
             )}
           >
             <button
@@ -368,13 +370,15 @@ function Messages() {
           return (
             <div
               key={m._id}
-              className={cn('group flex items-center gap-1', mine ? 'justify-end' : 'justify-start')}
+              className={cn(
+                'group relative flex items-center gap-1',
+                mine ? 'justify-end' : 'justify-start',
+              )}
             >
               {mine && (
                 <MessageMenu
                   open={menuFor === m._id}
                   mine={mine}
-                  align="right"
                   onToggle={() => setMenuFor((id) => (id === m._id ? null : m._id))}
                   onDelete={(forEveryone) => deleteMessage.mutate({ id: m._id, forEveryone })}
                 />
@@ -393,7 +397,6 @@ function Messages() {
                 <MessageMenu
                   open={menuFor === m._id}
                   mine={mine}
-                  align="left"
                   onToggle={() => setMenuFor((id) => (id === m._id ? null : m._id))}
                   onDelete={(forEveryone) => deleteMessage.mutate({ id: m._id, forEveryone })}
                 />

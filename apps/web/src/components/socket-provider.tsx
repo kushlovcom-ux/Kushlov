@@ -1,6 +1,14 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  ReactNode,
+} from 'react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,6 +28,46 @@ export const useSocket = () => useContext(SocketContext);
 
 const PRESENCE_INTERVAL_MS = 45_000;
 
+const MESSAGE_TONE_SRC = '/sounds/message-received.wav';
+/** A burst of messages should chime once, not stack overlapping playbacks. */
+const MESSAGE_TONE_MIN_GAP_MS = 400;
+
+/**
+ * Chime for incoming messages. The server only emits `MessageNew` to the other
+ * participants, so anything reaching this client is someone else's message.
+ */
+function useMessageTone() {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastPlayedRef = useRef(0);
+
+  useEffect(() => {
+    const audio = new Audio(MESSAGE_TONE_SRC);
+    audio.preload = 'auto';
+    audio.volume = 0.5;
+    audioRef.current = audio;
+
+    return () => {
+      audioRef.current = null;
+      audio.pause();
+      audio.src = '';
+    };
+  }, []);
+
+  return useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const now = Date.now();
+    if (now - lastPlayedRef.current < MESSAGE_TONE_MIN_GAP_MS) return;
+    lastPlayedRef.current = now;
+
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      /* autoplay stays blocked until the user has interacted with the page */
+    });
+  }, []);
+}
+
 /** Establishes Socket.io when available, plus HTTP presence heartbeat (works on Vercel). */
 export function SocketProvider({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -29,6 +77,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const tokenRef = useRef(accessToken);
   tokenRef.current = accessToken;
   const loggedIn = Boolean(accessToken);
+  const playMessageTone = useMessageTone();
 
   // HTTP presence — keeps isOnline accurate even when Socket.io is disabled (*.vercel.app).
   useEffect(() => {
@@ -98,6 +147,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     });
 
     next.on(SocketEvents.MessageNew, () => {
+      playMessageTone();
       qc.invalidateQueries({ queryKey: ['nav-badges'] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
       qc.invalidateQueries({ queryKey: ['messages'] });
@@ -119,7 +169,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setSocket(null);
       setConnected(false);
     };
-  }, [loggedIn, qc]);
+  }, [loggedIn, qc, playMessageTone]);
 
   return (
     <SocketContext.Provider value={{ socket, connected }}>{children}</SocketContext.Provider>

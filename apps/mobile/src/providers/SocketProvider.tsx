@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
+import { useAudioPlayer } from 'expo-audio';
 import type { Socket } from 'socket.io-client';
 import { connectSocket, disconnectSocket, getSocket } from '@/services/socket';
 import { useAuthStore } from '@/store/auth';
@@ -12,6 +13,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/constants/queryKeys';
 import { dismissIncomingCallNotification } from '@/services/notifications';
 
+const MESSAGE_TONE = require('../../assets/sounds/message_received.wav');
+/** A burst of messages should chime once, not stack overlapping playbacks. */
+const MESSAGE_TONE_MIN_GAP_MS = 400;
+
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.accessToken);
   const setIncoming = useCallStore((s) => s.setIncoming);
@@ -20,6 +25,32 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const setColiveInvite = useColiveStore((s) => s.setInvite);
   const qc = useQueryClient();
   const [, setConnectedTick] = useState(0);
+  const messageTone = useAudioPlayer(MESSAGE_TONE);
+  const lastTonePlayedRef = useRef(0);
+
+  /**
+   * Chime for incoming messages. The server only emits `MessageNew` to the
+   * other participants, so anything arriving here is someone else's message.
+   * The audio mode is deliberately left alone: it keeps the tone silent when
+   * the ringer switch is off, and avoids stealing the session from a call.
+   */
+  const playMessageTone = useCallback(() => {
+    if (useCallStore.getState().active) return;
+
+    const now = Date.now();
+    if (now - lastTonePlayedRef.current < MESSAGE_TONE_MIN_GAP_MS) return;
+    lastTonePlayedRef.current = now;
+
+    try {
+      messageTone.volume = 0.6;
+      if (typeof messageTone.seekTo === 'function') {
+        void messageTone.seekTo(0);
+      }
+      messageTone.play();
+    } catch {
+      /* audio must never break message delivery */
+    }
+  }, [messageTone]);
 
   useEffect(() => {
     if (!token) {
@@ -358,6 +389,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       ]);
     };
     const onMessage = (payload?: { conversation?: string; conversationId?: string }) => {
+      playMessageTone();
       qc.invalidateQueries({ queryKey: queryKeys.conversations });
       qc.invalidateQueries({ queryKey: queryKeys.badges });
       qc.invalidateQueries({ queryKey: ['chat', 'messages'] });
@@ -412,7 +444,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       s?.off(SocketEvents.Notification, onNotification);
       s?.off(SocketEvents.LiveColiveInvite, onColiveInvite);
     };
-  }, [token, setIncoming, updateSession, clearCall, setColiveInvite, qc]);
+  }, [token, setIncoming, updateSession, clearCall, setColiveInvite, qc, playMessageTone]);
 
   return <>{children}</>;
 }

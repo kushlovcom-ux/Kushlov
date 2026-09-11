@@ -1306,6 +1306,9 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
   call.endedAt = endedAt;
   call.durationSec = durationSec;
   call.status = call.startedAt ? CallStatus.Ended : CallStatus.Missed;
+  // Anyone still being rung lives in pendingInvites, which the next line drops.
+  // Keep the list so CallEnd can still reach them further down.
+  const ringingInvitees = (call.pendingInvites ?? []).map((p) => p.toString());
   call.pendingInvites = [];
 
   if (call.status === CallStatus.Ended && durationSec > 0) {
@@ -1371,12 +1374,15 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
-  // Call-waiting interrupt: only notify the waiting caller. Never emit CallEnd
-  // to the busy callee — they are still on their Ongoing A↔B call.
+  // Call-waiting interrupt. This carries the interrupt's own callId, which
+  // never matches the busy callee's ongoing A↔B call, so clients dismiss just
+  // the waiting card and keep that call up. Without notifying the callee, a
+  // caller who cancels leaves the waiting card on screen forever.
   if (call.isInterrupt) {
-    const callerId = call.caller.toString();
-    if (callerId !== req.user!.id) {
-      emitToUser(callerId, SocketEvents.CallEnd, {
+    const interruptPeers = new Set([call.caller.toString(), call.callee.toString()]);
+    interruptPeers.delete(uid);
+    for (const peerId of interruptPeers) {
+      emitToUser(peerId, SocketEvents.CallEnd, {
         callId: call._id.toString(),
         interrupt: true,
         durationSec,
@@ -1385,8 +1391,18 @@ export const endCall = asyncHandler(async (req: Request, res: Response) => {
     return ok(res, call, 'Call waiting ended');
   }
 
-  for (const memberId of participantIdsOf(call)) {
-    if (memberId === req.user!.id) continue;
+  // A callee joins `participants` only once they accept, so a call cancelled
+  // while still ringing would emit to nobody and leave their incoming-call UI
+  // ringing forever. Widen the set to the invitees only in that case, so an
+  // ongoing call still notifies exactly the people who were in it.
+  const endRecipients = new Set(participantIdsOf(call));
+  if (wasRingingOnly) {
+    for (const inviteeId of ringingInvitees) endRecipients.add(inviteeId);
+    endRecipients.add(call.callee.toString());
+  }
+  endRecipients.delete(uid);
+
+  for (const memberId of endRecipients) {
     emitToUser(memberId, SocketEvents.CallEnd, {
       callId: call._id.toString(),
       durationSec,
