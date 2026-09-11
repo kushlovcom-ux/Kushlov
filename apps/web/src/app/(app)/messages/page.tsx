@@ -3,14 +3,14 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Send } from 'lucide-react';
+import { ArrowLeft, FileText, MoreVertical, Trash2 } from 'lucide-react';
 import { SocketEvents } from '@kushlov/types';
 import { api, unwrap } from '@/lib/api';
 import { cn, relativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { useSocket } from '@/components/socket-provider';
 import { UserAvatar } from '@/components/common/user-avatar';
-import { Input } from '@/components/ui/input';
+import { ChatComposer } from '@/components/chat/chat-composer';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -32,8 +32,123 @@ interface Message {
   sender: Participant | string;
   text?: string;
   type: string;
-  media?: { url: string };
+  media?: { url: string; fileName?: string };
   createdAt: string;
+}
+
+/** Short label for a media message in the conversation list. */
+function previewOf(last: Conversation['lastMessage']) {
+  if (!last) return 'Say hi 👋';
+  if (last.text) return last.text;
+  if (last.type === 'image') return '📷 Photo';
+  if (last.type === 'video') return '🎬 Video';
+  if (last.type === 'voice') return '🎤 Voice note';
+  if (last.type === 'file') return '📄 Document';
+  return 'Say hi 👋';
+}
+
+/**
+ * Per-message delete menu. "Delete for everyone" is only offered on your own
+ * messages — the API rejects it otherwise, so showing it would be a dead option.
+ */
+function MessageMenu({
+  open,
+  mine,
+  align,
+  onToggle,
+  onDelete,
+}: {
+  open: boolean;
+  mine: boolean;
+  align: 'left' | 'right';
+  onToggle: () => void;
+  onDelete: (forEveryone: boolean) => void;
+}) {
+  return (
+    <div className="relative shrink-0">
+      {open && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-10 cursor-default"
+            aria-label="Close menu"
+            onClick={onToggle}
+          />
+          <div
+            className={cn(
+              'absolute bottom-8 z-20 w-52 overflow-hidden rounded-xl border border-white/10 bg-card shadow-xl',
+              align === 'right' ? 'left-0' : 'right-0',
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => onDelete(false)}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors hover:bg-white/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete for me
+            </button>
+            {mine && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Delete this message for everyone? This cannot be undone.')) {
+                    onDelete(true);
+                  }
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-red-400 transition-colors hover:bg-white/10"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete for everyone
+              </button>
+            )}
+          </div>
+        </>
+      )}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label="Message options"
+        className={cn(
+          'rounded-full p-1 text-white/40 transition hover:bg-white/10 hover:text-white',
+          // Always reachable on touch, revealed on hover for pointer devices.
+          open ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100 max-md:opacity-60',
+        )}
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+function MessageMedia({ message }: { message: Message }) {
+  const url = message.media?.url;
+  if (!url) return null;
+
+  if (message.type === 'image') {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={url} alt={message.media?.fileName ?? ''} className="mb-1 max-h-56 rounded-lg" />
+    );
+  }
+  if (message.type === 'video') {
+    return <video src={url} controls playsInline className="mb-1 max-h-64 rounded-lg" />;
+  }
+  if (message.type === 'voice' || message.type === 'audio') {
+    return <audio src={url} controls className="mb-1 w-56 max-w-full" />;
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      download={message.media?.fileName}
+      className="mb-1 flex items-center gap-2 rounded-lg bg-black/20 px-3 py-2 text-sm underline-offset-2 hover:underline"
+    >
+      <FileText className="h-4 w-4 shrink-0" />
+      <span className="truncate">{message.media?.fileName ?? 'Download file'}</span>
+    </a>
+  );
 }
 
 function Messages() {
@@ -43,9 +158,9 @@ function Messages() {
   const { socket } = useSocket();
   const qc = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [text, setText] = useState('');
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [chatMenu, setChatMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const conversations = useQuery({
     queryKey: ['conversations'],
@@ -83,15 +198,43 @@ function Messages() {
     refetchIntervalInBackground: false,
   });
 
-  const send = useMutation({
-    mutationFn: (body: string) =>
-      api.post(`/chat/conversations/${activeId}/messages`, { text: body }),
+  const deleteMessage = useMutation({
+    mutationFn: ({ id, forEveryone }: { id: string; forEveryone: boolean }) =>
+      api.delete(`/chat/messages/${id}${forEveryone ? '?forEveryone=true' : ''}`),
     onSuccess: () => {
-      setText('');
+      setMenuFor(null);
+      qc.invalidateQueries({ queryKey: ['messages', activeId] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+
+  const deleteChat = useMutation({
+    mutationFn: (conversationId: string) => api.delete(`/chat/conversations/${conversationId}`),
+    onSuccess: () => {
+      setChatMenu(false);
+      setActiveId(null);
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['nav-badges'] });
+    },
+  });
+
+  const send = useMutation({
+    mutationFn: (payload: { text: string } | { file: File; type: string }) => {
+      const url = `/chat/conversations/${activeId}/messages`;
+      if ('file' in payload) {
+        // Multipart matches what the mobile client already sends, so the same
+        // endpoint and multer config handle both without a server change.
+        const form = new FormData();
+        form.append('type', payload.type);
+        form.append('file', payload.file, payload.file.name);
+        return api.post(url, form);
+      }
+      return api.post(url, { text: payload.text });
+    },
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['messages', activeId] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
       qc.invalidateQueries({ queryKey: ['nav-badges'] });
-      inputRef.current?.focus();
     },
   });
 
@@ -124,9 +267,22 @@ function Messages() {
         qc.invalidateQueries({ queryKey: ['messages'] });
       }
     };
+    // A delete-for-everyone (or a clear from another device) has to drop the
+    // message here too, not just for whoever pressed the button.
+    const onDelete = (payload: { conversationId?: string }) => {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['nav-badges'] });
+      const convId = payload?.conversationId ? String(payload.conversationId) : '';
+      if (activeId && (!convId || convId === String(activeId))) {
+        qc.invalidateQueries({ queryKey: ['messages', activeId] });
+      }
+    };
+
     socket.on(SocketEvents.MessageNew, handler);
+    socket.on(SocketEvents.MessageDelete, onDelete);
     return () => {
       socket.off(SocketEvents.MessageNew, handler);
+      socket.off(SocketEvents.MessageDelete, onDelete);
     };
   }, [socket, activeId, qc]);
 
@@ -155,6 +311,47 @@ function Messages() {
           <p className="truncate font-semibold">{other?.displayName}</p>
           <p className="text-xs text-white/40">{other?.isOnline ? 'Online' : 'Offline'}</p>
         </div>
+
+        <div className="relative shrink-0">
+          {chatMenu && (
+            <>
+              <button
+                type="button"
+                className="fixed inset-0 z-10 cursor-default"
+                aria-label="Close menu"
+                onClick={() => setChatMenu(false)}
+              />
+              <div className="absolute right-0 top-10 z-20 w-56 overflow-hidden rounded-xl border border-white/10 bg-card shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      activeId &&
+                      window.confirm(
+                        'Delete this chat? It will be removed for you only — the other person keeps their copy.',
+                      )
+                    ) {
+                      deleteChat.mutate(activeId);
+                    }
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-red-400 transition-colors hover:bg-white/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete chat for me
+                </button>
+              </div>
+            </>
+          )}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Chat options"
+            onClick={() => setChatMenu((open) => !open)}
+          >
+            <MoreVertical className="h-5 w-5" />
+          </Button>
+        </div>
       </div>
 
       <div
@@ -169,50 +366,48 @@ function Messages() {
           const senderId = typeof m.sender === 'string' ? m.sender : m.sender._id;
           const mine = senderId === me?.id;
           return (
-            <div key={m._id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
+            <div
+              key={m._id}
+              className={cn('group flex items-center gap-1', mine ? 'justify-end' : 'justify-start')}
+            >
+              {mine && (
+                <MessageMenu
+                  open={menuFor === m._id}
+                  mine={mine}
+                  align="right"
+                  onToggle={() => setMenuFor((id) => (id === m._id ? null : m._id))}
+                  onDelete={(forEveryone) => deleteMessage.mutate({ id: m._id, forEveryone })}
+                />
+              )}
               <div
                 className={cn(
                   'max-w-[78%] rounded-2xl px-3.5 py-2 sm:max-w-[65%]',
                   mine ? 'rounded-br-md bg-brand-gradient text-white' : 'rounded-bl-md bg-white/10',
                 )}
               >
-                {m.media?.url && m.type === 'image' && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={m.media.url} alt="" className="mb-1 max-h-56 rounded-lg" />
-                )}
+                <MessageMedia message={m} />
                 {m.text && <p className="whitespace-pre-wrap break-words text-[15px]">{m.text}</p>}
                 <p className="mt-1 text-right text-[10px] opacity-60">{relativeTime(m.createdAt)}</p>
               </div>
+              {!mine && (
+                <MessageMenu
+                  open={menuFor === m._id}
+                  mine={mine}
+                  align="left"
+                  onToggle={() => setMenuFor((id) => (id === m._id ? null : m._id))}
+                  onDelete={(forEveryone) => deleteMessage.mutate({ id: m._id, forEveryone })}
+                />
+              )}
             </div>
           );
         })}
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (text.trim()) send.mutate(text.trim());
-        }}
-        className="flex shrink-0 items-end gap-2 border-t border-white/10 bg-card/80 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:p-4"
-      >
-        <Input
-          ref={inputRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Message…"
-          className="min-h-11 flex-1 rounded-full border-white/10 bg-white/5 px-4"
-          autoComplete="off"
-        />
-        <Button
-          type="submit"
-          size="icon"
-          className="h-11 w-11 shrink-0 rounded-full"
-          loading={send.isPending}
-          disabled={!text.trim()}
-        >
-          <Send className="h-4 w-4" />
-        </Button>
-      </form>
+      <ChatComposer
+        sending={send.isPending}
+        onSendText={(body) => send.mutate({ text: body })}
+        onSendFile={(file, type) => send.mutate({ file, type })}
+      />
     </>
   );
 
@@ -251,9 +446,7 @@ function Messages() {
                 <UserAvatar name={o?.displayName} src={o?.avatarUrl} online={o?.isOnline} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{o?.displayName ?? 'Unknown'}</p>
-                  <p className="truncate text-xs text-white/40">
-                    {c.lastMessage?.text ?? 'Say hi 👋'}
-                  </p>
+                  <p className="truncate text-xs text-white/40">{previewOf(c.lastMessage)}</p>
                 </div>
                 {c.unreadCount > 0 && (
                   <span className="rounded-full bg-brand-pink px-2 py-0.5 text-xs font-bold">

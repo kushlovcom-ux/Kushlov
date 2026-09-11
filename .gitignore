@@ -19,6 +19,15 @@ out/
 *.p12
 AuthKey_*.p8
 
+# Firebase / FCM native config — per-environment, supplied via EAS file secrets
+google-services.json
+GoogleService-Info.plist
+
+# Service account private keys — belong in EAS credentials or server env, never here
+*-firebase-adminsdk-*.json
+*service-account*.json
+*serviceAccount*.json
+
 # logs
 logs/
 *.log

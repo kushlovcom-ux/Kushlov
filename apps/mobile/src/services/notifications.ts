@@ -192,18 +192,47 @@ export async function ensureNotificationPermissions(): Promise<boolean> {
   return status === 'granted';
 }
 
+export type PushTokenFailure = 'permission_denied' | 'not_a_device' | 'registration_failed';
+
+let lastPushTokenError: { reason: PushTokenFailure; message?: string } | null = null;
+
+/**
+ * Why this device currently has no push token. Surfaced in notification
+ * settings because the failure is otherwise invisible: the app keeps working
+ * over the socket while it is open and simply never rings once it is closed.
+ */
+export function getPushTokenFailure() {
+  return lastPushTokenError;
+}
+
 export async function getExpoPushToken(): Promise<string | null> {
   try {
+    if (!Device.isDevice) {
+      lastPushTokenError = { reason: 'not_a_device' };
+      return null;
+    }
     const granted = await ensureNotificationPermissions();
-    if (!granted) return null;
+    if (!granted) {
+      lastPushTokenError = { reason: 'permission_denied' };
+      return null;
+    }
     await setupCallNotifications();
 
     const projectId = env.easProjectId || undefined;
     const token = await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined,
     );
+    lastPushTokenError = null;
     return token.data;
-  } catch {
+  } catch (err) {
+    // On Android this is almost always a missing/invalid google-services.json in
+    // the native build: no FCM sender id means no token, so the server has no
+    // way to reach a backgrounded or killed app.
+    const message = err instanceof Error ? err.message : String(err);
+    lastPushTokenError = { reason: 'registration_failed', message };
+    if (__DEV__) {
+      console.warn('[push] could not obtain a push token — background calls will not ring:', message);
+    }
     return null;
   }
 }

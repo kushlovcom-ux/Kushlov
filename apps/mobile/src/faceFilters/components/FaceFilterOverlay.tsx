@@ -5,14 +5,27 @@ import { LinearGradient } from 'expo-linear-gradient';
 import type { Participant } from 'livekit-client';
 import { getFilterDef } from '../catalog';
 import { heuristicFaceBox, layoutFilter, layoutFilterLayers, parseFaceBox } from '../layout';
-import { FACE_FILTER_ATTR, FACE_FILTER_BOX_ATTR, type FaceBox, type FaceFilterDef } from '../types';
+import { isNativeVideoEffectsSupported } from 'kushlov-face-track';
+import {
+  FACE_FILTER_ATTR,
+  FACE_FILTER_BAKED_ATTR,
+  FACE_FILTER_BOX_ATTR,
+  type FaceBox,
+  type FaceFilterDef,
+} from '../types';
 import { useFaceFilterStore, selectEffectiveFilterId } from '../hooks/useFaceFilter';
+import { isPixelEffectFilter } from '../nativeEffects';
 import { FilterLayerSvg } from './FilterLayerSvg';
 
 type OverlayProps = {
   filterId: string | null | undefined;
   mirrored?: boolean;
   faceBox?: FaceBox | null;
+  /**
+   * The source already applied beauty/background to its own pixels, so the
+   * approximations below would double-apply. Stickers still draw.
+   */
+  baked?: boolean;
 };
 
 const BG_GRADIENT: Record<
@@ -31,7 +44,12 @@ const BG_GRADIENT: Record<
  * Landmark-locked AR overlay. Uses a live FaceBox when tracking is available,
  * otherwise a selfie-proportion heuristic so glasses/ears still span the face.
  */
-export function FaceFilterOverlay({ filterId, mirrored = false, faceBox }: OverlayProps) {
+export function FaceFilterOverlay({
+  filterId,
+  mirrored = false,
+  faceBox,
+  baked = false,
+}: OverlayProps) {
   const filter = getFilterDef(filterId);
   const [size, setSize] = useState({ w: 360, h: 640 });
 
@@ -85,10 +103,10 @@ export function FaceFilterOverlay({ filterId, mirrored = false, faceBox }: Overl
       {/* Android composites the video in its own SurfaceView layer, so a blur
           view cannot sample it — it only costs a hardware layer that blacks the
           video out. The gradient below carries the look on both platforms. */}
-      {filter.background === 'blur' && Platform.OS === 'ios' ? (
+      {!baked && filter.background === 'blur' && Platform.OS === 'ios' ? (
         <BlurView intensity={48} tint="dark" style={StyleSheet.absoluteFill} />
       ) : null}
-      {filter.background ? (
+      {!baked && filter.background ? (
         <LinearGradient
           colors={BG_GRADIENT[filter.background]}
           start={{ x: 0.15, y: 0 }}
@@ -96,7 +114,7 @@ export function FaceFilterOverlay({ filterId, mirrored = false, faceBox }: Overl
           style={StyleSheet.absoluteFill}
         />
       ) : null}
-      {filter.beauty ? (
+      {!baked && filter.beauty ? (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255, 200, 220, 0.08)' }]} />
       ) : null}
       {privacyLayout ? (
@@ -183,4 +201,37 @@ export function useLocalOrRemoteFaceFilter(
     return local === 'none' ? '' : local;
   }
   return attr || remote || '';
+}
+
+/**
+ * Whether this participant's video already has beauty/background applied to its
+ * pixels. Locally that is whatever the native processor accepted; for a remote
+ * it comes from the attribute their publisher sets. A remote on a build without
+ * native processing reports false, so we still draw the overlay for them.
+ */
+export function useFaceEffectsBaked(participant: Participant | null | undefined) {
+  const [remoteBaked, setRemoteBaked] = React.useState(
+    () => participant?.attributes?.[FACE_FILTER_BAKED_ATTR] === '1',
+  );
+  const localFilter = useFaceFilterStore(selectEffectiveFilterId);
+
+  React.useEffect(() => {
+    if (!participant || participant.isLocal) {
+      setRemoteBaked(false);
+      return;
+    }
+    const sync = () =>
+      setRemoteBaked(participant.attributes?.[FACE_FILTER_BAKED_ATTR] === '1');
+    sync();
+    const handler = () => sync();
+    participant.on('attributesChanged', handler);
+    return () => {
+      participant.off('attributesChanged', handler);
+    };
+  }, [participant]);
+
+  if (participant?.isLocal) {
+    return localFilter !== 'none' && isPixelEffectFilter(localFilter) && isNativeVideoEffectsSupported();
+  }
+  return remoteBaked;
 }

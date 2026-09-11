@@ -144,7 +144,7 @@ export function DiscoverScreen() {
           <View style={{ flex: 1 }}>
             <Text variant="display">Discover</Text>
             <Text variant="caption" muted style={{ marginTop: 4 }}>
-              Browse nearby online people, or search anyone by name.
+              Online people first, then popular hosts. Or search anyone by name.
             </Text>
           </View>
           <Button

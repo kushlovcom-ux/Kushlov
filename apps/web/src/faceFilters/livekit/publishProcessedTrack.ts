@@ -1,6 +1,7 @@
 import { LocalVideoTrack, Track } from 'livekit-client';
 import type { LocalParticipant } from 'livekit-client';
 import { FaceTrackingEngine } from '../tracking/FaceTrackingEngine';
+import { SelfieSegmentationEngine } from '../tracking/SelfieSegmenter';
 import { renderFaceFilterFrame } from '../renderer/renderFaceFilterFrame';
 import { getFilterDef } from '../catalog';
 import type { FaceFilterId } from '../types';
@@ -22,6 +23,7 @@ export async function startProcessedVideoTrack(
   const mirrored = opts?.mirrored ?? true;
   const maxFps = opts?.maxFps ?? 30;
   const engine = new FaceTrackingEngine();
+  const segmenter = new SelfieSegmentationEngine();
 
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -70,10 +72,14 @@ export async function startProcessedVideoTrack(
       const filter = getFilterDef(filterId);
       if (filterId === 'none') {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        segmenter.reset();
         detected = true;
       } else if (filter?.background) {
         detected = true;
-        renderFaceFilterFrame(ctx, video, null, filter);
+        // Segmentation runs alongside the draw; the first frames use the
+        // unsegmented look until the model has produced a mask.
+        void segmenter.update(video);
+        renderFaceFilterFrame(ctx, video, null, filter, { mask: segmenter.mask() });
       } else {
         const box = await engine.detect(video, mirrored);
         detected = !!box;

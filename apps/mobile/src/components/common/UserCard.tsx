@@ -256,7 +256,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   media: {
-    aspectRatio: 3 / 4,
+    // Shorter than the old 3/4 so two rows of the discover grid fit on screen.
+    aspectRatio: 4 / 5,
     backgroundColor: '#1a1220',
   },
   mediaCompact: {
@@ -292,18 +293,19 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   portraitBody: {
-    padding: spacing.md,
-    gap: 2,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    gap: 1,
     flex: 1,
   },
   actions: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: spacing.sm,
+    gap: 6,
+    marginTop: spacing.xs,
   },
   actionBtn: {
     flex: 1,
-    height: 36,
+    height: 32,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',

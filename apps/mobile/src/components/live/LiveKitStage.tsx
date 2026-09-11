@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import {
   FaceFilterOverlay,
+  useFaceEffectsBaked,
   useLocalOrRemoteFaceFilter,
   useParticipantFaceBox,
 } from '@/faceFilters/components/FaceFilterOverlay';
@@ -817,6 +818,7 @@ function ParticipantVideoTile({
     }
   ).publication;
   const filterId = useLocalOrRemoteFaceFilter(participant);
+  const effectsBaked = useFaceEffectsBaked(participant);
   const remoteBox = useParticipantFaceBox(isLocal ? null : participant);
   const localBox = useFaceFilterStore((s) => (isLocal ? s.localFaceBox : null));
   let role: string | undefined;
@@ -896,6 +898,7 @@ function ParticipantVideoTile({
               filterId={filterId}
               mirrored={mirrorLocal}
               faceBox={isLocal ? localBox : remoteBox}
+              baked={effectsBaked}
             />
           </View>
         ) : null}

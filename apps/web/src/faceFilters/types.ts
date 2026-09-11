@@ -117,4 +117,9 @@ export type FaceFilterSettings = {
 /** LiveKit attribute key — used when clients sync filter selection without bitstream replace. */
 export const FACE_FILTER_ATTR = 'kushlovFaceFilter';
 export const FACE_FILTER_BOX_ATTR = 'kushlovFaceBox';
+/**
+ * '1' when the publisher already applied beauty/background to its own pixels.
+ * Remotes must then skip their approximation or the effect lands twice.
+ */
+export const FACE_FILTER_BAKED_ATTR = 'kushlovFaceBaked';
 export const FACE_FILTER_TOPIC = 'kushlov.ff';

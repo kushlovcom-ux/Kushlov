@@ -7,6 +7,12 @@ export interface IConversation extends Document {
   lastMessage?: Types.ObjectId;
   lastMessageAt?: Date;
   unread: Map<string, number>;
+  /**
+   * When each participant last cleared this chat for themselves. The
+   * conversation stays hidden from their list until the other side sends
+   * something new — deleting a chat must never affect the other participant.
+   */
+  clearedAt: Map<string, Date>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,6 +28,7 @@ const conversationSchema = new Schema<IConversation>(
     lastMessage: { type: Schema.Types.ObjectId, ref: 'Message' },
     lastMessageAt: Date,
     unread: { type: Map, of: Number, default: {} },
+    clearedAt: { type: Map, of: Date, default: {} },
   },
   { timestamps: true },
 );

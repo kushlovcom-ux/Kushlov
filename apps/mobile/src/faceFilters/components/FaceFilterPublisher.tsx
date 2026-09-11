@@ -1,10 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { RoomEvent, type Room } from 'livekit-client';
 import {
+  clearNativeVideoEffects,
   isFaceTrackNativeAvailable,
+  isNativeVideoEffectsSupported,
+  setNativeVideoEffects,
   subscribeNativeFace,
   type NativeFaceEvent,
 } from 'kushlov-face-track';
+import { isPixelEffectFilter, nativeEffectsFor } from '../nativeEffects';
 import {
   selectEffectiveFilterId,
   useFaceFilterStore,
@@ -74,7 +78,14 @@ export function FaceFilterPublisher({ room }: Props) {
           ctrlRef.current = await startingRef.current;
         }
         if (cancelled) return;
-        void ctrlRef.current.setFilter(filterId);
+        // Beauty and background are pixel work: hand them to the native frame
+        // processor so they are baked into the track remotes receive. Stickers
+        // stay as overlays. `baked` tells remotes not to draw their own
+        // approximation on top of an already-processed frame.
+        const baked =
+          isPixelEffectFilter(filterId) && setNativeVideoEffects(nativeEffectsFor(filterId));
+        if (!baked && isNativeVideoEffectsSupported()) clearNativeVideoEffects();
+        void ctrlRef.current.setFilter(filterId, { baked });
         if (filterId === 'none') {
           setFaceDetected(false);
           setLocalFaceBox(null);
@@ -181,6 +192,8 @@ export function FaceFilterPublisher({ room }: Props) {
       startingRef.current = null;
       setLocalFaceBox(null);
       lastBoxRef.current = null;
+      // Leave the capturer publishing clean frames after the call.
+      clearNativeVideoEffects();
     };
   }, [room, setLocalFaceBox]);
 

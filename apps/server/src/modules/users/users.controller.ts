@@ -376,9 +376,17 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
     status: 'active',
   };
 
-  // Browse: only currently online users. Search: show name matches even if offline.
-  if (!isSearch || online === 'true') {
+  // The explicit "online" filter still means online only.
+  if (online === 'true') {
     userFilter.lastSeenAt = { $gte: onlineCutoff };
+  } else if (!isSearch) {
+    // Browse lists everyone available right now plus the popular hosts, so a
+    // popular host stays discoverable while offline instead of dropping out of
+    // the page entirely. Kept in `$and` because role visibility below owns
+    // `$or`, and the search branch owns `$and` — those paths are exclusive.
+    userFilter.$and = [
+      { $or: [{ lastSeenAt: { $gte: onlineCutoff } }, { isPopularHost: true }] },
+    ];
   }
 
   // Visibility: normal users see hosts + users; hosts see users + other hosts.
@@ -435,10 +443,14 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
     userFilter._id = { $nin: exclude, $in: profileUserIds };
   }
 
+  // Online people first, then popular hosts, then everyone else by rating.
+  // Rating used to lead, which buried whoever was actually available to talk.
   const sort: Record<string, 1 | -1> = {
+    isOnline: -1,
+    isPopularHost: -1,
+    popularSortOrder: 1,
     averageRating: -1,
     totalReviews: -1,
-    isOnline: -1,
     lastSeenAt: -1,
     createdAt: -1,
   };

@@ -8,21 +8,18 @@ export function renderFaceFilterFrame(
   video: HTMLVideoElement,
   box: FaceBox | null,
   filter: FaceFilterDef | null,
-  opts?: { beauty?: boolean },
+  opts?: { beauty?: boolean; mask?: CanvasImageSource | null },
 ) {
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
   ctx.drawImage(video, 0, 0, w, h);
 
   if (opts?.beauty || filter?.beauty) {
-    ctx.save();
-    ctx.filter = 'brightness(1.06) contrast(1.04) saturate(1.08)';
-    ctx.drawImage(video, 0, 0, w, h);
-    ctx.restore();
+    applyBeauty(ctx, video, w, h, box);
   }
 
   if (filter?.background) {
-    applyBackground(ctx, w, h, filter.background);
+    applyBackground(ctx, w, h, filter.background, opts?.mask ?? null);
     return;
   }
 
@@ -131,7 +128,93 @@ function applyPrivacy(
   ctx.restore();
 }
 
+/**
+ * Skin smoothing. A blurred copy is blended back only inside the face, so skin
+ * softens while the rest of the frame keeps its detail — blurring everything
+ * reads as a dirty lens rather than a beauty filter. Falls back to a whole-frame
+ * soft focus when the face has not been located yet.
+ */
+function applyBeauty(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  w: number,
+  h: number,
+  box: FaceBox | null,
+) {
+  ctx.save();
+  if (box) {
+    ctx.beginPath();
+    ctx.ellipse(box.cx * w, box.cy * h, (box.width * w) / 1.7, (box.height * h) / 1.6, 0, 0, Math.PI * 2);
+    ctx.clip();
+  }
+  ctx.globalAlpha = 0.55;
+  ctx.filter = `blur(${Math.max(2, Math.round(Math.min(w, h) / 140))}px) brightness(1.07) saturate(1.06)`;
+  ctx.drawImage(video, 0, 0, w, h);
+  ctx.restore();
+
+  // A touch of the original back on top keeps eyes and lips from going soft.
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.filter = 'contrast(1.06)';
+  ctx.drawImage(video, 0, 0, w, h);
+  ctx.restore();
+}
+
+/** Scratch canvases reused across frames so compositing does not allocate. */
+let bgLayer: HTMLCanvasElement | null = null;
+let personLayer: HTMLCanvasElement | null = null;
+
+function scratch(which: 'bg' | 'person', w: number, h: number) {
+  let canvas = which === 'bg' ? bgLayer : personLayer;
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    if (which === 'bg') bgLayer = canvas;
+    else personLayer = canvas;
+  }
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  return canvas;
+}
+
 function applyBackground(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  mode: NonNullable<FaceFilterDef['background']>,
+  mask: CanvasImageSource | null,
+) {
+  // With a person mask we can treat only the background and composite the
+  // subject back on top. Without one we keep the previous whole-frame look,
+  // which still reads as an effect on browsers that cannot run segmentation.
+  if (mask) {
+    const background = scratch('bg', w, h);
+    const bgCtx = background.getContext('2d');
+    const person = scratch('person', w, h);
+    const personCtx = person.getContext('2d');
+    if (bgCtx && personCtx) {
+      bgCtx.clearRect(0, 0, w, h);
+      bgCtx.drawImage(ctx.canvas, 0, 0, w, h);
+      paintBackgroundTreatment(bgCtx, w, h, mode);
+
+      personCtx.clearRect(0, 0, w, h);
+      personCtx.drawImage(ctx.canvas, 0, 0, w, h);
+      personCtx.save();
+      personCtx.globalCompositeOperation = 'destination-in';
+      personCtx.drawImage(mask, 0, 0, w, h);
+      personCtx.restore();
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(background, 0, 0, w, h);
+      ctx.drawImage(person, 0, 0, w, h);
+      return;
+    }
+  }
+  paintBackgroundTreatment(ctx, w, h, mode);
+}
+
+function paintBackgroundTreatment(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,

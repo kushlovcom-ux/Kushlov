@@ -25,5 +25,12 @@ public class KushlovFaceTrackModule: Module {
       KushlovFaceTrackBridge.registerProcessor()
       true
     }
+
+    // Beauty and background are applied to the published frames, so this is
+    // what remote participants see. Called with zeroed values on clear.
+    Function("setEffectConfig") { (config: [String: Any]) -> Bool in
+      KushlovFaceTrackBridge.setEffectConfig(config)
+      return true
+    }
   }
 }

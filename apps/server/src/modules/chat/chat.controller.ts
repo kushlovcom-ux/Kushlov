@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { MessageType, SocketEvents } from '@kushlov/types';
 import { buildPaginated, parsePagination } from '@kushlov/utils';
 import { Conversation, Message } from '../../models';
+import type { IConversation } from '../../models/chat.model';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
@@ -12,7 +14,15 @@ import { createMessage, getOrCreateDirectConversation } from './chat.service';
 /** GET /chat/conversations — my conversations, most recent first. */
 export const listConversations = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const filter = { participants: req.user!.id };
+  // A chat I cleared stays hidden until the other side sends something new.
+  const clearedKey = `clearedAt.${req.user!.id}`;
+  const filter = {
+    participants: req.user!.id,
+    $or: [
+      { [clearedKey]: { $exists: false } },
+      { $expr: { $lt: [`$${clearedKey}`, '$lastMessageAt'] } },
+    ],
+  };
   const [items, total] = await Promise.all([
     Conversation.find(filter)
       .sort({ lastMessageAt: -1, updatedAt: -1 })
@@ -46,7 +56,12 @@ export const getMessages = asyncHandler(async (req: Request, res: Response) => {
   if (!conversation || !conversation.participants.some((p) => p.toString() === req.user!.id)) {
     throw ApiError.forbidden('Not allowed');
   }
-  const filter = { conversation: conversation._id, deletedFor: { $ne: req.user!.id } };
+  // Deleted-for-everyone messages disappear for both sides, not just the sender.
+  const filter = {
+    conversation: conversation._id,
+    deletedFor: { $ne: req.user!.id },
+    deletedForEveryone: { $ne: true },
+  };
   const [items, total] = await Promise.all([
     Message.find(filter)
       .sort({ createdAt: -1 })
@@ -124,24 +139,87 @@ export const deleteMessage = asyncHandler(async (req: Request, res: Response) =>
   const message = await Message.findById(req.params.id);
   if (!message) throw ApiError.notFound('Message not found');
 
-  const forEveryone = req.query.forEveryone === 'true' && message.sender.toString() === req.user!.id;
-  if (forEveryone) {
+  // Membership has to be proven before anything is written: without this, any
+  // authenticated user could delete-for-me an arbitrary message id and pollute
+  // a conversation they were never part of.
+  const conversation = await Conversation.findById(message.conversation);
+  if (!conversation || !conversation.participants.some((p) => p.toString() === req.user!.id)) {
+    throw ApiError.forbidden('Not allowed');
+  }
+
+  const wantsEveryone = req.query.forEveryone === 'true';
+  if (wantsEveryone && message.sender.toString() !== req.user!.id) {
+    throw ApiError.forbidden('Only the sender can delete a message for everyone');
+  }
+
+  if (wantsEveryone) {
     message.deletedForEveryone = true;
     message.text = undefined;
     message.media = undefined;
-  } else {
-    message.deletedFor.push(req.user!.id as any);
+  } else if (!message.deletedFor.some((u) => u.toString() === req.user!.id)) {
+    message.deletedFor.push(req.user!.id as unknown as Types.ObjectId);
   }
   await message.save();
 
-  if (forEveryone) {
-    const conversation = await Conversation.findById(message.conversation);
-    conversation?.participants.forEach((p) =>
-      emitToUser(p.toString(), SocketEvents.MessageDelete, { messageId: message._id.toString() }),
-    );
+  // Delete-for-me still notifies the actor so their other devices drop it too.
+  const audience = wantsEveryone
+    ? conversation.participants.map((p) => p.toString())
+    : [req.user!.id];
+  audience.forEach((userId) =>
+    emitToUser(userId, SocketEvents.MessageDelete, {
+      messageId: message._id.toString(),
+      conversationId: conversation._id.toString(),
+      forEveryone: wantsEveryone,
+    }),
+  );
+
+  // The list preview would otherwise keep quoting a message that is now gone.
+  if (conversation.lastMessage?.toString() === message._id.toString()) {
+    await refreshLastMessage(conversation);
   }
   return ok(res, null, 'Message deleted');
 });
+
+/**
+ * DELETE /chat/conversations/:id — clear this chat for me only.
+ *
+ * Every message is marked deleted-for-me rather than removed, so the other
+ * participant's history is untouched. `clearedAt` hides the thread from my list
+ * until they send something new.
+ */
+export const clearConversation = asyncHandler(async (req: Request, res: Response) => {
+  const conversation = await Conversation.findById(req.params.id);
+  if (!conversation || !conversation.participants.some((p) => p.toString() === req.user!.id)) {
+    throw ApiError.forbidden('Not allowed');
+  }
+
+  await Message.updateMany(
+    { conversation: conversation._id, deletedFor: { $ne: req.user!.id } },
+    { $addToSet: { deletedFor: req.user!.id } },
+  );
+  conversation.unread.set(req.user!.id, 0);
+  conversation.clearedAt.set(req.user!.id, new Date());
+  await conversation.save();
+
+  emitToUser(req.user!.id, SocketEvents.MessageDelete, {
+    conversationId: conversation._id.toString(),
+    cleared: true,
+  });
+  return ok(res, null, 'Chat deleted');
+});
+
+/** Point the list preview at the newest message that still exists. */
+async function refreshLastMessage(conversation: IConversation) {
+  const latest = await Message.findOne({
+    conversation: conversation._id,
+    deletedForEveryone: { $ne: true },
+  })
+    .sort({ createdAt: -1 })
+    .select('_id createdAt');
+  conversation.lastMessage = latest?._id as Types.ObjectId | undefined;
+  conversation.lastMessageAt = latest?.createdAt;
+  await conversation.save();
+}
 
 /** POST /chat/messages/:id/forward — forward a message to another conversation. */
 export const forwardMessage = asyncHandler(async (req: Request, res: Response) => {

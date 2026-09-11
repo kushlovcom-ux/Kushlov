@@ -1,6 +1,40 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+/**
+ * Android FCM config. Without this file the native build has no sender id, so
+ * `getExpoPushTokenAsync` fails and the device can never be reached while the
+ * app is backgrounded or killed — only the foreground socket keeps working.
+ *
+ * The file holds project identifiers rather than secrets, but it is still
+ * per-environment, so it stays out of git and is supplied via an EAS file
+ * secret (GOOGLE_SERVICES_JSON) or dropped in locally. Resolved conditionally
+ * so a checkout without the file still builds.
+ */
+function androidGoogleServicesFile(): string | undefined {
+  const configured = process.env.GOOGLE_SERVICES_JSON ?? './google-services.json';
+  try {
+    const fs = require('fs') as { existsSync: (p: string) => boolean };
+    const path = require('path') as {
+      isAbsolute: (p: string) => boolean;
+      resolve: (...parts: string[]) => string;
+    };
+    const absolute = path.isAbsolute(configured)
+      ? configured
+      : path.resolve(process.cwd(), configured);
+    if (fs.existsSync(absolute)) return configured;
+  } catch {
+    // Fall through to the warning below.
+  }
+  console.warn(
+    `[kushlov] google-services.json not found at "${configured}" — this build will ship without FCM, ` +
+      'so background and terminated-state call notifications will not be delivered.',
+  );
+  return undefined;
+}
+
 export default ({ config }: ConfigContext): ExpoConfig => {
+  const googleServicesFile = androidGoogleServicesFile();
+
   return {
     ...config,
     name: 'Kushlov',
@@ -51,6 +85,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         backgroundColor: '#0a0a0b',
       },
       package: 'com.kushlov.app',
+      ...(googleServicesFile ? { googleServicesFile } : {}),
       permissions: [
         'CAMERA',
         'RECORD_AUDIO',

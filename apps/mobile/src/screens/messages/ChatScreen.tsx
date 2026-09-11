@@ -160,6 +160,58 @@ export function ChatScreen({ navigation, route }: Props) {
     });
   };
 
+  const removeMessage = async (messageId: string, forEveryone: boolean) => {
+    try {
+      await chatApi.deleteMessage(messageId, forEveryone);
+      refetch();
+    } catch (err) {
+      Alert.alert('Error', getErrorMessage(err));
+    }
+  };
+
+  /** "For everyone" is only offered on your own messages — the API rejects it otherwise. */
+  const onDeleteMessage = (messageId: string, isMine: boolean) => {
+    const options: Parameters<typeof Alert.alert>[2] = [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete for me',
+        style: 'destructive',
+        onPress: () => void removeMessage(messageId, false),
+      },
+    ];
+    if (isMine) {
+      options.push({
+        text: 'Delete for everyone',
+        style: 'destructive',
+        onPress: () => void removeMessage(messageId, true),
+      });
+    }
+    Alert.alert('Delete message', isMine ? undefined : 'This removes it for you only.', options);
+  };
+
+  const onDeleteChat = () => {
+    if (!conversationId) return;
+    Alert.alert(
+      'Delete chat',
+      'This removes the chat for you only — the other person keeps their copy.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await chatApi.clearConversation(conversationId);
+              navigation.goBack();
+            } catch (err) {
+              Alert.alert('Error', getErrorMessage(err));
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const onAttach = (kind: AttachKind) => {
     if (kind === 'document') void pickDocument();
     else void pickMedia(kind);
@@ -214,26 +266,36 @@ export function ChatScreen({ navigation, route }: Props) {
             title={title ?? 'Chat'}
             showBack
             right={
-              peerId ? (
-                <View style={{ flexDirection: 'row', gap: 4 }}>
-                  <Pressable
-                    onPress={() => void call(CallType.Audio)}
-                    hitSlop={10}
-                    accessibilityLabel="Audio call"
-                    style={{ padding: 8 }}
-                  >
-                    <Ionicons name="call-outline" size={22} color={c.text} />
-                  </Pressable>
-                  <Pressable
-                    onPress={() => void call(CallType.Video)}
-                    hitSlop={10}
-                    accessibilityLabel="Video call"
-                    style={{ padding: 8 }}
-                  >
-                    <Ionicons name="videocam-outline" size={22} color={c.primary} />
-                  </Pressable>
-                </View>
-              ) : null
+              <View style={{ flexDirection: 'row', gap: 4 }}>
+                {peerId ? (
+                  <>
+                    <Pressable
+                      onPress={() => void call(CallType.Audio)}
+                      hitSlop={10}
+                      accessibilityLabel="Audio call"
+                      style={{ padding: 8 }}
+                    >
+                      <Ionicons name="call-outline" size={22} color={c.text} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void call(CallType.Video)}
+                      hitSlop={10}
+                      accessibilityLabel="Video call"
+                      style={{ padding: 8 }}
+                    >
+                      <Ionicons name="videocam-outline" size={22} color={c.primary} />
+                    </Pressable>
+                  </>
+                ) : null}
+                <Pressable
+                  onPress={onDeleteChat}
+                  hitSlop={10}
+                  accessibilityLabel="Delete chat"
+                  style={{ padding: 8 }}
+                >
+                  <Ionicons name="trash-outline" size={20} color={c.textSecondary} />
+                </Pressable>
+              </View>
             }
           />
         </View>
@@ -271,23 +333,7 @@ export function ChatScreen({ navigation, route }: Props) {
               <MessageBubble
                 message={item}
                 isMine={item.senderId === user?.id}
-                onLongPress={() => {
-                  Alert.alert('Delete message?', undefined, [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: async () => {
-                        try {
-                          await chatApi.deleteMessage(item.id);
-                          refetch();
-                        } catch (err) {
-                          Alert.alert('Error', getErrorMessage(err));
-                        }
-                      },
-                    },
-                  ]);
-                }}
+                onLongPress={() => onDeleteMessage(item.id, item.senderId === user?.id)}
               />
             )}
           />

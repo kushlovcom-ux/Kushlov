@@ -1,6 +1,7 @@
 import { ConnectionState, RoomEvent, type Room } from 'livekit-client';
 import {
   FACE_FILTER_ATTR,
+  FACE_FILTER_BAKED_ATTR,
   FACE_FILTER_BOX_ATTR,
   FACE_FILTER_TOPIC,
   type FaceBox,
@@ -9,7 +10,7 @@ import {
 import { heuristicFaceBox, serializeFaceBox } from '../layout';
 
 export type ProcessedTrackController = {
-  setFilter: (id: FaceFilterId) => Promise<void>;
+  setFilter: (id: FaceFilterId, opts?: { baked?: boolean }) => Promise<void>;
   setBox: (box: FaceBox) => void;
   resync: () => Promise<void>;
   stop: () => Promise<void>;
@@ -52,6 +53,8 @@ export async function startProcessedVideoTrack(
   let liveBox: FaceBox | null = null;
   let lastAttrAt = 0;
   let lastDataAt = 0;
+  /** True once the native processor is applying this filter to our own frames. */
+  let baked = false;
 
   const boxPayload = (id: FaceFilterId) => {
     if (id === 'none') return '';
@@ -74,6 +77,7 @@ export async function startProcessedVideoTrack(
         await room.localParticipant.setAttributes({
           [FACE_FILTER_ATTR]: value,
           [FACE_FILTER_BOX_ATTR]: box,
+          [FACE_FILTER_BAKED_ATTR]: baked && id !== 'none' ? '1' : '',
         });
       } catch {
         /* some SFUs reject unknown attrs — data packet still goes out */
@@ -83,7 +87,13 @@ export async function startProcessedVideoTrack(
     lastDataAt = now;
     try {
       const payload = encoder.encode(
-        JSON.stringify({ t: 'ff', id: value, box: box || undefined, from: identity }),
+        JSON.stringify({
+          t: 'ff',
+          id: value,
+          box: box || undefined,
+          from: identity,
+          baked: baked && id !== 'none' ? 1 : undefined,
+        }),
       );
       await room.localParticipant.publishData(payload, {
         reliable: !liveBox,
@@ -105,13 +115,15 @@ export async function startProcessedVideoTrack(
       if (filterId === 'none') return;
       void broadcast(filterId, { dataOnly: true });
     },
-    setFilter: async (id) => {
+    setFilter: async (id, opts) => {
       filterId = id;
+      baked = Boolean(opts?.baked);
       if (id === 'none') liveBox = null;
       await broadcast(id);
     },
     stop: async () => {
       liveBox = null;
+      baked = false;
       await broadcast('none');
     },
   };

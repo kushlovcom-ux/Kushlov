@@ -6,9 +6,14 @@ import { RoomEvent, type Participant } from 'livekit-client';
 import { getFilterDef } from '../catalog';
 import { heuristicFaceBox, layoutFilter, layoutFilterLayers, parseFaceBox } from '../layout';
 import { drawFilterLayer } from '../renderer/drawFilterLayers';
-import { FACE_FILTER_ATTR, FACE_FILTER_BOX_ATTR, FACE_FILTER_TOPIC } from '../types';
+import {
+  FACE_FILTER_ATTR,
+  FACE_FILTER_BAKED_ATTR,
+  FACE_FILTER_BOX_ATTR,
+  FACE_FILTER_TOPIC,
+} from '../types';
 
-type FilterPacket = { t?: string; id?: string; box?: string; from?: string };
+type FilterPacket = { t?: string; id?: string; box?: string; from?: string; baked?: number };
 
 /** Overlay AR layers on a remote video tile from LiveKit attributes / data packets. */
 export function FaceFilterOverlay({ participant }: { participant: Participant }) {
@@ -19,6 +24,9 @@ export function FaceFilterOverlay({ participant }: { participant: Participant })
   const [boxRaw, setBoxRaw] = useState(
     () => participant.attributes?.[FACE_FILTER_BOX_ATTR] || '',
   );
+  const [baked, setBaked] = useState(
+    () => participant.attributes?.[FACE_FILTER_BAKED_ATTR] === '1',
+  );
   const filter = getFilterDef(filterId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -26,6 +34,7 @@ export function FaceFilterOverlay({ participant }: { participant: Participant })
     const sync = () => {
       setFilterId(participant.attributes?.[FACE_FILTER_ATTR] || '');
       setBoxRaw(participant.attributes?.[FACE_FILTER_BOX_ATTR] || '');
+      setBaked(participant.attributes?.[FACE_FILTER_BAKED_ATTR] === '1');
     };
     sync();
     participant.on('attributesChanged', sync);
@@ -44,6 +53,7 @@ export function FaceFilterOverlay({ participant }: { participant: Participant })
         if (identity && identity !== participant.identity) return;
         if (!identity) return;
         setFilterId(msg.id || '');
+        setBaked(msg.baked === 1);
         if (typeof msg.box === 'string') setBoxRaw(msg.box);
       } catch {
         /* ignore */
@@ -99,7 +109,8 @@ export function FaceFilterOverlay({ participant }: { participant: Participant })
   }, [filter, boxRaw]);
 
   if (!filter || filter.beauty || filter.background) {
-    if (filter?.beauty) {
+    // A publisher that processed its own pixels already looks right here.
+    if (filter?.beauty && !baked) {
       return <div className="pointer-events-none absolute inset-0 bg-pink-200/10" />;
     }
     return null;

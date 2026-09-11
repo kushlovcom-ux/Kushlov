@@ -23,6 +23,7 @@ router.post(
   ctrl.sendMessage,
 );
 router.patch('/conversations/:id/read', ctrl.markRead);
+router.delete('/conversations/:id', ctrl.clearConversation);
 
 router.delete('/messages/:id', ctrl.deleteMessage);
 router.post(

@@ -6,7 +6,12 @@ import { Text } from '@/components/ui/Text';
 import { Switch } from '@/components/ui/Switch';
 import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
-import { ensureNotificationPermissions, getExpoPushToken } from '@/services/notifications';
+import {
+  ensureNotificationPermissions,
+  getExpoPushToken,
+  getPushTokenFailure,
+  type PushTokenFailure,
+} from '@/services/notifications';
 import { spacing } from '@/theme';
 import type { AppStackParamList } from '@/navigation/types';
 
@@ -14,11 +19,22 @@ type Props = NativeStackScreenProps<AppStackParamList, 'NotificationSettings'>;
 
 const KEY = 'kushlov.notif.prefs';
 
+function failureHint(reason: PushTokenFailure): string {
+  if (reason === 'permission_denied') {
+    return 'Notification permission is off, so calls will not ring when Kushlov is closed.';
+  }
+  if (reason === 'not_a_device') {
+    return 'Push notifications are unavailable on simulators and Expo Go.';
+  }
+  return 'This build could not register for push. Calls will only ring while Kushlov is open.';
+}
+
 export function NotificationSettingsScreen({ navigation }: Props) {
   const [messages, setMessages] = useState(true);
   const [calls, setCalls] = useState(true);
   const [marketing, setMarketing] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ReturnType<typeof getPushTokenFailure>>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(KEY).then((raw) => {
@@ -36,7 +52,10 @@ export function NotificationSettingsScreen({ navigation }: Props) {
         // ignore
       }
     });
-    getExpoPushToken().then(setToken);
+    getExpoPushToken().then((t) => {
+      setToken(t);
+      setFailure(getPushTokenFailure());
+    });
   }, []);
 
   const persist = async (next: { messages: boolean; calls: boolean; marketing: boolean }) => {
@@ -58,6 +77,7 @@ export function NotificationSettingsScreen({ navigation }: Props) {
     }
     const t = await getExpoPushToken();
     setToken(t);
+    setFailure(getPushTokenFailure());
     Alert.alert('Enabled', t ? 'This device will receive push notifications.' : 'Permissions granted.');
   };
 
@@ -92,6 +112,14 @@ export function NotificationSettingsScreen({ navigation }: Props) {
       <Text muted variant="caption">
         Device token: {token ? `${token.slice(0, 24)}…` : 'not registered'}
       </Text>
+      {!token && failure ? (
+        <>
+          <View style={{ height: spacing.xs }} />
+          <Text variant="caption" color="#f59e0b">
+            {failureHint(failure.reason)}
+          </Text>
+        </>
+      ) : null}
       <View style={{ height: spacing.md }} />
       <Text muted variant="caption">
         If you previously denied permission, use Open Settings to enable alerts, sound, and badge.

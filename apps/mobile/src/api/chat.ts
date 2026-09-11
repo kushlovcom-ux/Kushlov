@@ -58,8 +58,13 @@ export const chatApi = {
   },
   markRead: (conversationId: string) =>
     apiPatch<{ ok: boolean }>(`/chat/conversations/${conversationId}/read`),
-  deleteMessage: (messageId: string) =>
-    apiDelete<{ ok: boolean }>(`/chat/messages/${messageId}`),
+  deleteMessage: (messageId: string, forEveryone = false) =>
+    apiDelete<{ ok: boolean }>(
+      `/chat/messages/${messageId}${forEveryone ? '?forEveryone=true' : ''}`,
+    ),
+  /** Clears the thread for me only — the other participant keeps their copy. */
+  clearConversation: (conversationId: string) =>
+    apiDelete<{ ok: boolean }>(`/chat/conversations/${conversationId}`),
   forwardMessage: async (messageId: string, toUserId: string) =>
     normalizeChatMessage(
       await apiPost<unknown>(`/chat/messages/${messageId}/forward`, { toUserId }),

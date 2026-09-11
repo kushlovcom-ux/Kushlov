@@ -34,6 +34,25 @@ class KushlovFaceTrackModule : Module() {
       true
     }
 
+    /**
+     * Effect parameters for the frame processor. Beauty and background are
+     * applied to the published track, so this is what remotes see. Called with
+     * zeroed values when the user clears the filter.
+     */
+    Function("setEffectConfig") { config: Map<String, Any?> ->
+      fun number(key: String, fallback: Double) =
+        (config[key] as? Number)?.toDouble() ?: fallback
+      FaceEffectConfig.update(
+        beauty = number("beauty", 0.0).toFloat(),
+        brightness = number("brightness", 0.0).toFloat(),
+        background = (config["background"] as? String) ?: "none",
+        topColor = number("topColor", 0x101018.toDouble()).toInt(),
+        bottomColor = number("bottomColor", 0x05050C.toDouble()).toInt(),
+        backgroundStrength = number("backgroundStrength", 0.85).toFloat(),
+      )
+      true
+    }
+
     Function("attachProcessor") {
       if (registered) return@Function true
       try {

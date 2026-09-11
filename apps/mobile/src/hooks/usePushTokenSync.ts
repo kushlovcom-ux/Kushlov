@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as Device from 'expo-device';
@@ -71,15 +71,28 @@ export function usePushTokenSync() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    void (async () => {
+    let registered = false;
+
+    const sync = async () => {
+      if (cancelled || registered) return;
       const pushToken = await getExpoPushToken();
       if (!pushToken || cancelled) return;
       try {
         await registerToken(pushToken);
+        registered = true;
       } catch {
-        /* optional — overlay/socket still work */
+        /* retried on the next foreground */
       }
-    })();
+    };
+
+    void sync();
+
+    // The first attempt can fail before the user grants permission, while the
+    // device is offline, or before FCM has initialised on a fresh install.
+    // Without a retry the account stays unreachable by push until next login.
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void sync();
+    });
 
     let tokenSub: { remove: () => void } | undefined;
     try {
@@ -93,6 +106,7 @@ export function usePushTokenSync() {
 
     return () => {
       cancelled = true;
+      appStateSub.remove();
       tokenSub?.remove();
     };
   }, [token]);
