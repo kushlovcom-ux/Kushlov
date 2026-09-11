@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
+    "@kushlov/filter-core": "workspace:*",
     "@kushlov/types": "workspace:*",
     "@kushlov/ui": "workspace:*",
     "@kushlov/utils": "workspace:*",

@@ -13,10 +13,13 @@ import {
 import { Track, type Participant } from 'livekit-client';
 import { clientEnv } from '@/lib/env';
 import { useLiveKitUrl } from '@/hooks/use-livekit-url';
-import { FaceFilterProvider } from '@/faceFilters/hooks/useFaceFilter';
-import { FilterSelector } from '@/faceFilters/components/FilterSelector';
-import { FaceFilterPublisher } from '@/faceFilters/components/FaceFilterPublisher';
-import { FaceFilterOverlay } from '@/faceFilters/components/FaceFilterOverlay';
+import {
+  FilterDebugOverlay,
+  FilterPanel,
+  FilterPublisher,
+  FiltersProvider,
+  RemoteFilterOverlay,
+} from '@/filters';
 import { PublisherAvControls } from '@/components/live/publisher-av-controls';
 import { cn } from '@/lib/utils';
 
@@ -72,7 +75,7 @@ function ParticipantTile({
         }}
       />
       {!trackRef.participant.isLocal ? (
-        <FaceFilterOverlay participant={trackRef.participant} />
+        <RemoteFilterOverlay participant={trackRef.participant} />
       ) : null}
       {showLabel ? (
         <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex max-w-[90%] items-center gap-1.5">
@@ -202,7 +205,7 @@ function LiveRoomVideo({
   const conference = speakerMode && remoteTracks.length > 1;
 
   return (
-    <FaceFilterProvider>
+    <FiltersProvider>
       <div className="relative flex h-full w-full flex-col overflow-hidden">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
           {audioOnly ? (
@@ -311,11 +314,14 @@ function LiveRoomVideo({
                     : 'bottom-[7.25rem] left-3 sm:bottom-[7.5rem]',
               )}
             >
-              <FilterSelector />
+              <div className="flex flex-col items-start gap-2">
+                <FilterDebugOverlay />
+                <FilterPanel />
+              </div>
             </div>
           ) : null}
         </div>
-        {showFilters ? <FaceFilterPublisher /> : null}
+        {showFilters ? <FilterPublisher /> : null}
         {showAvControls ? (
           <ControlBar
             variation="minimal"
@@ -332,7 +338,7 @@ function LiveRoomVideo({
         ) : null}
         <RoomAudioRenderer />
       </div>
-    </FaceFilterProvider>
+    </FiltersProvider>
   );
 }
 

@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build:packages": "pnpm --filter @kushlov/types --filter @kushlov/utils run build",
+    "build:packages": "pnpm --filter @kushlov/types --filter @kushlov/utils --filter @kushlov/filter-core run build",
     "dev": "pnpm build:packages && pnpm --parallel --filter \"./apps/*\" dev",
     "dev:web": "pnpm build:packages && pnpm --filter @kushlov/web dev",
     "dev:server": "pnpm build:packages && pnpm --filter @kushlov/server dev",
