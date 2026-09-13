@@ -113,6 +113,7 @@ export default function WalletPage() {
       }
       return data;
     },
+    enabled: !isHost,
   });
   const diamondTxns = useQuery({
     queryKey: ['diamondTxns'],
@@ -216,7 +217,7 @@ export default function WalletPage() {
         title="Wallet"
         subtitle={
           isHost
-            ? 'Gold earnings, withdrawals, and diamonds for host-to-host connects'
+            ? 'Gold earnings and withdrawals'
             : 'Buy diamonds to chat and call people & hosts'
         }
       />
@@ -256,19 +257,20 @@ export default function WalletPage() {
 
         {isHost && (
           <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100/80">
-            You earn gold when users message, call, or gift you. Buy diamonds below to call and
-            message other hosts and normal users.
+            You earn gold when users message, call, or gift you. Withdraw gold as cash when you
+            reach the minimum.
           </div>
         )}
 
         <Tabs defaultValue={defaultTab}>
           <TabsList>
-            <TabsTrigger value="buy">Buy diamonds</TabsTrigger>
+            {!isHost && <TabsTrigger value="buy">Buy diamonds</TabsTrigger>}
             {isHost && <TabsTrigger value="withdraw">Withdraw</TabsTrigger>}
             {isHost && <TabsTrigger value="withdrawals">My requests</TabsTrigger>}
-            <TabsTrigger value="history">{isHost ? 'History' : 'History'}</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
 
+          {!isHost && (
           <TabsContent value="buy" className="mt-6">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {packages.data?.packages?.map((p) => (
@@ -298,6 +300,7 @@ export default function WalletPage() {
               </p>
             )}
           </TabsContent>
+          )}
 
           {isHost && (
             <TabsContent value="withdraw" className="mt-6">

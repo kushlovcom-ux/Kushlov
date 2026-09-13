@@ -46,6 +46,7 @@ export function WalletScreen() {
   });
   const canUseGold =
     user?.role === Role.Host || user?.role === Role.Admin || Boolean(user?.isHostApproved);
+  const isHost = user?.role === Role.Host;
 
   const wallet = useQuery({ queryKey: queryKeys.wallet, queryFn: () => walletApi.get() });
   const packages = useQuery({
@@ -55,6 +56,7 @@ export function WalletScreen() {
       if (Array.isArray(data)) return data;
       return data.packages ?? [];
     },
+    enabled: !isHost,
   });
   const tx = useQuery({
     queryKey: queryKeys.diamondTx(1),
@@ -150,7 +152,7 @@ export function WalletScreen() {
     await Promise.all([wallet.refetch(), packages.refetch(), tx.refetch()]);
   }, [wallet, packages, tx]);
 
-  if (wallet.isLoading || packages.isLoading) {
+  if (wallet.isLoading || (!isHost && packages.isLoading)) {
     return (
       <Screen>
         <Header title="Wallet" showBack />
@@ -211,33 +213,37 @@ export function WalletScreen() {
           </View>
         </LinearGradient>
 
-        <SectionHeader title="Buy diamonds" subtitle="Instant top-up via Razorpay" flush />
-        <View style={styles.packages}>
-          {pkgList.map((pkg) => (
-            <PressableScale
-              key={pkg.id}
-              onPress={() => buy.mutate(pkg.id)}
-              disabled={buy.isPending}
-              style={[
-                styles.pkg,
-                {
-                  backgroundColor: c.card,
-                  borderColor: pkg.popular ? c.premiumGold : c.border,
-                },
-              ]}
-            >
-              {pkg.popular ? <Badge label="Popular" tone="orange" /> : null}
-              <Text variant="h3" style={{ marginTop: 6 }}>
-                {formatDiamonds(pkg.diamonds + (pkg.bonusDiamonds ?? pkg.bonus ?? 0))}◆
-              </Text>
-              <Text muted variant="caption">
-                {formatMoney(pkg.price ?? pkg.priceInr ?? pkg.priceUsd ?? 0, pkg.currency ?? 'INR')}
-              </Text>
-            </PressableScale>
-          ))}
-        </View>
-        {pkgList.length === 0 ? (
-          <EmptyState title="No packages" description="Diamond packs will appear here." />
+        {!isHost ? (
+          <>
+            <SectionHeader title="Buy diamonds" subtitle="Instant top-up via Razorpay" flush />
+            <View style={styles.packages}>
+              {pkgList.map((pkg) => (
+                <PressableScale
+                  key={pkg.id}
+                  onPress={() => buy.mutate(pkg.id)}
+                  disabled={buy.isPending}
+                  style={[
+                    styles.pkg,
+                    {
+                      backgroundColor: c.card,
+                      borderColor: pkg.popular ? c.premiumGold : c.border,
+                    },
+                  ]}
+                >
+                  {pkg.popular ? <Badge label="Popular" tone="orange" /> : null}
+                  <Text variant="h3" style={{ marginTop: 6 }}>
+                    {formatDiamonds(pkg.diamonds + (pkg.bonusDiamonds ?? pkg.bonus ?? 0))}◆
+                  </Text>
+                  <Text muted variant="caption">
+                    {formatMoney(pkg.price ?? pkg.priceInr ?? pkg.priceUsd ?? 0, pkg.currency ?? 'INR')}
+                  </Text>
+                </PressableScale>
+              ))}
+            </View>
+            {pkgList.length === 0 ? (
+              <EmptyState title="No packages" description="Diamond packs will appear here." />
+            ) : null}
+          </>
         ) : null}
 
         {canUseGold ? (

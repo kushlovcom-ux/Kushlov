@@ -64,20 +64,37 @@ export function isRemotePrivacyFilter(id: string | null | undefined): boolean {
   return Boolean(id) && MOBILE_PRIVACY_FILTERS.has(id as string);
 }
 
-const FALLBACK: RemoteFaceBox = {
-  cx: 0.5,
-  cy: 0.4,
-  width: 0.54,
-  height: 0.66,
-  rotation: 0,
-  anchors: {
-    face: { x: 0.5, y: 0.4 },
-    eyes: { x: 0.5, y: 0.334 },
-    forehead: { x: 0.5, y: 0.083 },
-    mouth: { x: 0.5, y: 0.545 },
-    nose: { x: 0.5, y: 0.413 },
-  },
-};
+export type ObjectFit = 'contain' | 'cover' | 'fill';
+
+export type ContentRect = { x: number; y: number; w: number; h: number };
+
+/**
+ * Pixel box of the video image inside a tile after object-fit. Face boxes from
+ * mobile are in video-frame space — mapping them to the full tile (including
+ * letterbox) paints glasses over the local PiP on web calls.
+ */
+export function objectFitContentRect(
+  containerW: number,
+  containerH: number,
+  mediaW: number,
+  mediaH: number,
+  fit: ObjectFit = 'contain',
+): ContentRect {
+  if (containerW < 1 || containerH < 1 || mediaW < 1 || mediaH < 1 || fit === 'fill') {
+    return { x: 0, y: 0, w: containerW, h: containerH };
+  }
+  const mediaAspect = mediaW / mediaH;
+  const boxAspect = containerW / containerH;
+  const mediaIsWider = mediaAspect > boxAspect;
+  if (fit === 'contain' ? mediaIsWider : !mediaIsWider) {
+    const w = containerW;
+    const h = w / mediaAspect;
+    return { x: 0, y: (containerH - h) / 2, w, h };
+  }
+  const h = containerH;
+  const w = h * mediaAspect;
+  return { x: (containerW - w) / 2, y: 0, w, h };
+}
 
 function derivedAnchors(
   cx: number,
@@ -94,9 +111,9 @@ function derivedAnchors(
   };
 }
 
-/** Parses mobile's compact box payload; returns a centred fallback on garbage. */
-export function parseRemoteFaceBox(raw: string | null | undefined): RemoteFaceBox {
-  if (!raw) return FALLBACK;
+/** Parses mobile's compact box payload. Returns null until a real box arrives. */
+export function parseRemoteFaceBox(raw: string | null | undefined): RemoteFaceBox | null {
+  if (!raw) return null;
   try {
     const p = JSON.parse(raw) as {
       cx?: number;
@@ -109,7 +126,7 @@ export function parseRemoteFaceBox(raw: string | null | undefined): RemoteFaceBo
       m?: number[];
       n?: number[];
     };
-    if (typeof p.cx !== 'number' || typeof p.cy !== 'number') return FALLBACK;
+    if (typeof p.cx !== 'number' || typeof p.cy !== 'number') return null;
 
     const cx = p.cx;
     const cy = p.cy;
@@ -133,7 +150,7 @@ export function parseRemoteFaceBox(raw: string | null | undefined): RemoteFaceBo
       }),
     };
   } catch {
-    return FALLBACK;
+    return null;
   }
 }
 

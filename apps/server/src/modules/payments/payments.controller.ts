@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { DiamondTxnReason, NotificationType, PaymentStatus } from '@kushlov/types';
+import { DiamondTxnReason, NotificationType, PaymentStatus, Role } from '@kushlov/types';
 import { buildPaginated, parsePagination, getPackagePriceForCountry } from '@kushlov/utils';
 import { Payment, User } from '../../models';
 import { ApiError } from '../../utils/ApiError';
@@ -46,6 +46,9 @@ export const listPackages = asyncHandler(async (req: Request, res: Response) => 
 
 /** POST /payments/purchase — start a diamond purchase for a package. */
 export const purchaseDiamonds = asyncHandler(async (req: Request, res: Response) => {
+  if (req.user?.role === Role.Host) {
+    throw ApiError.forbidden('Hosts cannot purchase diamonds');
+  }
   const { packageId } = req.body;
   const settings = await getSettings();
   const pkg = settings.diamondPackages.find((p) => p.id === packageId && p.isActive);

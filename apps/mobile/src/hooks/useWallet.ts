@@ -4,6 +4,7 @@ import { walletApi } from '@/api/wallet';
 import { queryKeys } from '@/constants/queryKeys';
 import { openCheckout } from '@/services/razorpay';
 import { useAuthStore } from '@/store/auth';
+import { Role } from '@/types';
 
 export function useWallet() {
   const token = useAuthStore((s) => s.accessToken);
@@ -23,7 +24,7 @@ export function useWallet() {
       if (Array.isArray(data)) return data;
       return data.packages ?? [];
     },
-    enabled: !!token,
+    enabled: !!token && user?.role !== Role.Host,
   });
 
   const diamondTx = useQuery({

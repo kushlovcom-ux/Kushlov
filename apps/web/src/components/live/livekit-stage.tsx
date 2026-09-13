@@ -60,11 +60,16 @@ function ParticipantTile({
   const roleBadge = role === 'cohost' ? 'Co-host' : role === 'host' ? 'Host' : null;
 
   return (
-    <div className={cn('relative h-full min-h-0 w-full overflow-hidden bg-black', className)}>
+    <div
+      className={cn(
+        'relative isolate h-full min-h-0 w-full overflow-hidden bg-black',
+        className,
+      )}
+    >
       <VideoTrack
         trackRef={trackRef as never}
         className={cn(
-          'absolute inset-0 !h-full !w-full !max-h-none !max-w-none',
+          'absolute inset-0 z-0 !h-full !w-full !max-h-none !max-w-none',
           videoFit === 'contain' ? 'object-contain' : 'object-cover',
           mirror && 'scale-x-[-1]',
         )}
@@ -75,7 +80,7 @@ function ParticipantTile({
         }}
       />
       {!trackRef.participant.isLocal ? (
-        <RemoteFilterOverlay participant={trackRef.participant} />
+        <RemoteFilterOverlay participant={trackRef.participant} videoFit={videoFit} />
       ) : null}
       {showLabel ? (
         <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex max-w-[90%] items-center gap-1.5">
@@ -250,7 +255,7 @@ function LiveRoomVideo({
               {remoteTracks.length > 0 && localTracks[0] ? (
                 <div
                   className={cn(
-                    'absolute z-20 overflow-hidden rounded-xl border border-white/25 shadow-lg',
+                    'absolute z-30 overflow-hidden rounded-xl border border-white/25 shadow-lg',
                     conference
                       ? 'bottom-3 right-3 h-24 w-[4.5rem] sm:h-32 sm:w-24'
                       : 'bottom-3 right-3 h-28 w-20 sm:h-36 sm:w-28 md:h-40 md:w-32',

@@ -16,17 +16,11 @@ const items = [
   { href: '/profile', label: 'Profile', icon: User },
 ];
 
-/** Mobile bottom navigation — Wallet + notification badges always visible. */
-export function MobileBottomNav({
-  mobileVisible = true,
-  forceHidden = false,
-}: {
-  mobileVisible?: boolean;
-  forceHidden?: boolean;
-}) {
+/** Mobile bottom navigation — always on screen except fullscreen live rooms. */
+export function MobileBottomNav({ forceHidden = false }: { forceHidden?: boolean }) {
   const pathname = usePathname();
   const badges = useNavBadges();
-  const show = !forceHidden && mobileVisible;
+  const show = !forceHidden;
 
   return (
     <nav
