@@ -20,6 +20,97 @@ const TIME_UNITS: { value: TimeUnit; label: string }[] = [
   { value: 'hour', label: 'Hours' },
 ];
 
+const DEFAULT_RATES = {
+  audioCallPerMinute: 10,
+  videoCallPerMinute: 20,
+  liveChatPerMessage: 1,
+  chatPerMessage: 1,
+  videoSecondsPerDiamond: 60,
+  audioSecondsPerDiamond: 120,
+  videoTimeUnit: 'minute' as TimeUnit,
+  audioTimeUnit: 'minute' as TimeUnit,
+  messagesPerDiamond: 5,
+  userUserVideoSecondsPerDiamond: 90,
+  userUserAudioSecondsPerDiamond: 180,
+  userUserVideoTimeUnit: 'minute' as TimeUnit,
+  userUserAudioTimeUnit: 'minute' as TimeUnit,
+  userUserMessagesPerDiamond: 10,
+  hostHostVideoSecondsPerDiamond: 60,
+  hostHostAudioSecondsPerDiamond: 120,
+  hostHostVideoTimeUnit: 'minute' as TimeUnit,
+  hostHostAudioTimeUnit: 'minute' as TimeUnit,
+  hostHostMessagesPerDiamond: 5,
+  hostUserVideoSecondsPerDiamond: 60,
+  hostUserAudioSecondsPerDiamond: 120,
+  hostUserVideoTimeUnit: 'minute' as TimeUnit,
+  hostUserAudioTimeUnit: 'minute' as TimeUnit,
+  hostUserMessagesPerDiamond: 5,
+};
+
+const DEFAULT_FEATURES = {
+  liveEnabled: true,
+  callsEnabled: true,
+  giftsEnabled: true,
+  reviewsEnabled: true,
+};
+
+const DEFAULT_LANDING = {
+  membersLabel: '120k+',
+  verifiedHostsLabel: '8k+',
+  liveRoomsLabel: '24/7',
+};
+
+const DEFAULT_WITHDRAW = { minGold: 1000, currency: 'USD', goldToFiatRate: 0.01 };
+
+function asSettings(payload: unknown): Record<string, any> {
+  if (!payload || typeof payload !== 'object') return {};
+  const record = payload as Record<string, any>;
+  // Tolerate a double-wrapped envelope or a Mongoose `_doc` snapshot.
+  if (record.rates || record.goldConversionRatio != null || record.landing) return record;
+  if (record.data && typeof record.data === 'object') return asSettings(record.data);
+  if (record._doc && typeof record._doc === 'object') return asSettings(record._doc);
+  return record;
+}
+
+function buildForm(payload: unknown) {
+  const data = asSettings(payload);
+  const rates = { ...DEFAULT_RATES, ...data.rates };
+  return {
+    ...data,
+    goldConversionRatio: data.goldConversionRatio ?? 0.5,
+    rates,
+    features: { ...DEFAULT_FEATURES, ...data.features },
+    landing: { ...DEFAULT_LANDING, ...data.landing },
+    withdraw: { ...DEFAULT_WITHDRAW, ...data.withdraw },
+    diamondPackages: Array.isArray(data.diamondPackages) ? data.diamondPackages : [],
+  };
+}
+
+function conversionInputs(rates: typeof DEFAULT_RATES) {
+  return {
+    videoValue: secondsToUnit(rates.videoSecondsPerDiamond, rates.videoTimeUnit),
+    audioValue: secondsToUnit(rates.audioSecondsPerDiamond, rates.audioTimeUnit),
+    userVideoValue: secondsToUnit(rates.userUserVideoSecondsPerDiamond, rates.userUserVideoTimeUnit),
+    userAudioValue: secondsToUnit(rates.userUserAudioSecondsPerDiamond, rates.userUserAudioTimeUnit),
+    hostHostVideoValue: secondsToUnit(
+      rates.hostHostVideoSecondsPerDiamond,
+      rates.hostHostVideoTimeUnit,
+    ),
+    hostHostAudioValue: secondsToUnit(
+      rates.hostHostAudioSecondsPerDiamond,
+      rates.hostHostAudioTimeUnit,
+    ),
+    hostUserVideoValue: secondsToUnit(
+      rates.hostUserVideoSecondsPerDiamond,
+      rates.hostUserVideoTimeUnit,
+    ),
+    hostUserAudioValue: secondsToUnit(
+      rates.hostUserAudioSecondsPerDiamond,
+      rates.hostUserAudioTimeUnit,
+    ),
+  };
+}
+
 function secondsToUnit(seconds: number, unit: TimeUnit): number {
   if (unit === 'hour') return Math.round((seconds / 3600) * 100) / 100;
   if (unit === 'minute') return Math.round((seconds / 60) * 100) / 100;
@@ -54,72 +145,22 @@ export default function AdminSettingsPage() {
   const [hostUserVideoValue, setHostUserVideoValue] = useState(1);
   const [hostUserAudioValue, setHostUserAudioValue] = useState(2);
 
+  const applySettings = (payload: unknown) => {
+    const next = buildForm(payload);
+    setForm(next);
+    const values = conversionInputs(next.rates);
+    setVideoValue(values.videoValue);
+    setAudioValue(values.audioValue);
+    setUserVideoValue(values.userVideoValue);
+    setUserAudioValue(values.userAudioValue);
+    setHostHostVideoValue(values.hostHostVideoValue);
+    setHostHostAudioValue(values.hostHostAudioValue);
+    setHostUserVideoValue(values.hostUserVideoValue);
+    setHostUserAudioValue(values.hostUserAudioValue);
+  };
+
   useEffect(() => {
-    if (settings.data && !form) {
-      const rates = {
-        audioCallPerMinute: 10,
-        videoCallPerMinute: 20,
-        liveChatPerMessage: 1,
-        chatPerMessage: 1,
-        videoSecondsPerDiamond: 60,
-        audioSecondsPerDiamond: 120,
-        videoTimeUnit: 'minute' as TimeUnit,
-        audioTimeUnit: 'minute' as TimeUnit,
-        messagesPerDiamond: 5,
-        userUserVideoSecondsPerDiamond: 90,
-        userUserAudioSecondsPerDiamond: 180,
-        userUserVideoTimeUnit: 'minute' as TimeUnit,
-        userUserAudioTimeUnit: 'minute' as TimeUnit,
-        userUserMessagesPerDiamond: 10,
-        hostHostVideoSecondsPerDiamond: 60,
-        hostHostAudioSecondsPerDiamond: 120,
-        hostHostVideoTimeUnit: 'minute' as TimeUnit,
-        hostHostAudioTimeUnit: 'minute' as TimeUnit,
-        hostHostMessagesPerDiamond: 5,
-        hostUserVideoSecondsPerDiamond: 60,
-        hostUserAudioSecondsPerDiamond: 120,
-        hostUserVideoTimeUnit: 'minute' as TimeUnit,
-        hostUserAudioTimeUnit: 'minute' as TimeUnit,
-        hostUserMessagesPerDiamond: 5,
-        ...settings.data.rates,
-      };
-      setForm({
-        ...settings.data,
-        rates,
-        features: {
-          liveEnabled: true,
-          callsEnabled: true,
-          giftsEnabled: true,
-          reviewsEnabled: true,
-          ...settings.data.features,
-        },
-        landing: settings.data.landing ?? {
-          membersLabel: '120k+',
-          verifiedHostsLabel: '8k+',
-          liveRoomsLabel: '24/7',
-        },
-      });
-      setVideoValue(secondsToUnit(rates.videoSecondsPerDiamond, rates.videoTimeUnit));
-      setAudioValue(secondsToUnit(rates.audioSecondsPerDiamond, rates.audioTimeUnit));
-      setUserVideoValue(
-        secondsToUnit(rates.userUserVideoSecondsPerDiamond, rates.userUserVideoTimeUnit),
-      );
-      setUserAudioValue(
-        secondsToUnit(rates.userUserAudioSecondsPerDiamond, rates.userUserAudioTimeUnit),
-      );
-      setHostHostVideoValue(
-        secondsToUnit(rates.hostHostVideoSecondsPerDiamond, rates.hostHostVideoTimeUnit),
-      );
-      setHostHostAudioValue(
-        secondsToUnit(rates.hostHostAudioSecondsPerDiamond, rates.hostHostAudioTimeUnit),
-      );
-      setHostUserVideoValue(
-        secondsToUnit(rates.hostUserVideoSecondsPerDiamond, rates.hostUserVideoTimeUnit),
-      );
-      setHostUserAudioValue(
-        secondsToUnit(rates.hostUserAudioSecondsPerDiamond, rates.hostUserAudioTimeUnit),
-      );
-    }
+    if (settings.data && !form) applySettings(settings.data);
   }, [settings.data, form]);
 
   const save = useMutation({
@@ -132,36 +173,39 @@ export default function AdminSettingsPage() {
       const hhAudioUnit = (form.rates.hostHostAudioTimeUnit ?? 'minute') as TimeUnit;
       const huVideoUnit = (form.rates.hostUserVideoTimeUnit ?? 'minute') as TimeUnit;
       const huAudioUnit = (form.rates.hostUserAudioTimeUnit ?? 'minute') as TimeUnit;
-      return api.patch('/admin/settings', {
-        goldConversionRatio: form.goldConversionRatio,
-        rates: {
-          ...form.rates,
-          videoTimeUnit: videoUnit,
-          audioTimeUnit: audioUnit,
-          videoSecondsPerDiamond: unitToSeconds(videoValue, videoUnit),
-          audioSecondsPerDiamond: unitToSeconds(audioValue, audioUnit),
-          userUserVideoTimeUnit: uuVideoUnit,
-          userUserAudioTimeUnit: uuAudioUnit,
-          userUserVideoSecondsPerDiamond: unitToSeconds(userVideoValue, uuVideoUnit),
-          userUserAudioSecondsPerDiamond: unitToSeconds(userAudioValue, uuAudioUnit),
-          hostHostVideoTimeUnit: hhVideoUnit,
-          hostHostAudioTimeUnit: hhAudioUnit,
-          hostHostVideoSecondsPerDiamond: unitToSeconds(hostHostVideoValue, hhVideoUnit),
-          hostHostAudioSecondsPerDiamond: unitToSeconds(hostHostAudioValue, hhAudioUnit),
-          hostUserVideoTimeUnit: huVideoUnit,
-          hostUserAudioTimeUnit: huAudioUnit,
-          hostUserVideoSecondsPerDiamond: unitToSeconds(hostUserVideoValue, huVideoUnit),
-          hostUserAudioSecondsPerDiamond: unitToSeconds(hostUserAudioValue, huAudioUnit),
-        },
-        features: form.features,
-        withdraw: form.withdraw,
-        diamondPackages: form.diamondPackages,
-        landing: form.landing,
-      });
+      return unwrap(
+        api.patch('/admin/settings', {
+          goldConversionRatio: form.goldConversionRatio,
+          rates: {
+            ...form.rates,
+            videoTimeUnit: videoUnit,
+            audioTimeUnit: audioUnit,
+            videoSecondsPerDiamond: unitToSeconds(videoValue, videoUnit),
+            audioSecondsPerDiamond: unitToSeconds(audioValue, audioUnit),
+            userUserVideoTimeUnit: uuVideoUnit,
+            userUserAudioTimeUnit: uuAudioUnit,
+            userUserVideoSecondsPerDiamond: unitToSeconds(userVideoValue, uuVideoUnit),
+            userUserAudioSecondsPerDiamond: unitToSeconds(userAudioValue, uuAudioUnit),
+            hostHostVideoTimeUnit: hhVideoUnit,
+            hostHostAudioTimeUnit: hhAudioUnit,
+            hostHostVideoSecondsPerDiamond: unitToSeconds(hostHostVideoValue, hhVideoUnit),
+            hostHostAudioSecondsPerDiamond: unitToSeconds(hostHostAudioValue, hhAudioUnit),
+            hostUserVideoTimeUnit: huVideoUnit,
+            hostUserAudioTimeUnit: huAudioUnit,
+            hostUserVideoSecondsPerDiamond: unitToSeconds(hostUserVideoValue, huVideoUnit),
+            hostUserAudioSecondsPerDiamond: unitToSeconds(hostUserAudioValue, huAudioUnit),
+          },
+          features: form.features,
+          withdraw: form.withdraw,
+          diamondPackages: form.diamondPackages,
+          landing: form.landing,
+        }),
+      );
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       toast.success('Settings saved');
-      setForm(null);
+      qc.setQueryData(['admin-settings'], saved);
+      applySettings(saved);
       qc.invalidateQueries({ queryKey: ['admin-settings'] });
       qc.invalidateQueries({ queryKey: ['platform-settings'] });
       qc.invalidateQueries({ queryKey: ['platform-stats'] });

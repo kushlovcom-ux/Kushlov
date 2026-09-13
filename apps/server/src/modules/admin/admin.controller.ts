@@ -612,7 +612,7 @@ export const forceEndLive = asyncHandler(async (req: Request, res: Response) => 
 
 export const getAdminSettings = asyncHandler(async (_req: Request, res: Response) => {
   const settings = await getSettings();
-  return ok(res, settings);
+  return ok(res, settings.toObject());
 });
 
 export const updateSettings = asyncHandler(async (req: Request, res: Response) => {
@@ -621,12 +621,23 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
   for (const key of updatable) if (key in req.body) (settings as any)[key] = req.body[key];
   if (req.body.rates && typeof req.body.rates === 'object') {
     Object.assign(settings.rates, req.body.rates);
+    settings.markModified('rates');
   }
   if (req.body.features && typeof req.body.features === 'object') {
     Object.assign(settings.features, req.body.features);
+    settings.markModified('features');
+  }
+  if (req.body.landing && typeof req.body.landing === 'object') {
+    settings.markModified('landing');
+  }
+  if (req.body.withdraw && typeof req.body.withdraw === 'object') {
+    settings.markModified('withdraw');
+  }
+  if (Array.isArray(req.body.diamondPackages)) {
+    settings.markModified('diamondPackages');
   }
   await settings.save();
-  return ok(res, settings, 'Settings updated');
+  return ok(res, settings.toObject(), 'Settings updated');
 });
 
 /** GET /admin/hosts — approved hosts with pricing + ratings for admin management. */
