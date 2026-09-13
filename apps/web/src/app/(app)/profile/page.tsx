@@ -16,6 +16,7 @@ import { UserAvatar } from '@/components/common/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { LocationSetup } from '@/components/location/location-setup';
 import { CountrySelect } from '@/components/ui/country-select';
+import { formatGender } from '@/lib/utils';
 
 export default function ProfilePage() {
   const { user, setUser } = useAuthStore();
@@ -79,7 +80,10 @@ export default function ProfilePage() {
           <div>
             <p className="text-lg font-semibold">{user?.displayName}</p>
             <p className="text-sm text-white/40">@{user?.username}</p>
-            <Badge className="mt-2 capitalize">{user?.role}</Badge>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Badge className="capitalize">{user?.role}</Badge>
+              {user?.gender ? <Badge variant="secondary">{formatGender(user.gender)}</Badge> : null}
+            </div>
           </div>
         </div>
 

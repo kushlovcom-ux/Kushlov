@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { cn, formatGender } from '@/lib/utils';
 
 type AdminUserDetail = {
   user: PublicUser & { _id?: string };
@@ -164,6 +164,9 @@ export default function AdminUserDetailPage() {
                     {u.status}
                   </Badge>
                   {u.isOnline ? <Badge variant="success">Online</Badge> : null}
+                  {u.gender || form.gender ? (
+                    <Badge variant="secondary">{formatGender(u.gender || form.gender)}</Badge>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -205,7 +208,7 @@ export default function AdminUserDetailPage() {
                   <option value="">Not set</option>
                   {Object.values(Gender).map((g) => (
                     <option key={g} value={g}>
-                      {g.replace('_', ' ')}
+                      {formatGender(g)}
                     </option>
                   ))}
                 </select>

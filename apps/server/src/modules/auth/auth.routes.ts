@@ -7,6 +7,7 @@ import {
 } from '../../middleware/rateLimit';
 import { authenticate } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
+import { uploadImage } from '../../middleware/upload';
 import * as ctrl from './auth.controller';
 import {
   forgotSchema,
@@ -18,7 +19,13 @@ import {
 
 const router = Router();
 
-router.post('/register', registerLimiter, validate({ body: registerSchema }), ctrl.register);
+router.post(
+  '/register',
+  registerLimiter,
+  uploadImage.single('avatar'),
+  validate({ body: registerSchema }),
+  ctrl.register,
+);
 router.post('/login', loginLimiter, validate({ body: loginSchema }), ctrl.login);
 router.post('/google', loginLimiter, validate({ body: googleSchema }), ctrl.googleLogin);
 router.post('/refresh', refreshLimiter, ctrl.refresh);

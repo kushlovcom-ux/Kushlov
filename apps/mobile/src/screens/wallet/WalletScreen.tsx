@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Chip, GlassCard, PressableScale, SectionHeader } from '@/design-system';
 import { apiError, paymentsApi, walletApi } from '@/api';
 import { queryKeys } from '@/constants/queryKeys';
-import { openRazorpayCheckout } from '@/services/razorpay';
+import { isPaymentCancelled, openRazorpayCheckout } from '@/services/razorpay';
 import { useAuthStore } from '@/store/auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { Role, type DiamondPackage, type LedgerEntry } from '@/types';
@@ -92,7 +92,13 @@ export function WalletScreen() {
       qc.invalidateQueries({ queryKey: queryKeys.wallet });
       Alert.alert('Success', 'Diamonds added to your wallet.');
     },
-    onError: (e) => Alert.alert('Payment', apiError(e)),
+    onError: (e) => {
+      if (isPaymentCancelled(e)) {
+        Alert.alert('Payment cancelled', 'No diamonds were added.');
+        return;
+      }
+      Alert.alert('Payment failed', apiError(e));
+    },
   });
 
   const destination = useMemo(() => {

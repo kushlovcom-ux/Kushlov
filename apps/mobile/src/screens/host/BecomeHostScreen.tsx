@@ -4,17 +4,26 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
+import { CountrySelect } from '@/components/ui/CountrySelect';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
 import { getErrorMessage } from '@/api/client';
 import { verificationApi } from '@/api/verification';
+import { COUNTRIES, DEFAULT_COUNTRY } from '@/constants/countries';
 import { queryKeys } from '@/constants/queryKeys';
 import { Gender } from '@/types';
+import { useAuthStore } from '@/store/auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { spacing } from '@/theme';
 import type { AppStackParamList } from '@/navigation/types';
+
+function initialCountry(saved?: string | null): string {
+  const value = saved?.trim();
+  if (value && (COUNTRIES as readonly string[]).includes(value)) return value;
+  return DEFAULT_COUNTRY;
+}
 
 type Props = NativeStackScreenProps<AppStackParamList, 'BecomeHost'>;
 
@@ -36,8 +45,10 @@ async function ensureCameraPermission() {
 
 export function BecomeHostScreen({ navigation }: Props) {
   const c = useThemeColors();
+  const userCountry = useAuthStore((s) => s.user?.country);
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [countryError, setCountryError] = useState('');
   const me = useQuery({
     queryKey: queryKeys.verification,
     queryFn: () => verificationApi.me(),
@@ -53,7 +64,7 @@ export function BecomeHostScreen({ navigation }: Props) {
     bio: '',
     gender: Gender.Female,
     dob: '1998-01-01',
-    country: 'IN',
+    country: initialCountry(userCountry),
   });
   const [govId, setGovId] = useState<string | null>(null);
   const [selfies, setSelfies] = useState<Array<string | null>>([null, null, null]);
@@ -122,12 +133,18 @@ export function BecomeHostScreen({ navigation }: Props) {
   };
 
   const submitBasic = async () => {
+    if (!basic.country.trim()) {
+      setCountryError('Select your country');
+      return;
+    }
+    setCountryError('');
     setLoading(true);
     try {
       await verificationApi.submitBasic({
         ...basic,
         name: basic.name.trim(),
         username: basic.username.trim(),
+        country: basic.country.trim(),
         languages: ['en'],
       });
       setStep(1);
@@ -219,10 +236,15 @@ export function BecomeHostScreen({ navigation }: Props) {
             onChangeText={(v) => setBasic((s) => ({ ...s, dob: v }))}
           />
           <View style={{ height: spacing.md }} />
-          <Input
+          <CountrySelect
             label="Country"
             value={basic.country}
-            onChangeText={(v) => setBasic((s) => ({ ...s, country: v }))}
+            onChange={(v) => {
+              setBasic((s) => ({ ...s, country: v }));
+              setCountryError('');
+            }}
+            error={countryError}
+            placeholder="Select your country"
           />
           <View style={{ height: spacing.xl }} />
           <Button title="Continue" onPress={submitBasic} loading={loading} fullWidth size="lg" />

@@ -18,7 +18,7 @@ import { useAuthStore } from '@/store/auth';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import type { AppStackParamList } from '@/navigation/types';
 import { Role } from '@/types';
-import { displayName, formatDiamonds } from '@/utils/format';
+import { displayName, formatDiamonds, formatGender } from '@/utils/format';
 import { radius, spacing } from '@/theme';
 
 const ALL_LINKS: Array<{
@@ -114,6 +114,7 @@ export function ProfileScreen() {
           <Text muted>@{user?.username}</Text>
           <View style={styles.badges}>
             {user?.isHostApproved ? <Badge label="Host" tone="pink" /> : null}
+            {user?.gender ? <Badge label={formatGender(user.gender)} /> : null}
             {user?.country ? <Badge label={user.country} /> : null}
           </View>
           <Button

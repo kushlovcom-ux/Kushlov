@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Gender } from '@kushlov/types';
 
 const password = z
   .string()
@@ -19,6 +20,7 @@ export const registerSchema = z.object({
   password,
   accountType: z.enum(['user', 'host']).default('user'),
   country: z.string().min(2, 'Select your country').max(80),
+  gender: z.nativeEnum(Gender, { errorMap: () => ({ message: 'Choose your gender' }) }),
 });
 
 export const loginSchema = z.object({

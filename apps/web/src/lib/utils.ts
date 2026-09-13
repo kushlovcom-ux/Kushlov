@@ -1,5 +1,12 @@
 export { cn } from '@kushlov/ui';
 
+/** Human label for stored gender values. */
+export function formatGender(gender?: string | null): string {
+  if (!gender) return '';
+  if (gender === 'non_binary') return 'Non-binary';
+  return gender.charAt(0).toUpperCase() + gender.slice(1).replace(/_/g, ' ');
+}
+
 /** Initials from a display name for avatar fallbacks. */
 export const initials = (name?: string): string =>
   (name ?? '?')

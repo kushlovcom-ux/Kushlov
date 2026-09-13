@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { PublicUser } from '@kushlov/types';
+import type { Gender, PublicUser } from '@kushlov/types';
 import { DEFAULT_COUNTRY } from '@kushlov/utils';
 import { api, apiError } from '@/lib/api';
 import { signInWithGooglePopup, signOutFirebase } from '@/lib/firebase-auth';
@@ -95,8 +95,19 @@ export function useRegister() {
       password: string;
       accountType?: 'user' | 'host';
       country: string;
+      gender: Gender;
+      avatar: File;
     }) => {
-      const res = await api.post('/auth/register', payload);
+      const form = new FormData();
+      form.append('email', payload.email);
+      form.append('username', payload.username);
+      form.append('displayName', payload.displayName);
+      form.append('password', payload.password);
+      form.append('accountType', payload.accountType ?? 'user');
+      form.append('country', payload.country);
+      form.append('gender', payload.gender);
+      form.append('avatar', payload.avatar);
+      const res = await api.post('/auth/register', form);
       return res.data.data as AuthResult & { accountType?: 'user' | 'host' };
     },
     onSuccess: (data) => {

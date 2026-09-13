@@ -30,6 +30,7 @@ import {
   verifyFirebaseIdToken,
 } from '../../config/firebase';
 import { generateUniqueUsername } from '../../services/username.service';
+import { uploadBuffer } from '../../services/media.service';
 
 function issueTokens(user: { id: string; role: Role; tokenVersion: number }) {
   const payload = { sub: user.id, role: user.role, tokenVersion: user.tokenVersion };
@@ -40,12 +41,16 @@ function issueTokens(user: { id: string; role: Role; tokenVersion: number }) {
 }
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
-  const { email, username, displayName, password, accountType = 'user', country } = req.body;
+  const { email, username, displayName, password, accountType = 'user', country, gender } =
+    req.body;
+
+  if (!req.file) throw ApiError.badRequest('Profile photo is required');
 
   const exists = await User.findOne({ $or: [{ email }, { username }] });
   if (exists) throw ApiError.conflict('Email or username already in use');
 
   const isHostSignup = accountType === 'host';
+  const photo = await uploadBuffer(req.file, 'avatars/signup');
 
   const user = await User.create({
     email,
@@ -56,10 +61,12 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     role: isHostSignup ? Role.Host : Role.User,
     isHostApproved: false,
     country,
+    gender,
+    avatarUrl: photo.url,
   });
   await Profile.findOneAndUpdate(
     { user: user._id },
-    { $set: { country, user: user._id } },
+    { $set: { country, gender, user: user._id } },
     { upsert: true },
   );
   await ensureWallet(user._id);

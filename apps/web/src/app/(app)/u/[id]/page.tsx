@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OnlineStatus } from '@/components/common/online-status';
 import { useAuthStore } from '@/store/auth';
+import { formatGender } from '@/lib/utils';
 
 export default function PublicProfilePage() {
   const { id } = useParams<{ id: string }>();
@@ -111,6 +112,11 @@ export default function PublicProfilePage() {
             </div>
             <h2 className="mt-4 text-2xl font-bold">{u?.displayName}</h2>
             <p className="text-white/40">@{u?.username}</p>
+            {(u?.gender || profile?.gender) ? (
+              <Badge variant="secondary" className="mt-2">
+                {formatGender(u?.gender ?? profile?.gender)}
+              </Badge>
+            ) : null}
             <OnlineStatus online={u?.isOnline} size="md" className="mt-2" />
             {distanceKm != null ? (
               <p className="mt-2 text-sm text-brand-pink">

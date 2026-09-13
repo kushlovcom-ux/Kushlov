@@ -111,6 +111,10 @@ function getClient(): AxiosInstance {
     if (token && !isAuthCredentialUrl(url)) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+      delete config.headers['content-type'];
+    }
     return config;
   });
 
@@ -229,6 +233,12 @@ export function getErrorMessage(err: unknown, fallback = 'Something went wrong')
   if (err instanceof Error) {
     if (/network/i.test(err.message)) {
       return 'Connection lost. Check your internet and try again.';
+    }
+    if (err.name === 'PaymentCancelledError' || /payment cancelled/i.test(err.message)) {
+      return 'Payment cancelled';
+    }
+    if (err.message.trim().startsWith('{') && /BAD_REQUEST_ERROR|payment_authentication/i.test(err.message)) {
+      return 'Payment cancelled';
     }
     return err.message;
   }

@@ -73,6 +73,12 @@ export function formatChatListTime(value: string | Date): string {
   }
 }
 
+export function formatGender(gender?: string | null): string {
+  if (!gender) return '';
+  if (gender === 'non_binary') return 'Non-binary';
+  return gender.charAt(0).toUpperCase() + gender.slice(1).replace(/_/g, ' ');
+}
+
 export function displayName(user?: { displayName?: string; username?: string } | null): string {
   if (!user) return 'User';
   return user.displayName || user.username || 'User';

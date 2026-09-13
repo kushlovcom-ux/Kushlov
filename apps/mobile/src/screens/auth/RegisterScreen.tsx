@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '@/components/ui/Button';
@@ -15,14 +16,19 @@ import { CountrySelect } from '@/components/ui/CountrySelect';
 import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/common/Screen';
+import { Chip } from '@/design-system';
 import { getErrorMessage } from '@/api/client';
 import { DEFAULT_COUNTRY } from '@/constants/countries';
 import { useAuth } from '@/hooks/useAuth';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { isValidEmail, isValidPassword, isValidUsername } from '@/utils/validation';
+import { formatGender } from '@/utils/format';
 import { spacing } from '@/theme';
+import { Gender } from '@/types';
 import type { AuthStackParamList } from '@/navigation/types';
+
+const GENDER_OPTIONS = [Gender.Male, Gender.Female, Gender.NonBinary, Gender.Other] as const;
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
@@ -37,12 +43,29 @@ export function RegisterScreen({ navigation }: Props) {
     password: '',
     confirmPassword: '',
     country: DEFAULT_COUNTRY,
+    gender: '' as Gender | '',
   });
+  const [avatar, setAvatar] = useState<{ uri: string; type?: string; name?: string } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const pickPhoto = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+    });
+    if (res.canceled || !res.assets[0]) return;
+    const asset = res.assets[0];
+    setAvatar({
+      uri: asset.uri,
+      type: asset.mimeType ?? 'image/jpeg',
+      name: asset.fileName ?? 'avatar.jpg',
+    });
+    setErrors((e) => ({ ...e, avatar: '' }));
+  };
 
   const submit = async () => {
     const next: Record<string, string> = {};
@@ -52,6 +75,8 @@ export function RegisterScreen({ navigation }: Props) {
     if (!isValidPassword(form.password)) next.password = 'At least 8 characters';
     if (form.confirmPassword !== form.password) next.confirmPassword = 'Passwords do not match';
     if (!form.country.trim()) next.country = 'Select your country';
+    if (!form.gender) next.gender = 'Choose your gender';
+    if (!avatar) next.avatar = 'Upload a profile photo';
     setErrors(next);
     if (Object.keys(next).length) return;
     try {
@@ -61,6 +86,8 @@ export function RegisterScreen({ navigation }: Props) {
         displayName: form.displayName.trim(),
         password: form.password,
         country: form.country.trim(),
+        gender: form.gender,
+        avatar,
         accountType: 'user',
       });
     } catch (err) {
@@ -108,6 +135,25 @@ export function RegisterScreen({ navigation }: Props) {
               },
             ]}
           >
+            <Pressable onPress={pickPhoto} style={styles.photoWrap} accessibilityRole="button">
+              {avatar ? (
+                <Image source={{ uri: avatar.uri }} style={styles.photo} />
+              ) : (
+                <View style={[styles.photoPlaceholder, { borderColor: c.border, backgroundColor: c.elevated }]}>
+                  <Text muted>Add photo</Text>
+                </View>
+              )}
+            </Pressable>
+            {errors.avatar ? (
+              <Text variant="caption" color={c.danger} style={{ marginTop: 6 }}>
+                {errors.avatar}
+              </Text>
+            ) : (
+              <Text muted variant="caption" style={{ marginTop: 6, textAlign: 'center' }}>
+                This photo is shown on your profile
+              </Text>
+            )}
+            <View style={{ height: spacing.lg }} />
             <Input
               label="Email"
               value={form.email}
@@ -135,8 +181,30 @@ export function RegisterScreen({ navigation }: Props) {
               placeholder="How others see you"
             />
             <View style={{ height: spacing.md }} />
+            <Text variant="captionBold" muted style={{ marginBottom: 8 }}>
+              Gender
+            </Text>
+            <View style={styles.genderRow}>
+              {GENDER_OPTIONS.map((option) => (
+                <Chip
+                  key={option}
+                  label={formatGender(option)}
+                  selected={form.gender === option}
+                  onPress={() => {
+                    set('gender', option);
+                    setErrors((e) => ({ ...e, gender: '' }));
+                  }}
+                />
+              ))}
+            </View>
+            {errors.gender ? (
+              <Text variant="caption" color={c.danger} style={{ marginTop: 6 }}>
+                {errors.gender}
+              </Text>
+            ) : null}
+            <View style={{ height: spacing.md }} />
             <Input
-              label="Password"
+              label="Create Password"
               value={form.password}
               onChangeText={(v) => set('password', v)}
               secureTextEntry={!showPassword}
@@ -225,4 +293,15 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   footer: { marginTop: spacing['2xl'], alignItems: 'center' },
+  photoWrap: { alignSelf: 'center' },
+  photo: { width: 96, height: 96, borderRadius: 48 },
+  photoPlaceholder: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  genderRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 });

@@ -6,8 +6,9 @@ import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, Heart, Radio } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ArrowLeft, Camera, Heart, Radio } from 'lucide-react';
+import { Gender } from '@kushlov/types';
+import { cn, formatGender } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
@@ -15,6 +16,8 @@ import { Label } from '@/components/ui/label';
 import { DEFAULT_COUNTRY } from '@kushlov/utils';
 import { CountrySelect } from '@/components/ui/country-select';
 import { useRegister } from '@/hooks/use-auth';
+
+const GENDER_OPTIONS = [Gender.Male, Gender.Female, Gender.NonBinary, Gender.Other] as const;
 
 const passwordRules = z
   .string()
@@ -32,6 +35,7 @@ const schema = z
     password: passwordRules,
     confirmPassword: z.string().min(1, 'Please confirm your password'),
     country: z.string().min(2, 'Select your country'),
+    gender: z.nativeEnum(Gender, { errorMap: () => ({ message: 'Choose your gender' }) }),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',
@@ -45,6 +49,9 @@ function RegisterForm() {
   const initialType = searchParams.get('type') === 'host' ? 'host' : 'user';
   const registerMut = useRegister();
   const [accountType, setAccountType] = useState<'user' | 'host'>(initialType);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState('');
+  const [photoError, setPhotoError] = useState('');
 
   const {
     register,
@@ -68,6 +75,18 @@ function RegisterForm() {
   };
 
   const country = watch('country');
+  const gender = watch('gender');
+
+  const onPhoto = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Choose an image file');
+      return;
+    }
+    setPhoto(file);
+    setPhotoError('');
+    setPhotoPreview(URL.createObjectURL(file));
+  };
 
   return (
     <div>
@@ -115,10 +134,42 @@ function RegisterForm() {
       </div>
 
       <form
-        onSubmit={handleSubmit(({ confirmPassword: _, ...v }) => registerMut.mutate(v))}
+        onSubmit={handleSubmit(({ confirmPassword: _, ...v }) => {
+          if (!photo) {
+            setPhotoError('Upload a profile photo');
+            return;
+          }
+          registerMut.mutate({ ...v, avatar: photo });
+        })}
         className="mt-6 space-y-4"
       >
         <input type="hidden" {...register('accountType')} />
+
+        <div className="space-y-1.5">
+          <Label>Profile photo</Label>
+          <div className="flex items-center gap-4">
+            <label className="relative cursor-pointer">
+              <span className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/5">
+                {photoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photoPreview} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <Camera className="h-7 w-7 text-white/40" />
+                )}
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => onPhoto(e.target.files?.[0])}
+              />
+            </label>
+            <p className="text-xs text-white/45">
+              Upload a clear photo of you. This is shown on your profile everywhere.
+            </p>
+          </div>
+          {photoError && <p className="text-xs text-red-400">{photoError}</p>}
+        </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="displayName">Display name</Label>
@@ -149,7 +200,28 @@ function RegisterForm() {
           {errors.email && <p className="text-xs text-red-400">{errors.email.message}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
+          <Label>Gender</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {GENDER_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setValue('gender', option, { shouldValidate: true })}
+                className={cn(
+                  'rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors',
+                  gender === option
+                    ? 'border-brand-pink/60 bg-brand-pink/10 text-white'
+                    : 'border-white/10 bg-white/5 text-white/70 hover:border-white/20',
+                )}
+              >
+                {formatGender(option)}
+              </button>
+            ))}
+          </div>
+          {errors.gender && <p className="text-xs text-red-400">{errors.gender.message}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="password">Create Password</Label>
           <PasswordInput id="password" placeholder="••••••••" {...register('password')} />
           {errors.password && <p className="text-xs text-red-400">{errors.password.message}</p>}
         </div>

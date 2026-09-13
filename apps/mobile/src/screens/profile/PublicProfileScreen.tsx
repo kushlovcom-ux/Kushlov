@@ -36,6 +36,8 @@ import { useCallStore } from '@/store/call';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { CallType, Role } from '@/types';
 import { ageFromDob } from '@/utils/age';
+import { formatGender } from '@/utils/format';
+import { Badge } from '@/components/ui/Badge';
 import { radius, spacing } from '@/theme';
 import type { AppStackParamList } from '@/navigation/types';
 
@@ -208,6 +210,11 @@ export function PublicProfileScreen({ navigation, route }: Props) {
           {u.isHostApproved ? <VerifiedBadge size={20} /> : null}
         </View>
         <Text muted>@{u.username}</Text>
+        {u.gender ? (
+          <View style={{ marginTop: 8 }}>
+            <Badge label={formatGender(u.gender)} />
+          </View>
+        ) : null}
         {(u.averageRating || u.totalReviews) ? (
           <View style={{ marginTop: 8 }}>
             <StarRating rating={u.averageRating ?? 0} count={u.totalReviews} />
