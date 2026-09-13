@@ -1,12 +1,15 @@
 import Link from 'next/link';
-import { Facebook, Instagram, Youtube, Mail, MapPin, Phone } from 'lucide-react';
+import { Facebook, Instagram, Youtube, Mail, MapPin, Phone, Smartphone } from 'lucide-react';
 import { Logo } from '@kushlov/ui';
+
+const APK_HREF = '/kushlov.apk';
 
 const productLinks = [
   { label: 'Discover', href: '/discover' },
   { label: 'Live Streams', href: '/live' },
   { label: 'Matches', href: '/matches' },
   { label: 'Wallet & Gifts', href: '/wallet' },
+  { label: 'Download Android app', href: APK_HREF, download: 'kushlov.apk' },
 ];
 
 const companyLinks = [
@@ -80,6 +83,14 @@ export function SiteFooter() {
                 Delhi NCR, India
               </p>
             </div>
+            <a
+              href={APK_HREF}
+              download="kushlov.apk"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl border border-brand-pink/40 bg-brand-pink/15 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:border-brand-pink hover:bg-brand-pink/25"
+            >
+              <Smartphone className="h-4 w-4 shrink-0" />
+              Download Android app
+            </a>
             <div className="mt-6 flex gap-3">
               {social.map(({ label, href, icon: Icon }) => (
                 <a
@@ -103,9 +114,19 @@ export function SiteFooter() {
               <ul className="mt-4 space-y-3">
                 {productLinks.map((link) => (
                   <li key={link.label}>
-                    <Link href={link.href} className="text-sm text-white/50 transition-colors hover:text-brand-pink">
-                      {link.label}
-                    </Link>
+                    {'download' in link && link.download ? (
+                      <a
+                        href={link.href}
+                        download={link.download}
+                        className="text-sm text-white/50 transition-colors hover:text-brand-pink"
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link href={link.href} className="text-sm text-white/50 transition-colors hover:text-brand-pink">
+                        {link.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

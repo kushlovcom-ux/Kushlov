@@ -7,6 +7,7 @@ import { Toaster } from 'sonner';
 import { isRateLimited } from '@/lib/api';
 import { AuthBootstrap } from './auth-bootstrap';
 import { CookieConsent } from './cookie-consent';
+import { AndroidAppToggle } from './layout/android-app-toggle';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
@@ -44,6 +45,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={client}>
         <AuthBootstrap />
         {children}
+        <AndroidAppToggle />
         <CookieConsent />
         <Toaster
           theme="dark"

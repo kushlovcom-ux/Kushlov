@@ -44,6 +44,10 @@ Thumbs.db
 # testing / coverage
 coverage/
 
+# Android APK — ~100MB+, over GitHub's file limit. Serve from
+# apps/web/public/kushlov.apk on the web host so /kushlov.apk downloads.
+*.apk
+
 # uploads (local temp)
 apps/server/uploads/
 tmp/

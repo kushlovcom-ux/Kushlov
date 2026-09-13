@@ -78,6 +78,13 @@ const nextConfig = {
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
         ],
       },
+      {
+        source: '/kushlov.apk',
+        headers: [
+          { key: 'Content-Type', value: 'application/vnd.android.package-archive' },
+          { key: 'Content-Disposition', value: 'attachment; filename="kushlov.apk"' },
+        ],
+      },
     ];
   },
 };
