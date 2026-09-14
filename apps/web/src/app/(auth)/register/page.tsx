@@ -13,27 +13,30 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
-import { DEFAULT_COUNTRY } from '@kushlov/utils';
 import { CountrySelect } from '@/components/ui/country-select';
 import { useRegister } from '@/hooks/use-auth';
 
 const GENDER_OPTIONS = [Gender.Male, Gender.Female, Gender.NonBinary, Gender.Other] as const;
 
-const passwordRules = z
-  .string()
-  .min(3, 'Password must be 3 to 10 characters')
-  .max(10, 'Password must be 3 to 10 characters');
-
 const schema = z
   .object({
-    accountType: z.enum(['user', 'host']),
-    displayName: z.string().min(2, 'Tell us your name'),
-    username: z.string().min(3).regex(/^[a-z0-9_]+$/i, 'Letters, numbers, underscores only'),
-    email: z.string().email('Enter a valid email'),
-    password: passwordRules,
-    confirmPassword: z.string().min(1, 'Please confirm your password'),
-    country: z.string().min(2, 'Select your country'),
-    gender: z.nativeEnum(Gender, { errorMap: () => ({ message: 'Choose your gender' }) }),
+    accountType: z.enum(['user', 'host'], { required_error: 'Choose an account type' }),
+    displayName: z.string().trim().min(1, 'Display name is required').min(2, 'Tell us your name'),
+    username: z
+      .string()
+      .trim()
+      .min(1, 'Username is required')
+      .min(3, 'At least 3 characters')
+      .regex(/^[a-z0-9_]+$/i, 'Letters, numbers, underscores only'),
+    email: z.string().trim().min(1, 'Email is required').email('Enter a valid email'),
+    password: z
+      .string()
+      .min(1, 'Password is required')
+      .min(3, 'Password must be 3 to 10 characters')
+      .max(10, 'Password must be 3 to 10 characters'),
+    confirmPassword: z.string().min(1, 'Confirm password is required'),
+    country: z.string().min(1, 'Country is required').min(2, 'Select your country'),
+    gender: z.nativeEnum(Gender, { errorMap: () => ({ message: 'Gender is required' }) }),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',
@@ -59,7 +62,15 @@ function RegisterForm() {
     formState: { errors },
   } = useForm<Form>({
     resolver: zodResolver(schema),
-    defaultValues: { accountType: initialType, country: DEFAULT_COUNTRY },
+    defaultValues: {
+      accountType: initialType,
+      displayName: '',
+      username: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      country: '',
+    },
   });
 
   useEffect(() => {
@@ -97,10 +108,14 @@ function RegisterForm() {
       </Link>
 
       <h1 className="text-2xl font-bold">Create your account</h1>
-      <p className="mt-1 text-sm text-white/50">Choose how you want to join Kushlov.</p>
+      <p className="mt-1 text-sm text-white/50">
+        All fields are required. Choose how you want to join Kushlov.
+      </p>
 
-      {/* Account type selector */}
-      <div className="mt-6 grid grid-cols-2 gap-3">
+      <p className="mt-6 text-sm font-medium">
+        Account type <span className="text-brand-pink">*</span>
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-3">
         <button
           type="button"
           onClick={() => selectType('user')}
@@ -132,19 +147,24 @@ function RegisterForm() {
       </div>
 
       <form
-        onSubmit={handleSubmit(({ confirmPassword: _, ...v }) => {
-          if (!photo) {
-            setPhotoError('Upload a profile photo');
-            return;
-          }
-          registerMut.mutate({ ...v, avatar: photo });
-        })}
+        noValidate
+        onSubmit={(e) => {
+          if (!photo) setPhotoError('Profile photo is required');
+          else setPhotoError('');
+          void handleSubmit(({ confirmPassword: _, ...v }) => {
+            if (!photo) return;
+            registerMut.mutate({ ...v, avatar: photo });
+          })(e);
+        }}
         className="mt-6 space-y-4"
       >
         <input type="hidden" {...register('accountType')} />
+        <input type="hidden" {...register('gender')} />
 
         <div className="space-y-1.5">
-          <Label>Profile photo</Label>
+          <Label>
+            Profile photo <span className="text-brand-pink">*</span>
+          </Label>
           <div className="flex items-center gap-4">
             <label className="relative cursor-pointer">
               <span className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/5">
@@ -170,22 +190,29 @@ function RegisterForm() {
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="displayName">Display name</Label>
-          <Input id="displayName" placeholder="Alex Rivera" {...register('displayName')} />
+          <Label htmlFor="displayName">
+            Display name <span className="text-brand-pink">*</span>
+          </Label>
+          <Input id="displayName" placeholder="Alex Rivera" required {...register('displayName')} />
           {errors.displayName && <p className="text-xs text-red-400">{errors.displayName.message}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="username">Username</Label>
-          <Input id="username" placeholder="alexr" {...register('username')} />
+          <Label htmlFor="username">
+            Username <span className="text-brand-pink">*</span>
+          </Label>
+          <Input id="username" placeholder="alexr" required {...register('username')} />
           {errors.username && <p className="text-xs text-red-400">{errors.username.message}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="country">Country</Label>
+          <Label htmlFor="country">
+            Country <span className="text-brand-pink">*</span>
+          </Label>
           <CountrySelect
             id="country"
-            value={country}
+            value={country ?? ''}
             onChange={(v) => setValue('country', v, { shouldValidate: true })}
             required
+            placeholder="Select your country"
           />
           {errors.country && <p className="text-xs text-red-400">{errors.country.message}</p>}
           <p className="text-xs text-white/40">
@@ -193,12 +220,16 @@ function RegisterForm() {
           </p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" placeholder="you@example.com" {...register('email')} />
+          <Label htmlFor="email">
+            Email <span className="text-brand-pink">*</span>
+          </Label>
+          <Input id="email" type="email" placeholder="you@example.com" required {...register('email')} />
           {errors.email && <p className="text-xs text-red-400">{errors.email.message}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label>Gender</Label>
+          <Label>
+            Gender <span className="text-brand-pink">*</span>
+          </Label>
           <div className="grid grid-cols-2 gap-2">
             {GENDER_OPTIONS.map((option) => (
               <button
@@ -219,13 +250,29 @@ function RegisterForm() {
           {errors.gender && <p className="text-xs text-red-400">{errors.gender.message}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="password">Create Password</Label>
-          <PasswordInput id="password" placeholder="3 to 10 characters" maxLength={10} {...register('password')} />
+          <Label htmlFor="password">
+            Create Password <span className="text-brand-pink">*</span>
+          </Label>
+          <PasswordInput
+            id="password"
+            placeholder="3 to 10 characters"
+            maxLength={10}
+            required
+            {...register('password')}
+          />
           {errors.password && <p className="text-xs text-red-400">{errors.password.message}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="confirmPassword">Confirm password</Label>
-          <PasswordInput id="confirmPassword" placeholder="••••••••" maxLength={10} {...register('confirmPassword')} />
+          <Label htmlFor="confirmPassword">
+            Confirm password <span className="text-brand-pink">*</span>
+          </Label>
+          <PasswordInput
+            id="confirmPassword"
+            placeholder="••••••••"
+            maxLength={10}
+            required
+            {...register('confirmPassword')}
+          />
           {errors.confirmPassword && (
             <p className="text-xs text-red-400">{errors.confirmPassword.message}</p>
           )}

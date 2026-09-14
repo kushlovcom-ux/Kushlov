@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
-export const emailSchema = z.string().trim().email('Enter a valid email');
+export const emailSchema = z.string().trim().min(1, 'Email is required').email('Enter a valid email');
 
 export const passwordSchema = z
   .string()
+  .min(1, 'Password is required')
   .min(3, 'Password must be 3 to 10 characters')
   .max(10, 'Password must be 3 to 10 characters');
 
@@ -22,11 +23,11 @@ export const loginSchema = z.object({
 export const registerSchema = z
   .object({
     email: emailSchema,
-    username: usernameSchema,
-    displayName: z.string().trim().min(2, 'Name is required').max(48),
+    username: z.string().trim().min(1, 'Username is required').pipe(usernameSchema),
+    displayName: z.string().trim().min(1, 'Display name is required').min(2, 'Name is required').max(48),
     password: passwordSchema,
-    confirmPassword: z.string(),
-    country: z.string().min(2, 'Select a country'),
+    confirmPassword: z.string().min(1, 'Confirm password is required'),
+    country: z.string().min(1, 'Country is required').min(2, 'Select a country'),
     accountType: z.literal('user').default('user'),
   })
   .refine((d) => d.password === d.confirmPassword, {

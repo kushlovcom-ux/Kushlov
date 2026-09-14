@@ -18,7 +18,6 @@ import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/common/Screen';
 import { Chip } from '@/design-system';
 import { getErrorMessage } from '@/api/client';
-import { DEFAULT_COUNTRY } from '@/constants/countries';
 import { useAuth } from '@/hooks/useAuth';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -42,7 +41,7 @@ export function RegisterScreen({ navigation }: Props) {
     displayName: '',
     password: '',
     confirmPassword: '',
-    country: DEFAULT_COUNTRY,
+    country: '',
     gender: '' as Gender | '',
   });
   const [avatar, setAvatar] = useState<{ uri: string; type?: string; name?: string } | null>(null);
@@ -69,14 +68,19 @@ export function RegisterScreen({ navigation }: Props) {
 
   const submit = async () => {
     const next: Record<string, string> = {};
-    if (!isValidEmail(form.email)) next.email = 'Enter a valid email';
-    if (!isValidUsername(form.username)) next.username = '3–30 letters, numbers, underscore';
-    if (form.displayName.trim().length < 2) next.displayName = 'Enter your display name';
-    if (!isValidPassword(form.password)) next.password = 'Password must be 3 to 10 characters';
-    if (form.confirmPassword !== form.password) next.confirmPassword = 'Passwords do not match';
-    if (!form.country.trim()) next.country = 'Select your country';
-    if (!form.gender) next.gender = 'Choose your gender';
-    if (!avatar) next.avatar = 'Upload a profile photo';
+    if (!avatar) next.avatar = 'Profile photo is required';
+    if (!form.email.trim()) next.email = 'Email is required';
+    else if (!isValidEmail(form.email)) next.email = 'Enter a valid email';
+    if (!form.username.trim()) next.username = 'Username is required';
+    else if (!isValidUsername(form.username)) next.username = '3–30 letters, numbers, underscore';
+    if (!form.displayName.trim()) next.displayName = 'Display name is required';
+    else if (form.displayName.trim().length < 2) next.displayName = 'Enter your display name';
+    if (!form.gender) next.gender = 'Gender is required';
+    if (!form.password) next.password = 'Password is required';
+    else if (!isValidPassword(form.password)) next.password = 'Password must be 3 to 10 characters';
+    if (!form.confirmPassword) next.confirmPassword = 'Confirm password is required';
+    else if (form.confirmPassword !== form.password) next.confirmPassword = 'Passwords do not match';
+    if (!form.country.trim()) next.country = 'Country is required';
     setErrors(next);
     if (Object.keys(next).length) return;
     try {
@@ -120,8 +124,7 @@ export function RegisterScreen({ navigation }: Props) {
             />
             <Text variant="display">Join Kushlov</Text>
             <Text muted style={{ marginTop: 8, textAlign: 'center' }}>
-              Create your account and start meeting people. Host applications are available after
-              signup.
+              All fields are required. Create your account and start meeting people.
             </Text>
           </View>
 
@@ -139,8 +142,8 @@ export function RegisterScreen({ navigation }: Props) {
               {avatar ? (
                 <Image source={{ uri: avatar.uri }} style={styles.photo} />
               ) : (
-                <View style={[styles.photoPlaceholder, { borderColor: c.border, backgroundColor: c.elevated }]}>
-                  <Text muted>Add photo</Text>
+                <View style={[styles.photoPlaceholder, { borderColor: errors.avatar ? c.danger : c.border, backgroundColor: c.elevated }]}>
+                  <Text muted>Add photo *</Text>
                 </View>
               )}
             </Pressable>
@@ -155,7 +158,7 @@ export function RegisterScreen({ navigation }: Props) {
             )}
             <View style={{ height: spacing.lg }} />
             <Input
-              label="Email"
+              label="Email *"
               value={form.email}
               onChangeText={(v) => set('email', v)}
               autoCapitalize="none"
@@ -165,7 +168,7 @@ export function RegisterScreen({ navigation }: Props) {
             />
             <View style={{ height: spacing.md }} />
             <Input
-              label="Username"
+              label="Username *"
               value={form.username}
               onChangeText={(v) => set('username', v)}
               autoCapitalize="none"
@@ -174,7 +177,7 @@ export function RegisterScreen({ navigation }: Props) {
             />
             <View style={{ height: spacing.md }} />
             <Input
-              label="Display name"
+              label="Display name *"
               value={form.displayName}
               onChangeText={(v) => set('displayName', v)}
               error={errors.displayName}
@@ -182,7 +185,7 @@ export function RegisterScreen({ navigation }: Props) {
             />
             <View style={{ height: spacing.md }} />
             <Text variant="captionBold" muted style={{ marginBottom: 8 }}>
-              Gender
+              Gender *
             </Text>
             <View style={styles.genderRow}>
               {GENDER_OPTIONS.map((option) => (
@@ -204,7 +207,7 @@ export function RegisterScreen({ navigation }: Props) {
             ) : null}
             <View style={{ height: spacing.md }} />
             <Input
-              label="Create Password"
+              label="Create Password *"
               value={form.password}
               onChangeText={(v) => set('password', v)}
               secureTextEntry={!showPassword}
@@ -228,7 +231,7 @@ export function RegisterScreen({ navigation }: Props) {
             />
             <View style={{ height: spacing.md }} />
             <Input
-              label="Confirm password"
+              label="Confirm password *"
               value={form.confirmPassword}
               onChangeText={(v) => set('confirmPassword', v)}
               secureTextEntry={!showConfirmPassword}
@@ -254,7 +257,7 @@ export function RegisterScreen({ navigation }: Props) {
             />
             <View style={{ height: spacing.md }} />
             <CountrySelect
-              label="Country"
+              label="Country *"
               value={form.country}
               onChange={(v) => set('country', v)}
               error={errors.country}

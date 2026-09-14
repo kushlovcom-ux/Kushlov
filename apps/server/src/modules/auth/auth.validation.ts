@@ -3,21 +3,24 @@ import { Gender } from '@kushlov/types';
 
 const password = z
   .string()
+  .min(1, 'Password is required')
   .min(3, 'Password must be 3 to 10 characters')
   .max(10, 'Password must be 3 to 10 characters');
 
 export const registerSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().min(1, 'Email is required').email(),
   username: z
     .string()
+    .trim()
+    .min(1, 'Username is required')
     .min(3)
     .max(30)
     .regex(/^[a-z0-9_]+$/i, 'Only letters, numbers and underscores'),
-  displayName: z.string().min(2).max(60),
+  displayName: z.string().trim().min(1, 'Display name is required').min(2).max(60),
   password,
-  accountType: z.enum(['user', 'host']).default('user'),
-  country: z.string().min(2, 'Select your country').max(80),
-  gender: z.nativeEnum(Gender, { errorMap: () => ({ message: 'Choose your gender' }) }),
+  accountType: z.enum(['user', 'host'], { required_error: 'Account type is required' }),
+  country: z.string().min(1, 'Country is required').min(2, 'Select your country').max(80),
+  gender: z.nativeEnum(Gender, { errorMap: () => ({ message: 'Gender is required' }) }),
 });
 
 export const loginSchema = z.object({
