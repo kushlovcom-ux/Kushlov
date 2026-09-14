@@ -14,7 +14,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 const schema = z.object({
-  password: z.string().min(8, 'At least 8 characters'),
+  password: z
+    .string()
+    .min(3, 'Password must be 3 to 10 characters')
+    .max(10, 'Password must be 3 to 10 characters'),
 });
 type Form = z.infer<typeof schema>;
 
@@ -41,7 +44,7 @@ function ResetForm() {
     <form onSubmit={handleSubmit((v) => mut.mutate(v))} className="mt-6 space-y-4">
       <div className="space-y-1.5">
         <Label htmlFor="password">New password</Label>
-        <Input id="password" type="password" placeholder="••••••••" {...register('password')} />
+        <Input id="password" type="password" placeholder="3 to 10 characters" maxLength={10} {...register('password')} />
         {formState.errors.password && (
           <p className="text-xs text-red-400">{formState.errors.password.message}</p>
         )}

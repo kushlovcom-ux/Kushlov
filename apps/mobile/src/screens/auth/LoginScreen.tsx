@@ -18,7 +18,7 @@ import { getErrorMessage } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useThemeColors } from '@/hooks/useThemeColors';
-import { isValidEmail, isValidPassword } from '@/utils/validation';
+import { isValidEmail } from '@/utils/validation';
 import { spacing } from '@/theme';
 import type { AuthStackParamList } from '@/navigation/types';
 
@@ -36,7 +36,7 @@ export function LoginScreen({ navigation }: Props) {
   const submit = async () => {
     const next: typeof errors = {};
     if (!isValidEmail(email)) next.email = 'Enter a valid email';
-    if (!isValidPassword(password)) next.password = 'Password must be at least 8 characters';
+    if (!password) next.password = 'Password is required';
     setErrors(next);
     if (Object.keys(next).length) return;
     try {

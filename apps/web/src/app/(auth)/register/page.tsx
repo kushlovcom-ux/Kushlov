@@ -21,10 +21,8 @@ const GENDER_OPTIONS = [Gender.Male, Gender.Female, Gender.NonBinary, Gender.Oth
 
 const passwordRules = z
   .string()
-  .min(8, 'At least 8 characters')
-  .regex(/[A-Z]/, 'Add an uppercase letter')
-  .regex(/[a-z]/, 'Add a lowercase letter')
-  .regex(/[0-9]/, 'Add a number');
+  .min(3, 'Password must be 3 to 10 characters')
+  .max(10, 'Password must be 3 to 10 characters');
 
 const schema = z
   .object({
@@ -222,12 +220,12 @@ function RegisterForm() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="password">Create Password</Label>
-          <PasswordInput id="password" placeholder="••••••••" {...register('password')} />
+          <PasswordInput id="password" placeholder="3 to 10 characters" maxLength={10} {...register('password')} />
           {errors.password && <p className="text-xs text-red-400">{errors.password.message}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="confirmPassword">Confirm password</Label>
-          <PasswordInput id="confirmPassword" placeholder="••••••••" {...register('confirmPassword')} />
+          <PasswordInput id="confirmPassword" placeholder="••••••••" maxLength={10} {...register('confirmPassword')} />
           {errors.confirmPassword && (
             <p className="text-xs text-red-400">{errors.confirmPassword.message}</p>
           )}

@@ -72,7 +72,7 @@ export function RegisterScreen({ navigation }: Props) {
     if (!isValidEmail(form.email)) next.email = 'Enter a valid email';
     if (!isValidUsername(form.username)) next.username = '3–30 letters, numbers, underscore';
     if (form.displayName.trim().length < 2) next.displayName = 'Enter your display name';
-    if (!isValidPassword(form.password)) next.password = 'At least 8 characters';
+    if (!isValidPassword(form.password)) next.password = 'Password must be 3 to 10 characters';
     if (form.confirmPassword !== form.password) next.confirmPassword = 'Passwords do not match';
     if (!form.country.trim()) next.country = 'Select your country';
     if (!form.gender) next.gender = 'Choose your gender';
@@ -209,7 +209,8 @@ export function RegisterScreen({ navigation }: Props) {
               onChangeText={(v) => set('password', v)}
               secureTextEntry={!showPassword}
               error={errors.password}
-              placeholder="At least 8 characters"
+              placeholder="3 to 10 characters"
+              maxLength={10}
               right={
                 <Pressable
                   onPress={() => setShowPassword((v) => !v)}
@@ -233,6 +234,7 @@ export function RegisterScreen({ navigation }: Props) {
               secureTextEntry={!showConfirmPassword}
               error={errors.confirmPassword}
               placeholder="Re-enter your password"
+              maxLength={10}
               right={
                 <Pressable
                   onPress={() => setShowConfirmPassword((v) => !v)}

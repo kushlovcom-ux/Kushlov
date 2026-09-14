@@ -3,11 +3,8 @@ import { Gender } from '@kushlov/types';
 
 const password = z
   .string()
-  .min(8, 'Password must be at least 8 characters')
-  .max(128)
-  .regex(/[a-z]/, 'Must contain a lowercase letter')
-  .regex(/[A-Z]/, 'Must contain an uppercase letter')
-  .regex(/[0-9]/, 'Must contain a number');
+  .min(3, 'Password must be 3 to 10 characters')
+  .max(10, 'Password must be 3 to 10 characters');
 
 export const registerSchema = z.object({
   email: z.string().email(),

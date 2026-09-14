@@ -4,8 +4,8 @@ export const emailSchema = z.string().trim().email('Enter a valid email');
 
 export const passwordSchema = z
   .string()
-  .min(8, 'Password must be at least 8 characters')
-  .max(128, 'Password is too long');
+  .min(3, 'Password must be 3 to 10 characters')
+  .max(10, 'Password must be 3 to 10 characters');
 
 export const usernameSchema = z
   .string()
@@ -60,4 +60,4 @@ export function isValidUsername(value: string): boolean {
   return usernameSchema.safeParse(value).success;
 }
 
-export const passwordHint = 'At least 8 characters';
+export const passwordHint = '3 to 10 characters';

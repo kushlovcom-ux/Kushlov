@@ -23,7 +23,7 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
   const submit = async () => {
     const next: typeof errors = {};
     if (!token.trim()) next.token = 'Reset token is required';
-    if (!isValidPassword(password)) next.password = 'At least 8 characters';
+    if (!isValidPassword(password)) next.password = 'Password must be 3 to 10 characters';
     setErrors(next);
     if (Object.keys(next).length) return;
     setLoading(true);
@@ -52,6 +52,8 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        maxLength={10}
+        placeholder="3 to 10 characters"
         error={errors.password}
       />
       <View style={{ height: spacing.xl }} />
