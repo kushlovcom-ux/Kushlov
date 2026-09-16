@@ -157,7 +157,7 @@ function Messages() {
   const params = useSearchParams();
   const toUser = params.get('to');
   const me = useAuthStore((s) => s.user);
-  const { socket } = useSocket();
+  const { socket, connected } = useSocket();
   const qc = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -167,7 +167,7 @@ function Messages() {
   const conversations = useQuery({
     queryKey: ['conversations'],
     queryFn: () => unwrap<{ items: Conversation[] }>(api.get('/chat/conversations')),
-    refetchInterval: 5_000,
+    refetchInterval: connected ? false : 12_000,
     refetchIntervalInBackground: false,
   });
 
@@ -196,7 +196,7 @@ function Messages() {
       unwrap<{ items: Message[] }>(api.get(`/chat/conversations/${activeId}/messages`)),
     enabled: !!activeId,
     // Smooth inbox when Socket.io is unavailable (Vercel / disconnected).
-    refetchInterval: activeId ? 3_000 : false,
+    refetchInterval: activeId && !connected ? 8_000 : false,
     refetchIntervalInBackground: false,
   });
 

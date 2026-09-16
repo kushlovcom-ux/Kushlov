@@ -11,8 +11,14 @@ export async function touchPresence(userId: string): Promise<void> {
   });
 }
 
-/** Mark stale users offline (lastSeen older than window). */
+let lastSweepAt = 0;
+const SWEEP_THROTTLE_MS = 30_000;
+
+/** Mark stale users offline (lastSeen older than window). Throttled — Discover used to run this on every request. */
 export async function sweepStalePresence(): Promise<void> {
+  const now = Date.now();
+  if (now - lastSweepAt < SWEEP_THROTTLE_MS) return;
+  lastSweepAt = now;
   const cutoff = new Date(Date.now() - PRESENCE_ONLINE_MS);
   await User.updateMany(
     {

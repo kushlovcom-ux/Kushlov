@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { LogOut } from 'lucide-react';
-import { isAdminStaff } from '@kushlov/types';
 import { useAuthStore } from '@/store/auth';
 import { useLogout } from '@/hooks/use-auth';
 import { UserAvatar } from '@/components/common/user-avatar';
@@ -17,7 +16,7 @@ export function AuthUserMenu({ compact = false }: { compact?: boolean }) {
 
   if (!sessionChecked || !accessToken || !user) return null;
 
-  const home = isAdminStaff(user) ? '/admin' : '/discover';
+  const home = user.role === 'admin' ? '/admin' : '/discover';
 
   return (
     <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">

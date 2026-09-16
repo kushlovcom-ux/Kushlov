@@ -83,15 +83,10 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loggedIn) return;
 
-    let cancelled = false;
     const ping = async () => {
       if (!tokenRef.current) return;
       try {
         await api.post('/users/me/presence');
-        // Do NOT invalidate discover here — that turned a heartbeat into a query storm.
-        if (!cancelled) {
-          qc.invalidateQueries({ queryKey: ['admin-online'] });
-        }
       } catch {
         /* ignore transient errors */
       }
@@ -106,11 +101,10 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
-      cancelled = true;
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [loggedIn, qc]);
+  }, [loggedIn]);
 
   // Connect once per login — do NOT reconnect on every access-token refresh
   // (that caused "WebSocket is closed before the connection is established").

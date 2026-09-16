@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Gender, isAdminStaff, type PublicUser } from '@kushlov/types';
+import { Gender, type PublicUser } from '@kushlov/types';
 import { DEFAULT_COUNTRY } from '@kushlov/utils';
 import { api, apiError } from '@/lib/api';
 import { signInWithGooglePopup, signOutFirebase } from '@/lib/firebase-auth';
@@ -22,7 +22,7 @@ function redirectAfterLogin(router: ReturnType<typeof useRouter>, user: PublicUs
   if (next && next.startsWith('/')) {
     router.push(next);
   } else {
-    router.push(isAdminStaff(user) ? '/admin' : '/discover');
+    router.push(user.role === 'admin' ? '/admin' : '/discover');
   }
 }
 

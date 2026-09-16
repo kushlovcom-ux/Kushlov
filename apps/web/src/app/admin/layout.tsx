@@ -13,6 +13,7 @@ import {
   Gift,
   Settings,
   LogOut,
+  Compass,
   MessageSquare,
   CircleDot,
   Star,
@@ -130,7 +131,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             );
           })}
         </nav>
-        <div className="mt-auto border-t border-white/10 pt-3">
+        <div className="mt-auto space-y-1 border-t border-white/10 pt-3">
+          {user.role !== 'admin' && (
+            <Link
+              href="/discover"
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+            >
+              <Compass className="h-5 w-5" />
+              Open app
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => logout.mutate()}

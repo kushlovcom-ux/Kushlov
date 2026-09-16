@@ -94,7 +94,21 @@ export function createApp(): Application {
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
   app.use(compression());
-  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
+  app.use(
+    pinoHttp({
+      logger,
+      autoLogging: {
+        ignore: (req) => {
+          const url = req.url ?? '';
+          return (
+            url === '/health' ||
+            url.includes('/users/me/presence') ||
+            url.includes('/users/me/badges')
+          );
+        },
+      },
+    }),
+  );
 
   // Rate limit + mount the API (DB middleware only wraps /api on Vercel)
   app.use('/api', globalLimiter, apiRouter);

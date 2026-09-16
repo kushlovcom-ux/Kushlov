@@ -355,9 +355,7 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
   const exclude = [...blocked.map(String), req.user!.id];
 
-  await sweepStalePresence();
-  // Clear ghost Ongoing calls so Busy badges stay accurate on Discover.
-  void import('../../services/call-busy.service').then((m) => m.maybePruneStaleCalls());
+  void sweepStalePresence();
 
   // Browse: outside exclusion radius. Search: only people within ~10 km.
   const candidateIds = isSearch
@@ -491,9 +489,12 @@ export const getMyBadges = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const [notifications, conversations] = await Promise.all([
     Notification.countDocuments({ user: userId, isRead: false }),
-    Conversation.find({ participants: userId }).select('unread'),
+    Conversation.find({ participants: userId }).select('unread').lean(),
   ]);
-  const messages = conversations.reduce((sum, c) => sum + (c.unread.get(userId) ?? 0), 0);
+  const messages = conversations.reduce((sum, c) => {
+    const unread = c.unread as Record<string, number> | undefined;
+    return sum + Number(unread?.[userId] ?? 0);
+  }, 0);
   return ok(res, { notifications, messages });
 });
 

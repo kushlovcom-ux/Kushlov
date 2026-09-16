@@ -9,6 +9,7 @@ const FRIENDLY_429 =
 export const api = axios.create({
   baseURL: API_BASE,
   withCredentials: true,
+  timeout: 20_000,
   headers: { 'Content-Type': 'application/json' },
 });
 

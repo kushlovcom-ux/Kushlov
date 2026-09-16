@@ -1,50 +1,21 @@
-/** Hosted API that stays up when the VPS PM2 process behind nginx is down. */
-const HOSTED_API_URL = 'https://kushlov-server.vercel.app';
-
-/** Production site hosts that historically used same-origin `/api` via nginx → :5000. */
-const SAME_ORIGIN_SITE_HOSTS = new Set([
-  'klproind.com',
-  'www.klproind.com',
-  'genzone.cloud',
-  'www.genzone.cloud',
-]);
+const configuredApiUrl = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000').replace(
+  /\/$/,
+  '',
+);
 
 /**
- * When NEXT_PUBLIC_API_URL points at the public site (same-origin nginx proxy)
- * but the local Express process is down, browsers get 502s. Route those builds
- * to the working Vercel API instead (CORS + cookie SameSite=none already allow it).
+ * Use the configured API host as-is (VPS nginx → local Express).
+ * Do not silently reroute production domains to Vercel — that added a
+ * cold-start hop and made every page wait on a remote serverless API.
  */
-function resolveApiUrl(configured: string): string {
-  try {
-    const host = new URL(configured).hostname.toLowerCase();
-    if (SAME_ORIGIN_SITE_HOSTS.has(host)) return HOSTED_API_URL;
-  } catch {
-    /* keep configured */
-  }
-  return configured;
-}
+const apiUrl = configuredApiUrl;
 
-const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
-const apiUrl = resolveApiUrl(configuredApiUrl);
-
-function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return '';
-  }
-}
-
-// Keep sockets on the public site host when possible — Vercel cannot host Socket.io.
-const socketUrl =
-  process.env.NEXT_PUBLIC_SOCKET_URL ??
-  (SAME_ORIGIN_SITE_HOSTS.has(hostnameOf(configuredApiUrl)) ? configuredApiUrl : apiUrl);
+const socketUrl = (process.env.NEXT_PUBLIC_SOCKET_URL ?? apiUrl).replace(/\/$/, '');
 
 /**
  * Vercel serverless functions cannot host a persistent WebSocket/Socket.io
  * server, so connecting to a *.vercel.app host just 404s and retries forever.
- * Disable sockets in that case. Override explicitly with
- * NEXT_PUBLIC_ENABLE_SOCKET=true once a real socket server is hosted elsewhere.
+ * Override with NEXT_PUBLIC_ENABLE_SOCKET=true/false if needed.
  */
 function computeSocketEnabled(url: string): boolean {
   const flag = process.env.NEXT_PUBLIC_ENABLE_SOCKET;

@@ -48,7 +48,7 @@ export default function LivePage() {
     queryKey: ['live', deferredQ],
     queryFn: () =>
       unwrap<Paginated<Live>>(api.get('/live', { params: { q: deferredQ || undefined } })),
-    refetchInterval: 15000,
+    refetchInterval: 30_000,
   });
 
   const lives = useMemo(
