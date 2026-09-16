@@ -45,8 +45,9 @@ export const authenticate = asyncHandler(
       id: user._id.toString(),
       role: user.role,
       tokenVersion: user.tokenVersion,
-      isSubadmin: Boolean(user.isSubadmin),
-      adminSections: user.adminSections ?? [],
+      isSubadmin: user.isSubadmin === true && user.role !== Role.Admin,
+      adminSections:
+        user.isSubadmin === true && user.role !== Role.Admin ? (user.adminSections ?? []) : [],
     };
     next();
   },

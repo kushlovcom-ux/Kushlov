@@ -133,10 +133,11 @@ export const adminBadges = asyncHandler(async (_req: Request, res: Response) => 
 // Users
 // --------------------------------------------------------------------------
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {
-  const { page, limit, skip } = parsePagination(req.query);
+  const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
   const { q, role, status, subadmin } = req.query as Record<string, string>;
   const filter: Record<string, unknown> = {
     // Soft-deleted leftovers stay hidden; hard-delete removes the row entirely.
+    // Include every role on All (user, host, admin, subadmin overlay).
     status: { $ne: AccountStatus.Deleted },
   };
   if (role === Role.User || role === Role.Host) filter.role = role;
@@ -320,6 +321,31 @@ export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, null, 'User permanently deleted');
 });
 
+function looksLikeGrantedSubadmin(user: {
+  isSubadmin?: boolean;
+  adminSections?: string[];
+  subadminOriginalRole?: Role;
+}): boolean {
+  return (
+    user.isSubadmin === true ||
+    (Array.isArray(user.adminSections) && user.adminSections.length > 0) ||
+    user.subadminOriginalRole === Role.User ||
+    user.subadminOriginalRole === Role.Host
+  );
+}
+
+/** Never Role.Admin — subadmin is an overlay on user/host. */
+function staffBaseRole(user: {
+  role: Role;
+  isHostApproved?: boolean;
+  subadminOriginalRole?: Role;
+}): Role.User | Role.Host {
+  if (user.subadminOriginalRole === Role.Host) return Role.Host;
+  if (user.role === Role.Host) return Role.Host;
+  if (user.isHostApproved) return Role.Host;
+  return Role.User;
+}
+
 /** PATCH /admin/users/:id/subadmin — full admin only: grant, update, or remove subadmin access. */
 export const setSubadmin = asyncHandler(async (req: Request, res: Response) => {
   if (req.user!.role !== Role.Admin) {
@@ -329,28 +355,56 @@ export const setSubadmin = asyncHandler(async (req: Request, res: Response) => {
   const { enabled, sections } = req.body as { enabled: boolean; sections?: string[] };
   const user = await User.findById(req.params.id);
   if (!user || user.status === AccountStatus.Deleted) throw ApiError.notFound('User not found');
-  if (user.role === Role.Admin) throw ApiError.badRequest('Cannot convert an admin account');
   if (user._id.toString() === req.user!.id) {
     throw ApiError.badRequest('Cannot change your own admin access');
   }
 
+  const granted = looksLikeGrantedSubadmin(user);
+  if (user.role === Role.Admin && !granted) {
+    if (enabled || user.username === 'admin') {
+      throw ApiError.badRequest('Cannot convert an admin account');
+    }
+  }
+
+  const keepRole = staffBaseRole(user);
+
   if (!enabled) {
-    user.isSubadmin = false;
-    user.adminSections = [];
-    user.tokenVersion += 1;
-    await user.save();
-    return ok(res, (user as any).toPublic(), 'Subadmin access removed');
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          isSubadmin: false,
+          adminSections: [],
+          role: keepRole,
+        },
+        $unset: { subadminOriginalRole: 1 },
+        $inc: { tokenVersion: 1 },
+      },
+    );
+    const fresh = await User.findById(user._id);
+    if (!fresh) throw ApiError.notFound('User not found');
+    return ok(res, (fresh as any).toPublic(), 'Subadmin access removed');
   }
 
   const next = uniqueAdminSections(sections ?? []);
   if (!next.length) throw ApiError.badRequest('Select at least one section');
-  const wasSubadmin = Boolean(user.isSubadmin);
-  user.isSubadmin = true;
-  user.adminSections = next;
-  await user.save();
+  const wasSubadmin = user.isSubadmin === true;
+  await User.updateOne(
+    { _id: user._id },
+    {
+      $set: {
+        isSubadmin: true,
+        adminSections: next,
+        subadminOriginalRole: keepRole,
+        role: keepRole,
+      },
+    },
+  );
+  const fresh = await User.findById(user._id);
+  if (!fresh) throw ApiError.notFound('User not found');
   return ok(
     res,
-    (user as any).toPublic(),
+    (fresh as any).toPublic(),
     wasSubadmin ? 'Subadmin access updated' : 'User is now a subadmin',
   );
 });

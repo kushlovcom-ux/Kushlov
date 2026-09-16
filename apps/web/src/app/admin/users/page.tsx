@@ -2,9 +2,9 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import { Role, type PublicUser, type Paginated } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
@@ -25,6 +25,8 @@ import {
 import { cn } from '@/lib/utils';
 
 type RoleFilter = 'all' | 'user' | 'host' | 'subadmin';
+
+const PAGE_SIZE = 50;
 
 function userIdOf(u: PublicUser & { _id?: string }): string {
   return u.id || u._id || '';
@@ -47,6 +49,14 @@ function AdminUsersPage() {
   );
   const [deleteTarget, setDeleteTarget] = useState<PublicUser | null>(null);
   const [confirmText, setConfirmText] = useState('');
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
+
+  const replaceQuery = (mutate: (params: URLSearchParams) => void) => {
+    const params = new URLSearchParams(searchParams.toString());
+    mutate(params);
+    const qs = params.toString();
+    router.replace(qs ? `/admin/users?${qs}` : '/admin/users');
+  };
 
   useEffect(() => {
     if (searchParams.get('subadmin') === 'true' || searchParams.get('subadmin') === '1') {
@@ -60,17 +70,24 @@ function AdminUsersPage() {
 
   const applyRole = (next: RoleFilter) => {
     setRole(next);
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete('role');
-    params.delete('subadmin');
-    if (next === 'user' || next === 'host') params.set('role', next);
-    if (next === 'subadmin') params.set('subadmin', 'true');
-    const qs = params.toString();
-    router.replace(qs ? `/admin/users?${qs}` : '/admin/users');
+    replaceQuery((params) => {
+      params.delete('role');
+      params.delete('subadmin');
+      params.delete('page');
+      if (next === 'user' || next === 'host') params.set('role', next);
+      if (next === 'subadmin') params.set('subadmin', 'true');
+    });
   };
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-users', q, role],
+  const goToPage = (next: number) => {
+    replaceQuery((params) => {
+      if (next <= 1) params.delete('page');
+      else params.set('page', String(next));
+    });
+  };
+
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['admin-users', q, role, page],
     queryFn: () =>
       unwrap<Paginated<PublicUser>>(
         api.get('/admin/users', {
@@ -78,11 +95,18 @@ function AdminUsersPage() {
             q: q || undefined,
             role: role === 'user' || role === 'host' ? role : undefined,
             subadmin: role === 'subadmin' ? true : undefined,
-            limit: 50,
+            page,
+            limit: PAGE_SIZE,
           },
         }),
       ),
+    placeholderData: keepPreviousData,
   });
+
+  useEffect(() => {
+    if (!data) return;
+    if (data.totalPages > 0 && page > data.totalPages) goToPage(data.totalPages);
+  }, [data, page]);
 
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
@@ -148,7 +172,11 @@ function AdminUsersPage() {
         action={
           <Input
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setQ(next);
+              if (page !== 1) goToPage(1);
+            }}
             placeholder="Search…"
             className="max-w-xs"
           />
@@ -173,7 +201,7 @@ function AdminUsersPage() {
       </div>
 
       <div className="p-6">
-        <div className="overflow-hidden rounded-2xl border border-white/10">
+        <div className={cn('overflow-hidden rounded-2xl border border-white/10', isFetching && 'opacity-70')}>
           <table className="w-full text-sm">
             <thead className="bg-white/5 text-left text-white/50">
               <tr>
@@ -300,6 +328,40 @@ function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+        {data && data.total > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-white/55">
+            <p>
+              Showing{' '}
+              <span className="text-white/80">
+                {(data.page - 1) * data.limit + 1}–{Math.min(data.page * data.limit, data.total)}
+              </span>{' '}
+              of <span className="text-white/80">{data.total}</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!data.hasPrev || isFetching}
+                onClick={() => goToPage(page - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <span className="min-w-[4.5rem] text-center text-white/70">
+                {data.page} / {data.totalPages}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!data.hasNext || isFetching}
+                onClick={() => goToPage(page + 1)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <Dialog

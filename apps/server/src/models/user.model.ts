@@ -1,5 +1,5 @@
 import { Schema, model, Document, Types } from 'mongoose';
-import { AccountStatus, AdminSection, Gender, Role } from '@kushlov/types';
+import { AccountStatus, AdminSection, Gender, Role, uniqueAdminSections } from '@kushlov/types';
 
 export interface IUser extends Document {
   _id: Types.ObjectId;
@@ -39,6 +39,8 @@ export interface IUser extends Document {
   /** Limited admin-panel access granted by a full admin. Role stays user/host. */
   isSubadmin: boolean;
   adminSections: AdminSection[];
+  /** Role to restore when subadmin access is removed (never Role.Admin). */
+  subadminOriginalRole?: Exclude<Role, Role.Admin>;
 
   /** Normal users: welcome gift diamonds already claimed. */
   welcomeGiftClaimed: boolean;
@@ -133,6 +135,10 @@ const userSchema = new Schema<IUser>(
       type: [{ type: String, enum: Object.values(AdminSection) }],
       default: [],
     },
+    subadminOriginalRole: {
+      type: String,
+      enum: [Role.User, Role.Host],
+    },
 
     welcomeGiftClaimed: { type: Boolean, default: false },
 
@@ -198,8 +204,9 @@ userSchema.methods.toPublic = function toPublic() {
     messagePrice: u.messagePrice ?? 0,
     isPopularHost: u.isPopularHost ?? false,
     popularSortOrder: u.popularSortOrder ?? 0,
-    isSubadmin: Boolean(u.isSubadmin),
-    adminSections: u.isSubadmin ? (u.adminSections ?? []) : [],
+    isSubadmin: Boolean(u.isSubadmin) && u.role !== Role.Admin,
+    adminSections:
+      u.isSubadmin && u.role !== Role.Admin ? uniqueAdminSections((u.adminSections ?? []) as string[]) : [],
     lastSeenAt: u.lastSeenAt?.toISOString(),
     createdAt: u.createdAt?.toISOString(),
   };

@@ -108,7 +108,13 @@ export default function AdminUserDetailPage() {
   const setSubadmin = useMutation({
     mutationFn: (body: { enabled: boolean; sections?: AdminSection[] }) =>
       api.patch(`/admin/users/${id}/subadmin`, body),
-    onSuccess: (_res, body) => {
+    onSuccess: (res, body) => {
+      const updated = (res.data as { data?: PublicUser } | undefined)?.data;
+      if (updated) {
+        qc.setQueryData(['admin-user', id], (old: AdminUserDetail | undefined) =>
+          old ? { ...old, user: { ...old.user, ...updated } } : old,
+        );
+      }
       toast.success(
         body.enabled
           ? data?.user.isSubadmin
@@ -148,6 +154,7 @@ export default function AdminUserDetailPage() {
 
   const u = data.user;
   const isHost = u.role === Role.Host;
+  const canManageAccess = me?.role === Role.Admin && String(u.id) !== String(me.id);
   const canEditUser = u.role !== Role.Admin && (me?.role === Role.Admin || !u.isSubadmin);
 
   return (
@@ -329,14 +336,20 @@ export default function AdminUserDetailPage() {
               </div>
             ) : null}
 
-            {me?.role === Role.Admin && u.role !== Role.Admin ? (
+            {canManageAccess ? (
               <div className="mt-6 space-y-4 border-t border-white/10 pt-5">
                 <div>
                   <p className="text-sm font-medium text-white/80">Subadmin access</p>
                   <p className="mt-1 text-xs text-white/45">
-                    Grant limited admin-panel access. Choose the sections this person can open, and
-                    uncheck any section to remove it.
+                    Grant limited admin-panel access. This never changes the account into a full
+                    admin. Removing access returns them to their user or host account.
                   </p>
+                  {u.role === Role.Admin ? (
+                    <p className="mt-2 text-xs text-amber-300">
+                      This account currently has a full admin role. Restore it to a normal user or
+                      host so they can no longer open the admin dashboard.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {ADMIN_SECTION_OPTIONS.map((opt) => {
@@ -364,7 +377,7 @@ export default function AdminUserDetailPage() {
                     );
                   })}
                 </div>
-                {u.isSubadmin ? (
+                {u.isSubadmin || u.role === Role.Admin ? (
                   <div className="flex flex-wrap justify-end gap-2">
                     {confirmRemove ? (
                       <>
@@ -376,22 +389,24 @@ export default function AdminUserDetailPage() {
                           loading={setSubadmin.isPending}
                           onClick={() => setSubadmin.mutate({ enabled: false })}
                         >
-                          Confirm remove
+                          Confirm {u.role === Role.Admin ? 'restore' : 'remove'}
                         </Button>
                       </>
                     ) : (
                       <>
                         <Button variant="destructive" onClick={() => setConfirmRemove(true)}>
-                          Remove Subadmin
+                          {u.role === Role.Admin ? 'Restore to user' : 'Remove Subadmin'}
                         </Button>
-                        <Button
-                          className="bg-brand-gradient"
-                          loading={setSubadmin.isPending}
-                          disabled={sections.length === 0}
-                          onClick={() => setSubadmin.mutate({ enabled: true, sections })}
-                        >
-                          Save access
-                        </Button>
+                        {u.role !== Role.Admin ? (
+                          <Button
+                            className="bg-brand-gradient"
+                            loading={setSubadmin.isPending}
+                            disabled={sections.length === 0}
+                            onClick={() => setSubadmin.mutate({ enabled: true, sections })}
+                          >
+                            Save access
+                          </Button>
+                        ) : null}
                       </>
                     )}
                   </div>

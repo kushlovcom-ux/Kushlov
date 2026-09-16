@@ -67,10 +67,15 @@ export function uniqueAdminSections(sections: readonly string[]): AdminSection[]
 }
 
 export function isAdminStaff(
-  user?: { role?: Role | string; isSubadmin?: boolean } | null,
+  user?: { role?: Role | string; isSubadmin?: boolean; adminSections?: AdminSection[] } | null,
 ): boolean {
   if (!user) return false;
-  return user.role === Role.Admin || Boolean(user.isSubadmin);
+  if (user.role === Role.Admin) return true;
+  return (
+    user.isSubadmin === true &&
+    Array.isArray(user.adminSections) &&
+    user.adminSections.length > 0
+  );
 }
 
 export function hasAdminSection(
@@ -82,7 +87,7 @@ export function hasAdminSection(
 ): boolean {
   if (!user) return false;
   if (user.role === Role.Admin) return true;
-  return Boolean(user.isSubadmin && user.adminSections?.includes(section));
+  return user.isSubadmin === true && Boolean(user.adminSections?.includes(section));
 }
 
 export function adminSectionForPath(pathname: string): AdminSection | null {
