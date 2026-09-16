@@ -11,6 +11,53 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
+type Destination = Record<string, unknown> | null | undefined;
+
+const DETAIL_ORDER: { key: string; label: string }[] = [
+  { key: 'accountHolder', label: 'Account holder' },
+  { key: 'upiId', label: 'UPI ID' },
+  { key: 'bankName', label: 'Bank' },
+  { key: 'accountNumber', label: 'Account number' },
+  { key: 'ifsc', label: 'IFSC' },
+  { key: 'branch', label: 'Branch' },
+  { key: 'accountType', label: 'Account type' },
+];
+
+function destinationRows(dest: Destination): { label: string; value: string }[] {
+  if (!dest || typeof dest !== 'object') return [];
+  const used = new Set<string>();
+  const rows: { label: string; value: string }[] = [];
+  for (const { key, label } of DETAIL_ORDER) {
+    const value = dest[key];
+    if (value == null || String(value).trim() === '') continue;
+    used.add(key);
+    rows.push({ label, value: String(value) });
+  }
+  for (const [key, value] of Object.entries(dest)) {
+    if (used.has(key) || value == null || String(value).trim() === '') continue;
+    rows.push({
+      label: key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' '),
+      value: String(value),
+    });
+  }
+  return rows;
+}
+
+function DestinationDetails({ dest }: { dest: Destination }) {
+  const rows = destinationRows(dest);
+  if (!rows.length) return <span className="text-white/40">No payout details</span>;
+  return (
+    <dl className="space-y-1.5 text-sm">
+      {rows.map((row) => (
+        <div key={row.label} className="grid grid-cols-[7.5rem_1fr] gap-x-2">
+          <dt className="text-white/40">{row.label}</dt>
+          <dd className="break-all font-medium text-white">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export default function AdminWithdrawalsPage() {
   const qc = useQueryClient();
   const country = useAuthStore((s) => s.user?.country);
@@ -56,17 +103,22 @@ export default function AdminWithdrawalsPage() {
               )}
               {data?.items.map((w) => (
                 <tr key={w._id} className="border-t border-white/5">
-                  <td className="p-4">{w.host?.displayName ?? w.host?.email}</td>
-                  <td className="p-4 capitalize">{String(w.method).replace(/_/g, ' ')}</td>
-                  <td className="max-w-[200px] truncate p-4 text-xs text-white/50">
-                    {w.destination?.upiId ??
-                      [w.destination?.bankName, w.destination?.accountNumber?.slice(-4)]
-                        .filter(Boolean)
-                        .join(' · ')}
+                  <td className="p-4 align-top">
+                    <p className="font-medium">{w.host?.displayName ?? w.host?.email}</p>
+                    {w.host?.email ? (
+                      <p className="mt-0.5 text-xs text-white/40">{w.host.email}</p>
+                    ) : null}
+                    {w.host?.username ? (
+                      <p className="text-xs text-white/40">@{w.host.username}</p>
+                    ) : null}
                   </td>
-                  <td className="p-4">{w.goldAmount} 🪙</td>
-                  <td className="p-4">{formatMoney(w.fiatAmount, country)}</td>
-                  <td className="p-4">
+                  <td className="p-4 align-top capitalize">{String(w.method).replace(/_/g, ' ')}</td>
+                  <td className="min-w-[280px] p-4 align-top">
+                    <DestinationDetails dest={w.destination} />
+                  </td>
+                  <td className="p-4 align-top">{w.goldAmount} 🪙</td>
+                  <td className="p-4 align-top">{formatMoney(w.fiatAmount, country)}</td>
+                  <td className="p-4 align-top">
                     <Badge variant={w.status === 'paid' ? 'success' : w.status === 'rejected' ? 'destructive' : 'warning'}>
                       {w.status}
                     </Badge>
