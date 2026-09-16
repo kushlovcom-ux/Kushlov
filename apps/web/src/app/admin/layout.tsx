@@ -22,6 +22,13 @@ import {
   Radio,
 } from 'lucide-react';
 import { Logo } from '@kushlov/ui';
+import {
+  ADMIN_SECTION_OPTIONS,
+  AdminSection,
+  adminSectionForPath,
+  hasAdminSection,
+  isAdminStaff,
+} from '@kushlov/types';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { useLogout } from '@/hooks/use-auth';
@@ -29,21 +36,21 @@ import { useAdminBadges, adminBadgeForHref } from '@/hooks/use-admin-badges';
 import { NavBadge } from '@/components/app/nav-badge';
 
 const nav = [
-  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/users', label: 'Users', icon: Users },
-  { href: '/admin/hosts', label: 'Host Pricing', icon: DollarSign },
-  { href: '/admin/reviews', label: 'Reviews', icon: Star },
-  { href: '/admin/online', label: 'Online now', icon: CircleDot },
-  { href: '/admin/live', label: 'Live now', icon: Radio },
-  { href: '/admin/verifications', label: 'Host Verifications', icon: ShieldCheck },
-  { href: '/admin/reports', label: 'Reports', icon: Flag },
-  { href: '/admin/payments', label: 'Payments', icon: CreditCard },
-  { href: '/admin/revenue', label: 'Revenue', icon: IndianRupee },
-  { href: '/admin/diamonds', label: 'Send diamonds', icon: Gem },
-  { href: '/admin/withdrawals', label: 'Withdrawals', icon: Banknote },
-  { href: '/admin/gifts', label: 'Gifts', icon: Gift },
-  { href: '/admin/inquiries', label: 'Inquiries', icon: MessageSquare },
-  { href: '/admin/settings', label: 'Settings', icon: Settings },
+  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, section: AdminSection.Dashboard },
+  { href: '/admin/users', label: 'Users', icon: Users, section: AdminSection.Users },
+  { href: '/admin/hosts', label: 'Host Pricing', icon: DollarSign, section: AdminSection.Hosts },
+  { href: '/admin/reviews', label: 'Reviews', icon: Star, section: AdminSection.Reviews },
+  { href: '/admin/online', label: 'Online now', icon: CircleDot, section: AdminSection.Online },
+  { href: '/admin/live', label: 'Live now', icon: Radio, section: AdminSection.Live },
+  { href: '/admin/verifications', label: 'Host Verifications', icon: ShieldCheck, section: AdminSection.Verifications },
+  { href: '/admin/reports', label: 'Reports', icon: Flag, section: AdminSection.Reports },
+  { href: '/admin/payments', label: 'Payments', icon: CreditCard, section: AdminSection.Payments },
+  { href: '/admin/revenue', label: 'Revenue', icon: IndianRupee, section: AdminSection.Revenue },
+  { href: '/admin/diamonds', label: 'Send diamonds', icon: Gem, section: AdminSection.Diamonds },
+  { href: '/admin/withdrawals', label: 'Withdrawals', icon: Banknote, section: AdminSection.Withdrawals },
+  { href: '/admin/gifts', label: 'Gifts', icon: Gift, section: AdminSection.Gifts },
+  { href: '/admin/inquiries', label: 'Inquiries', icon: MessageSquare, section: AdminSection.Inquiries },
+  { href: '/admin/settings', label: 'Settings', icon: Settings, section: AdminSection.Settings },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -55,11 +62,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!hydrated || !sessionChecked) return;
-    if (!accessToken) router.replace('/login');
-    else if (user && user.role !== 'admin') router.replace('/discover');
-  }, [hydrated, sessionChecked, accessToken, user, router]);
+    if (!accessToken) {
+      router.replace('/login');
+      return;
+    }
+    if (user && !isAdminStaff(user)) {
+      router.replace('/discover');
+      return;
+    }
+    if (!user) return;
+    const section = adminSectionForPath(pathname);
+    if (section && !hasAdminSection(user, section)) {
+      const first = ADMIN_SECTION_OPTIONS.find((s) => hasAdminSection(user, s.id));
+      router.replace(first?.href ?? '/discover');
+    }
+  }, [hydrated, sessionChecked, accessToken, user, router, pathname]);
 
-  if (!hydrated || !sessionChecked || !user || user.role !== 'admin') {
+  if (!hydrated || !sessionChecked || !user || !isAdminStaff(user)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-brand-pink" />
@@ -73,8 +92,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Link href="/" aria-label="Kushlov home" className="inline-flex">
           <Logo size={30} />
         </Link>
+        {user.role !== 'admin' && (
+          <p className="mt-2 px-1 text-xs font-medium uppercase tracking-wide text-white/40">
+            Subadmin
+          </p>
+        )}
         <nav className="mt-6 flex flex-1 flex-col gap-1 overflow-y-auto no-scrollbar">
-          {nav.map((n) => {
+          {nav
+            .filter((n) => hasAdminSection(user, n.section))
+            .map((n) => {
             const active =
               n.href === '/admin'
                 ? pathname === '/admin'

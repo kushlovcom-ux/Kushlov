@@ -13,6 +13,7 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { useLogin } from '@/hooks/use-auth';
 import { useAuthStore } from '@/store/auth';
+import { isAdminStaff } from '@kushlov/types';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 
 const schema = z.object({
@@ -33,7 +34,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (sessionChecked && accessToken) {
-      router.replace(user?.role === 'admin' ? '/admin' : '/discover');
+      router.replace(isAdminStaff(user) ? '/admin' : '/discover');
     }
   }, [sessionChecked, accessToken, user, router]);
 

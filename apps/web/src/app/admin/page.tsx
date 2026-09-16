@@ -15,9 +15,14 @@ import {
   User,
 } from 'lucide-react';
 import { formatCompact } from '@kushlov/utils';
+import {
+  adminSectionForPath,
+  hasAdminSection,
+} from '@kushlov/types';
 import { useFormatMoney } from '@/hooks/use-format-money';
 import { useAdminBadges } from '@/hooks/use-admin-badges';
 import { api, unwrap } from '@/lib/api';
+import { useAuthStore } from '@/store/auth';
 import { PageHeader } from '@/components/app/page-header';
 import { NavBadge } from '@/components/app/nav-badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -50,6 +55,7 @@ type DashCard = {
 export default function AdminDashboard() {
   const formatPrice = useFormatMoney();
   const badges = useAdminBadges();
+  const me = useAuthStore((s) => s.user);
   const { data, isLoading } = useQuery({
     queryKey: ['admin-analytics'],
     queryFn: () => unwrap<Analytics>(api.get('/admin/analytics')),
@@ -153,7 +159,13 @@ export default function AdminDashboard() {
       <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
         {isLoading
           ? Array.from({ length: 12 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)
-          : cards.map((c) => {
+          : cards
+              .filter((c) => {
+                if (!c.href) return true;
+                const section = adminSectionForPath(c.href.split('?')[0]);
+                return !section || hasAdminSection(me, section);
+              })
+              .map((c) => {
               const pending = c.badge ?? 0;
               const inner = (
                 <>

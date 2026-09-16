@@ -1,4 +1,4 @@
-import { Role } from '@kushlov/types';
+import { AdminSection, Role } from '@kushlov/types';
 
 declare global {
   namespace Express {
@@ -6,6 +6,8 @@ declare global {
       id: string;
       role: Role;
       tokenVersion: number;
+      isSubadmin?: boolean;
+      adminSections?: AdminSection[];
     }
     interface Request {
       user?: UserContext;

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Eye } from 'lucide-react';
 import { Role, type PublicUser, type Paginated } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
+import { useAuthStore } from '@/store/auth';
 import { PageHeader } from '@/components/app/page-header';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
-type RoleFilter = 'all' | 'user' | 'host';
+type RoleFilter = 'all' | 'user' | 'host' | 'subadmin';
 
 function userIdOf(u: PublicUser & { _id?: string }): string {
   return u.id || u._id || '';
@@ -33,15 +34,25 @@ function AdminUsersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const qc = useQueryClient();
+  const me = useAuthStore((s) => s.user);
   const [q, setQ] = useState('');
   const roleFromUrl = searchParams.get('role');
+  const subadminFromUrl = searchParams.get('subadmin');
   const [role, setRole] = useState<RoleFilter>(
-    roleFromUrl === 'user' || roleFromUrl === 'host' ? roleFromUrl : 'all',
+    subadminFromUrl === 'true' || subadminFromUrl === '1'
+      ? 'subadmin'
+      : roleFromUrl === 'user' || roleFromUrl === 'host'
+        ? roleFromUrl
+        : 'all',
   );
   const [deleteTarget, setDeleteTarget] = useState<PublicUser | null>(null);
   const [confirmText, setConfirmText] = useState('');
 
   useEffect(() => {
+    if (searchParams.get('subadmin') === 'true' || searchParams.get('subadmin') === '1') {
+      setRole('subadmin');
+      return;
+    }
     const r = searchParams.get('role');
     if (r === 'user' || r === 'host') setRole(r);
     else setRole('all');
@@ -50,8 +61,10 @@ function AdminUsersPage() {
   const applyRole = (next: RoleFilter) => {
     setRole(next);
     const params = new URLSearchParams(searchParams.toString());
-    if (next === 'all') params.delete('role');
-    else params.set('role', next);
+    params.delete('role');
+    params.delete('subadmin');
+    if (next === 'user' || next === 'host') params.set('role', next);
+    if (next === 'subadmin') params.set('subadmin', 'true');
     const qs = params.toString();
     router.replace(qs ? `/admin/users?${qs}` : '/admin/users');
   };
@@ -63,7 +76,8 @@ function AdminUsersPage() {
         api.get('/admin/users', {
           params: {
             q: q || undefined,
-            role: role === 'all' ? undefined : role,
+            role: role === 'user' || role === 'host' ? role : undefined,
+            subadmin: role === 'subadmin' ? true : undefined,
             limit: 50,
           },
         }),
@@ -109,6 +123,7 @@ function AdminUsersPage() {
     { id: 'all', label: 'All' },
     { id: 'user', label: 'Normal users' },
     { id: 'host', label: 'Hosts' },
+    { id: 'subadmin', label: 'Subadmins' },
   ];
 
   const canConfirmDelete =
@@ -199,7 +214,12 @@ function AdminUsersPage() {
                         </div>
                       </button>
                     </td>
-                    <td className="p-4 capitalize">{u.role}</td>
+                    <td className="p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="capitalize">{u.role}</span>
+                        {u.isSubadmin ? <Badge variant="secondary">Subadmin</Badge> : null}
+                      </div>
+                    </td>
                     <td className="p-4">
                       <Badge variant={statusVariant(u.status) as any}>{u.status}</Badge>
                     </td>
@@ -226,42 +246,44 @@ function AdminUsersPage() {
                           <Eye className="h-4 w-4" />
                           Open details
                         </Button>
-                        {u.status !== 'active' && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => setStatus.mutate({ id, status: 'active' })}
-                          >
-                            Activate
-                          </Button>
-                        )}
-                        {u.status === 'active' && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => setStatus.mutate({ id, status: 'suspended' })}
-                          >
-                            Suspend
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setStatus.mutate({ id, status: 'banned' })}
-                        >
-                          Ban
-                        </Button>
-                        {u.role !== Role.Admin && (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => {
-                              setConfirmText('');
-                              setDeleteTarget(u);
-                            }}
-                          >
-                            Delete
-                          </Button>
+                        {u.role !== Role.Admin && (me?.role === Role.Admin || !u.isSubadmin) && (
+                          <>
+                            {u.status !== 'active' && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setStatus.mutate({ id, status: 'active' })}
+                              >
+                                Activate
+                              </Button>
+                            )}
+                            {u.status === 'active' && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setStatus.mutate({ id, status: 'suspended' })}
+                              >
+                                Suspend
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => setStatus.mutate({ id, status: 'banned' })}
+                            >
+                              Ban
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                setConfirmText('');
+                                setDeleteTarget(u);
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </>
                         )}
                       </div>
                     </td>

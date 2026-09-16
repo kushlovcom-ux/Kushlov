@@ -16,6 +16,7 @@ import {
   History,
 } from 'lucide-react';
 import { Logo } from '@kushlov/ui';
+import { isAdminStaff } from '@kushlov/types';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { useLogout } from '@/hooks/use-auth';
@@ -89,8 +90,13 @@ export function AppNav() {
             user?.role === 'host' ? 'Host verification' : 'Become a Host',
             ShieldCheck,
           )}
-        {user?.role === 'admin' &&
-          item('/admin', 'Admin', LayoutDashboard, adminBadges.total)}
+        {isAdminStaff(user) &&
+          item(
+            '/admin',
+            user?.role === 'admin' ? 'Admin' : 'Subadmin',
+            LayoutDashboard,
+            adminBadges.total,
+          )}
       </nav>
 
       <div className="mt-auto shrink-0 space-y-1 border-t border-white/10 pt-3">

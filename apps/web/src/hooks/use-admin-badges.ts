@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
+import { isAdminStaff } from '@kushlov/types';
 
 export interface AdminBadges {
   verifications: number;
@@ -18,7 +19,7 @@ export function useAdminBadges() {
   const { data } = useQuery({
     queryKey: ['admin-badges'],
     queryFn: () => unwrap<AdminBadges>(api.get('/admin/badges')),
-    enabled: user?.role === 'admin',
+    enabled: isAdminStaff(user),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });

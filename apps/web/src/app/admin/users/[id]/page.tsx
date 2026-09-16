@@ -6,9 +6,10 @@ import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowLeft } from 'lucide-react';
-import { Gender, Role, type PublicUser } from '@kushlov/types';
+import { ADMIN_SECTION_OPTIONS, AdminSection, Gender, hasAdminSection, Role, uniqueAdminSections, type PublicUser } from '@kushlov/types';
 import { formatCompact } from '@kushlov/utils';
 import { api, apiError, unwrap } from '@/lib/api';
+import { useAuthStore } from '@/store/auth';
 import { PageHeader } from '@/components/app/page-header';
 import { UserAvatar } from '@/components/common/user-avatar';
 import { Badge } from '@/components/ui/badge';
@@ -63,7 +64,10 @@ export default function AdminUserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const qc = useQueryClient();
+  const { user: me } = useAuthStore();
   const [form, setForm] = useState<FormState | null>(null);
+  const [sections, setSections] = useState<AdminSection[]>([]);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['admin-user', id],
@@ -87,12 +91,32 @@ export default function AdminUserDetailPage() {
       isPopularHost: Boolean(data.user.isPopularHost),
       popularSortOrder: data.user.popularSortOrder ?? 0,
     });
+    setSections(uniqueAdminSections(data.user.adminSections ?? []));
+    setConfirmRemove(false);
   }, [data]);
 
   const save = useMutation({
     mutationFn: (body: FormState) => api.patch(`/admin/users/${id}`, body),
     onSuccess: () => {
       toast.success('User details saved');
+      qc.invalidateQueries({ queryKey: ['admin-user', id] });
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const setSubadmin = useMutation({
+    mutationFn: (body: { enabled: boolean; sections?: AdminSection[] }) =>
+      api.patch(`/admin/users/${id}/subadmin`, body),
+    onSuccess: (_res, body) => {
+      toast.success(
+        body.enabled
+          ? data?.user.isSubadmin
+            ? 'Subadmin access updated'
+            : 'User is now a subadmin'
+          : 'Subadmin access removed',
+      );
+      setConfirmRemove(false);
       qc.invalidateQueries({ queryKey: ['admin-user', id] });
       qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
@@ -124,6 +148,7 @@ export default function AdminUserDetailPage() {
 
   const u = data.user;
   const isHost = u.role === Role.Host;
+  const canEditUser = u.role !== Role.Admin && (me?.role === Role.Admin || !u.isSubadmin);
 
   return (
     <div>
@@ -152,6 +177,7 @@ export default function AdminUserDetailPage() {
                   <Badge variant="secondary" className="capitalize">
                     {u.role}
                   </Badge>
+                  {u.isSubadmin ? <Badge>Subadmin</Badge> : null}
                   <Badge
                     variant={
                       u.status === 'active'
@@ -303,10 +329,92 @@ export default function AdminUserDetailPage() {
               </div>
             ) : null}
 
+            {me?.role === Role.Admin && u.role !== Role.Admin ? (
+              <div className="mt-6 space-y-4 border-t border-white/10 pt-5">
+                <div>
+                  <p className="text-sm font-medium text-white/80">Subadmin access</p>
+                  <p className="mt-1 text-xs text-white/45">
+                    Grant limited admin-panel access. Choose the sections this person can open, and
+                    uncheck any section to remove it.
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {ADMIN_SECTION_OPTIONS.map((opt) => {
+                    const selected = sections.includes(opt.id);
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() =>
+                          setSections((prev) =>
+                            prev.includes(opt.id)
+                              ? prev.filter((s) => s !== opt.id)
+                              : [...prev, opt.id],
+                          )
+                        }
+                        className={cn(
+                          'rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-colors',
+                          selected
+                            ? 'border-brand-pink/60 bg-brand-pink/10 text-white'
+                            : 'border-white/10 bg-white/5 text-white/70 hover:border-white/20',
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {u.isSubadmin ? (
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {confirmRemove ? (
+                      <>
+                        <Button variant="secondary" onClick={() => setConfirmRemove(false)}>
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          loading={setSubadmin.isPending}
+                          onClick={() => setSubadmin.mutate({ enabled: false })}
+                        >
+                          Confirm remove
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="destructive" onClick={() => setConfirmRemove(true)}>
+                          Remove Subadmin
+                        </Button>
+                        <Button
+                          className="bg-brand-gradient"
+                          loading={setSubadmin.isPending}
+                          disabled={sections.length === 0}
+                          onClick={() => setSubadmin.mutate({ enabled: true, sections })}
+                        >
+                          Save access
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex justify-end">
+                    <Button
+                      className="bg-brand-gradient"
+                      loading={setSubadmin.isPending}
+                      disabled={sections.length === 0}
+                      onClick={() => setSubadmin.mutate({ enabled: true, sections })}
+                    >
+                      Make Subadmin
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <div className="mt-6 flex justify-end">
               <Button
                 className="bg-brand-gradient"
                 loading={save.isPending}
+                disabled={!canEditUser}
                 onClick={() => save.mutate(form)}
               >
                 Save changes
@@ -345,12 +453,14 @@ export default function AdminUserDetailPage() {
                 </p>
               </div>
             </div>
-            <Link
-              href="/admin/diamonds"
-              className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'mt-4 w-full')}
-            >
-              Send diamonds
-            </Link>
+            {hasAdminSection(me, AdminSection.Diamonds) ? (
+              <Link
+                href="/admin/diamonds"
+                className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'mt-4 w-full')}
+              >
+                Send diamonds
+              </Link>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-card p-5">

@@ -9,6 +9,7 @@ import {
   PaymentStatus,
   ReportStatus,
   Role,
+  uniqueAdminSections,
   VerificationStatus,
   WithdrawStatus,
 } from '@kushlov/types';
@@ -133,13 +134,14 @@ export const adminBadges = asyncHandler(async (_req: Request, res: Response) => 
 // --------------------------------------------------------------------------
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const { q, role, status } = req.query as Record<string, string>;
+  const { q, role, status, subadmin } = req.query as Record<string, string>;
   const filter: Record<string, unknown> = {
     // Soft-deleted leftovers stay hidden; hard-delete removes the row entirely.
     status: { $ne: AccountStatus.Deleted },
   };
   if (role === Role.User || role === Role.Host) filter.role = role;
   if (status && status !== AccountStatus.Deleted) filter.status = status;
+  if (subadmin === 'true' || subadmin === '1') filter.isSubadmin = true;
   if (q) {
     filter.$or = [
       { email: new RegExp(q, 'i') },
@@ -201,11 +203,18 @@ export const getUserAdmin = asyncHandler(async (req: Request, res: Response) => 
   });
 });
 
+function assertCanModerateUser(actor: { role: Role }, target: { role: Role; isSubadmin?: boolean }) {
+  if (target.role === Role.Admin) throw ApiError.forbidden('Cannot modify an admin account');
+  if (target.isSubadmin && actor.role !== Role.Admin) {
+    throw ApiError.forbidden('Cannot modify a subadmin');
+  }
+}
+
 /** PATCH /admin/users/:id — update account details (not diamonds, gold, or location). */
 export const updateUserAdmin = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.params.id);
   if (!user) throw ApiError.notFound('User not found');
-  if (user.role === Role.Admin) throw ApiError.forbidden('Cannot modify an admin account');
+  assertCanModerateUser(req.user!, user);
 
   const {
     displayName,
@@ -286,7 +295,7 @@ export const updateUserStatus = asyncHandler(async (req: Request, res: Response)
   };
   const user = await User.findById(req.params.id);
   if (!user) throw ApiError.notFound('User not found');
-  if (user.role === Role.Admin) throw ApiError.forbidden('Cannot modify an admin account');
+  assertCanModerateUser(req.user!, user);
 
   user.status = status;
   if (status === AccountStatus.Banned) user.bannedReason = reason;
@@ -302,13 +311,48 @@ export const updateUserStatus = asyncHandler(async (req: Request, res: Response)
 export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.params.id);
   if (!user) throw ApiError.notFound('User not found');
-  if (user.role === Role.Admin) throw ApiError.forbidden('Cannot delete an admin account');
+  assertCanModerateUser(req.user!, user);
 
   // Invalidate sessions first, then hard-delete user + related data.
   user.tokenVersion += 1;
   await user.save();
   await purgeUserCompletely(user._id);
   return ok(res, null, 'User permanently deleted');
+});
+
+/** PATCH /admin/users/:id/subadmin — full admin only: grant, update, or remove subadmin access. */
+export const setSubadmin = asyncHandler(async (req: Request, res: Response) => {
+  if (req.user!.role !== Role.Admin) {
+    throw ApiError.forbidden('Only the admin can manage subadmins');
+  }
+
+  const { enabled, sections } = req.body as { enabled: boolean; sections?: string[] };
+  const user = await User.findById(req.params.id);
+  if (!user || user.status === AccountStatus.Deleted) throw ApiError.notFound('User not found');
+  if (user.role === Role.Admin) throw ApiError.badRequest('Cannot convert an admin account');
+  if (user._id.toString() === req.user!.id) {
+    throw ApiError.badRequest('Cannot change your own admin access');
+  }
+
+  if (!enabled) {
+    user.isSubadmin = false;
+    user.adminSections = [];
+    user.tokenVersion += 1;
+    await user.save();
+    return ok(res, (user as any).toPublic(), 'Subadmin access removed');
+  }
+
+  const next = uniqueAdminSections(sections ?? []);
+  if (!next.length) throw ApiError.badRequest('Select at least one section');
+  const wasSubadmin = Boolean(user.isSubadmin);
+  user.isSubadmin = true;
+  user.adminSections = next;
+  await user.save();
+  return ok(
+    res,
+    (user as any).toPublic(),
+    wasSubadmin ? 'Subadmin access updated' : 'User is now a subadmin',
+  );
 });
 
 // --------------------------------------------------------------------------

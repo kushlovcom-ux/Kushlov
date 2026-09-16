@@ -1,5 +1,5 @@
 import { Schema, model, Document, Types } from 'mongoose';
-import { AccountStatus, Gender, Role } from '@kushlov/types';
+import { AccountStatus, AdminSection, Gender, Role } from '@kushlov/types';
 
 export interface IUser extends Document {
   _id: Types.ObjectId;
@@ -35,6 +35,10 @@ export interface IUser extends Document {
   /** Admin-curated popular hosts shown on the landing page. */
   isPopularHost: boolean;
   popularSortOrder: number;
+
+  /** Limited admin-panel access granted by a full admin. Role stays user/host. */
+  isSubadmin: boolean;
+  adminSections: AdminSection[];
 
   /** Normal users: welcome gift diamonds already claimed. */
   welcomeGiftClaimed: boolean;
@@ -124,6 +128,12 @@ const userSchema = new Schema<IUser>(
     isPopularHost: { type: Boolean, default: false, index: true },
     popularSortOrder: { type: Number, default: 0 },
 
+    isSubadmin: { type: Boolean, default: false, index: true },
+    adminSections: {
+      type: [{ type: String, enum: Object.values(AdminSection) }],
+      default: [],
+    },
+
     welcomeGiftClaimed: { type: Boolean, default: false },
 
     tokenVersion: { type: Number, default: 0 },
@@ -188,6 +198,8 @@ userSchema.methods.toPublic = function toPublic() {
     messagePrice: u.messagePrice ?? 0,
     isPopularHost: u.isPopularHost ?? false,
     popularSortOrder: u.popularSortOrder ?? 0,
+    isSubadmin: Boolean(u.isSubadmin),
+    adminSections: u.isSubadmin ? (u.adminSections ?? []) : [],
     lastSeenAt: u.lastSeenAt?.toISOString(),
     createdAt: u.createdAt?.toISOString(),
   };

@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { AccountStatus, Role } from '@kushlov/types';
+import { AccountStatus, adminSectionForApiPath, hasAdminSection, isAdminStaff, Role } from '@kushlov/types';
 import { ApiError } from '../utils/ApiError';
 import { verifyAccessToken } from '../utils/jwt';
 import { asyncHandler } from '../utils/asyncHandler';
@@ -26,7 +26,9 @@ export const authenticate = asyncHandler(
     }
     if (payload.tokenType !== 'access') throw ApiError.unauthorized('Invalid token type');
 
-    const user = await User.findById(payload.sub).select('role status tokenVersion');
+    const user = await User.findById(payload.sub).select(
+      'role status tokenVersion isSubadmin adminSections',
+    );
     if (!user) throw ApiError.unauthorized('Account not found');
     if (user.tokenVersion !== payload.tokenVersion) {
       throw ApiError.unauthorized('Session expired, please log in again');
@@ -39,7 +41,13 @@ export const authenticate = asyncHandler(
       throw ApiError.forbidden('Account suspended');
     }
 
-    req.user = { id: user._id.toString(), role: user.role, tokenVersion: user.tokenVersion };
+    req.user = {
+      id: user._id.toString(),
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+      isSubadmin: Boolean(user.isSubadmin),
+      adminSections: user.adminSections ?? [],
+    };
     next();
   },
 );
@@ -67,6 +75,23 @@ export const authorize =
     if (!roles.includes(req.user.role)) return next(ApiError.forbidden('Insufficient permissions'));
     next();
   };
+
+/** Full admin or a user granted subadmin access. */
+export const requireAdminStaff = (req: Request, _res: Response, next: NextFunction) => {
+  if (!req.user) return next(ApiError.unauthorized());
+  if (!isAdminStaff(req.user)) return next(ApiError.forbidden('Admin access required'));
+  next();
+};
+
+/** Enforce the admin section that matches this `/api/admin` path. Full admins always pass. */
+export const requireAdminSectionFromPath = (req: Request, _res: Response, next: NextFunction) => {
+  if (!req.user) return next(ApiError.unauthorized());
+  if (req.user.role === Role.Admin) return next();
+  const gate = adminSectionForApiPath(req.path);
+  if (gate === 'staff') return next();
+  if (gate && hasAdminSection(req.user, gate)) return next();
+  return next(ApiError.forbidden('You do not have access to this section'));
+};
 
 /** Require an approved host (role host + isHostApproved). */
 export const requireApprovedHost = asyncHandler(

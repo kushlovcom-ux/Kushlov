@@ -207,6 +207,8 @@ export interface PublicUser {
   messagePrice?: number;
   isPopularHost?: boolean;
   popularSortOrder?: number;
+  isSubadmin?: boolean;
+  adminSections?: string[];
   lastSeenAt?: string;
   createdAt: string;
   distanceKm?: number;

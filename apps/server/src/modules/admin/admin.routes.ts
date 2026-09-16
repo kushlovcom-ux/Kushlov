@@ -2,22 +2,40 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   AccountStatus,
+  AdminSection,
   ReportStatus,
+  Role,
   VerificationStatus,
   WithdrawStatus,
 } from '@kushlov/types';
-import { authenticate, authorize } from '../../middleware/auth';
-import { Role } from '@kushlov/types';
+import { authenticate, authorize, requireAdminSectionFromPath, requireAdminStaff } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
 import { uploadImage } from '../../middleware/upload';
 import * as ctrl from './admin.controller';
 
 const router = Router();
-router.use(authenticate, authorize(Role.Admin));
+router.use(authenticate, requireAdminStaff);
+
+router.patch(
+  '/users/:id/subadmin',
+  authorize(Role.Admin),
+  validate({
+    body: z.object({
+      enabled: z.boolean(),
+      sections: z.array(z.nativeEnum(AdminSection)).optional(),
+    }).refine((d) => !d.enabled || (d.sections && d.sections.length > 0), {
+      message: 'Select at least one section',
+      path: ['sections'],
+    }),
+  }),
+  ctrl.setSubadmin,
+);
+
+router.get('/badges', ctrl.adminBadges);
+router.use(requireAdminSectionFromPath);
 
 // Dashboard
 router.get('/analytics', ctrl.analytics);
-router.get('/badges', ctrl.adminBadges);
 
 // Users
 router.get('/users', ctrl.listUsers);
