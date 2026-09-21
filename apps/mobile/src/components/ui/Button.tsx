@@ -68,7 +68,13 @@ export function Button({
   ) : (
     <>
       {leading}
-      <Text style={[typography.button, { color: labelColor, letterSpacing: 0.2 }, textStyle]}>
+      <Text
+        style={[
+          typography.button,
+          { color: labelColor, letterSpacing: 0.2, textAlign: 'center' },
+          textStyle,
+        ]}
+      >
         {title}
       </Text>
     </>
@@ -81,10 +87,18 @@ export function Button({
   const isFlexChild = flexValue != null;
 
   const widthStyle: ViewStyle = {
-    alignSelf: fullWidth || isFlexChild ? 'stretch' : 'flex-start',
+    alignSelf: fullWidth || isFlexChild ? 'stretch' : 'center',
     width: fullWidth ? '100%' : undefined,
     flex: isFlexChild ? flexValue : undefined,
     minWidth: isFlexChild ? 0 : undefined,
+  };
+
+  const innerSize: ViewStyle = {
+    paddingVertical: padV,
+    paddingHorizontal: padH,
+    minHeight,
+    ...(fullWidth || isFlexChild ? { width: '100%' as const, alignSelf: 'stretch' as const } : {}),
+    ...(isFlexChild ? { flex: 1, minWidth: 0 } : {}),
   };
 
   if (variant === 'primary') {
@@ -98,23 +112,13 @@ export function Button({
           styles.shadow,
           { opacity: isDisabled ? 0.5 : pressed ? 0.92 : 1 },
           style,
-          isFlexChild ? { flex: flexValue, minWidth: 0 } : null,
         ]}
       >
         <LinearGradient
           colors={[...c.gradient]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
-          style={[
-            styles.base,
-            {
-              paddingVertical: padV,
-              paddingHorizontal: padH,
-              minHeight,
-              width: '100%',
-              flexGrow: 1,
-            },
-          ]}
+          style={[styles.base, innerSize]}
         >
           {content}
         </LinearGradient>
@@ -135,13 +139,11 @@ export function Button({
       style={({ pressed }) => [
         styles.base,
         widthStyle,
+        innerSize,
         {
           backgroundColor: variant === 'outline' ? 'rgba(236,72,153,0.08)' : bg,
           borderColor,
           borderWidth: variant === 'ghost' ? 0 : 1.5,
-          paddingVertical: padV,
-          paddingHorizontal: padH,
-          minHeight,
           opacity: isDisabled ? 0.5 : pressed ? 0.88 : 1,
         },
         style,

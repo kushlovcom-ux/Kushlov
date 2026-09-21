@@ -14,6 +14,7 @@ import { Screen } from '@/components/common/Screen';
 import { SearchBar } from '@/components/common/SearchBar';
 import { LiveCardPreview } from '@/components/live/LiveCardPreview';
 import { PressableScale } from '@/design-system';
+import { getErrorMessage } from '@/api/client';
 import { liveApi } from '@/api/live';
 import { queryKeys } from '@/constants/queryKeys';
 import { useAuth } from '@/hooks/useAuth';
@@ -30,12 +31,13 @@ export function LiveListScreen() {
   const c = useThemeColors();
   const focused = useIsFocused();
   const nav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-  const { user } = useAuth();
+  const { user, accessToken } = useAuth();
   const [q, setQ] = useState('');
   const deferredQ = useDebounce(q.trim(), 300);
   const list = useQuery({
     queryKey: [...queryKeys.live, deferredQ],
     queryFn: () => liveApi.list({ limit: 40, q: deferredQ || undefined }),
+    enabled: Boolean(accessToken),
   });
   const items: LiveRoom[] = (list.data?.items ?? []).filter((r) => r.status === LiveStatus.Live);
 
@@ -66,10 +68,13 @@ export function LiveListScreen() {
           <RefreshControl refreshing={list.isRefetching} onRefresh={() => list.refetch()} />
         }
       >
-        {list.isLoading ? (
+        {list.isLoading || !accessToken ? (
           <Skeleton height={200} />
         ) : list.isError && items.length === 0 ? (
-          <ErrorView message="Could not load live rooms" onRetry={() => list.refetch()} />
+          <ErrorView
+            message={getErrorMessage(list.error, 'Could not load live rooms')}
+            onRetry={() => list.refetch()}
+          />
         ) : items.length === 0 ? (
           <EmptyState
             title={deferredQ ? 'No live match' : 'No one is live'}
@@ -78,6 +83,7 @@ export function LiveListScreen() {
                 ? 'No live host matches that name. Try another search.'
                 : 'No one is live right now. Pull to refresh or check back soon.'
             }
+            icon="radio-outline"
           />
         ) : (
           items.map((room, index) => (

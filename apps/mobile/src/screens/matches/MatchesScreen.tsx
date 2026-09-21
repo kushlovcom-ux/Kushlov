@@ -11,6 +11,7 @@ import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/common/Screen';
 import { UserCard } from '@/components/common/UserCard';
 import { SectionHeader } from '@/design-system';
+import { getErrorMessage } from '@/api/client';
 import { useLikes, useMatches } from '@/hooks/useMatches';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { spacing } from '@/theme';
@@ -60,11 +61,17 @@ export function MatchesScreen() {
             <SkeletonRow />
           </>
         ) : active.isError && items.length === 0 ? (
-          <ErrorView message="Could not load" onRetry={() => active.refetch()} />
+          <ErrorView
+            message={getErrorMessage(active.error, 'Could not load')}
+            onRetry={() => active.refetch()}
+          />
         ) : items.length === 0 ? (
           <EmptyState
             title={tab === 'matches' ? 'No matches yet' : 'No likes yet'}
             description="Like people on Discover to spark a match."
+            icon={tab === 'matches' ? 'heart-outline' : 'sparkles-outline'}
+            actionLabel="Discover people"
+            onAction={() => nav.navigate('MainTabs', { screen: 'Discover' })}
           />
         ) : (
           items.map((u) => (

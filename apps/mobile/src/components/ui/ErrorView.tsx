@@ -18,14 +18,19 @@ export function ErrorView({ message = 'Something went wrong', onRetry }: Props) 
       <View style={[styles.iconWrap, { backgroundColor: 'rgba(244,63,94,0.15)' }]}>
         <Ionicons name="cloud-offline-outline" size={28} color={c.danger} />
       </View>
-      <Text variant="h3" style={{ textAlign: 'center', marginTop: spacing.lg }}>
+      <Text variant="h3" center style={{ marginTop: spacing.lg }}>
         Unable to load
       </Text>
-      <Text muted style={{ textAlign: 'center', marginTop: spacing.sm, maxWidth: 280 }}>
+      <Text muted center style={{ marginTop: spacing.sm, maxWidth: 280 }}>
         {message}
       </Text>
       {onRetry ? (
-        <Button title="Try again" onPress={onRetry} style={{ marginTop: spacing.lg }} />
+        <Button
+          title="Try again"
+          onPress={onRetry}
+          size="md"
+          style={{ marginTop: spacing.xl }}
+        />
       ) : null}
     </View>
   );
@@ -33,11 +38,11 @@ export function ErrorView({ message = 'Something went wrong', onRetry }: Props) 
 
 const styles = StyleSheet.create({
   wrap: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing['2xl'],
-    minHeight: 200,
+    paddingHorizontal: spacing['2xl'],
+    paddingVertical: spacing['3xl'],
+    minHeight: 220,
   },
   iconWrap: {
     width: 64,

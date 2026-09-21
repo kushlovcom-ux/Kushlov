@@ -9,6 +9,7 @@ import { SkeletonRow } from '@/components/ui/Skeleton';
 import { Text } from '@/components/ui/Text';
 import { Screen } from '@/components/common/Screen';
 import { ConversationRow } from '@/components/chat/ConversationRow';
+import { getErrorMessage } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useConversations } from '@/hooks/useConversations';
 import { useThemeColors } from '@/hooks/useThemeColors';
@@ -19,7 +20,7 @@ export function ConversationsScreen() {
   const c = useThemeColors();
   const nav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { user } = useAuth();
-  const { data, isLoading, isError, refetch, isRefetching } = useConversations();
+  const { data, isLoading, isError, error, refetch, isRefetching } = useConversations();
   const items = data?.items ?? [];
 
   return (
@@ -42,11 +43,15 @@ export function ConversationsScreen() {
             <SkeletonRow />
           </>
         ) : isError && items.length === 0 ? (
-          <ErrorView message="Could not load conversations" onRetry={() => refetch()} />
+          <ErrorView
+            message={getErrorMessage(error, 'Could not load conversations')}
+            onRetry={() => refetch()}
+          />
         ) : items.length === 0 ? (
           <EmptyState
-            title="No conversations"
+            title="No conversations yet"
             description="Match with someone or open a profile to start chatting."
+            icon="chatbubbles-outline"
             actionLabel="Find people"
             onAction={() => nav.navigate('MainTabs', { screen: 'Discover' })}
           />

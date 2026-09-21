@@ -27,16 +27,21 @@ export function EmptyState({
       <View style={[styles.iconWrap, { backgroundColor: c.primaryMuted }]}>
         <Ionicons name={icon} size={28} color={c.primary} />
       </View>
-      <Text variant="h3" style={{ textAlign: 'center', marginTop: spacing.lg }}>
+      <Text variant="h3" center style={{ marginTop: spacing.lg }}>
         {title}
       </Text>
       {description ? (
-        <Text muted style={{ textAlign: 'center', marginTop: spacing.sm, maxWidth: 280 }}>
+        <Text muted center style={{ marginTop: spacing.sm, maxWidth: 280 }}>
           {description}
         </Text>
       ) : null}
       {actionLabel && onAction ? (
-        <Button title={actionLabel} onPress={onAction} style={{ marginTop: spacing.lg }} />
+        <Button
+          title={actionLabel}
+          onPress={onAction}
+          size="md"
+          style={{ marginTop: spacing.xl }}
+        />
       ) : null}
     </View>
   );
@@ -44,10 +49,10 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   wrap: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing['2xl'],
+    paddingHorizontal: spacing['2xl'],
+    paddingVertical: spacing['3xl'],
     minHeight: 220,
   },
   iconWrap: {

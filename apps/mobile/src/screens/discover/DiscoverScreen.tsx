@@ -170,12 +170,12 @@ export function DiscoverScreen() {
             <Text variant="captionBold">
               {hasLocation ? 'Your location' : 'Set your location'}
             </Text>
-            <Text variant="tiny" muted numberOfLines={1}>
+            <Text variant="tiny" muted numberOfLines={2}>
               {hasLocation
                 ? location.data?.locationLabel ||
                   location.data?.city ||
                   'Tap to update your location'
-                : 'Optional · used to show distance to others'}
+                : 'Optional · shows distance to others'}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
@@ -201,7 +201,13 @@ export function DiscoverScreen() {
             <SkeletonRow />
           </>
         ) : listError ? (
-          <ErrorView message="Could not load people" onRetry={() => void refetchList()} />
+          <ErrorView
+            message={getErrorMessage(
+              isSearching ? search.error : browse.error,
+              'Could not load people',
+            )}
+            onRetry={() => void refetchList()}
+          />
         ) : (
           <FlashList
             data={items}
@@ -217,7 +223,16 @@ export function DiscoverScreen() {
                     ? debounced.trim().length < 2
                       ? 'Type at least 2 characters to search.'
                       : 'No users or hosts match that name.'
-                    : 'No one is available right now. Pull to refresh.'
+                    : hasLocation
+                      ? 'No one is available right now. Pull to refresh.'
+                      : 'Browse online people, or set your location to see distances.'
+                }
+                icon={isSearching ? 'search-outline' : 'people-outline'}
+                actionLabel={!isSearching && !hasLocation ? 'Set location' : undefined}
+                onAction={
+                  !isSearching && !hasLocation
+                    ? () => nav.navigate('LocationSetup')
+                    : undefined
                 }
               />
             }
