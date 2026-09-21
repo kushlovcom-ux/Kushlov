@@ -61,6 +61,9 @@ export interface IUser extends Document {
     updatedAt: Date;
   }>;
 
+  /** Last time this host started a live stream (denormalized for admin). */
+  lastLiveAt?: Date;
+
   // presence
   isOnline: boolean;
   lastSeenAt?: Date;
@@ -161,6 +164,8 @@ const userSchema = new Schema<IUser>(
       default: [],
     },
 
+    lastLiveAt: { type: Date, index: true },
+
     isOnline: { type: Boolean, default: false },
     lastSeenAt: Date,
 
@@ -208,6 +213,7 @@ userSchema.methods.toPublic = function toPublic() {
     adminSections:
       u.isSubadmin && u.role !== Role.Admin ? uniqueAdminSections((u.adminSections ?? []) as string[]) : [],
     lastSeenAt: u.lastSeenAt?.toISOString(),
+    lastLiveAt: u.lastLiveAt?.toISOString(),
     createdAt: u.createdAt?.toISOString(),
   };
 };

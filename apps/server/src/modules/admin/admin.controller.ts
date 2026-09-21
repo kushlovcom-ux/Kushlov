@@ -43,7 +43,7 @@ import { uploadBuffer } from '../../services/media.service';
 import { closeRoom } from '../../services/livekit.service';
 import { purgeUserCompletely } from '../../services/user-purge.service';
 import { PRESENCE_ONLINE_MS, sweepStalePresence, onlineUserFilter } from '../../services/presence.service';
-import { creditDiamonds } from '../../services/wallet.service';
+import { creditDiamonds, spendDiamonds } from '../../services/wallet.service';
 
 // --------------------------------------------------------------------------
 // Dashboard / analytics
@@ -155,6 +155,27 @@ export const listUsers = asyncHandler(async (req: Request, res: Response) => {
     User.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     User.countDocuments(filter),
   ]);
+
+  // Fill lastLiveAt for hosts missing the denormalized field (one query).
+  const hostsMissingLive = items.filter((u) => u.role === Role.Host && !u.lastLiveAt);
+  if (hostsMissingLive.length) {
+    const ids = hostsMissingLive.map((u) => u._id);
+    const lasts = await LiveStream.aggregate<{ _id: unknown; at: Date }>([
+      { $match: { host: { $in: ids } } },
+      { $sort: { startedAt: -1, createdAt: -1 } },
+      { $group: { _id: '$host', at: { $first: { $ifNull: ['$startedAt', '$createdAt'] } } } },
+    ]);
+    const map = new Map(lasts.map((r) => [String(r._id), r.at]));
+    await Promise.all(
+      hostsMissingLive.map(async (u) => {
+        const at = map.get(u._id.toString());
+        if (!at) return;
+        u.lastLiveAt = at;
+        await User.updateOne({ _id: u._id }, { $set: { lastLiveAt: at } });
+      }),
+    );
+  }
+
   return ok(res, buildPaginated(items.map((u) => (u as any).toPublic()), page, limit, total));
 });
 
@@ -171,6 +192,19 @@ export const getUserAdmin = asyncHandler(async (req: Request, res: Response) => 
       .select('city country locationLabel locationUpdatedAt gender dob languages')
       .lean(),
   ]);
+
+  // Backfill lastLiveAt from stream history when missing (older hosts).
+  if (user.role === Role.Host && !user.lastLiveAt) {
+    const last = await LiveStream.findOne({ host: user._id })
+      .sort({ startedAt: -1, createdAt: -1 })
+      .select('startedAt createdAt')
+      .lean();
+    const at = last?.startedAt ?? last?.createdAt;
+    if (at) {
+      user.lastLiveAt = at;
+      await User.updateOne({ _id: user._id }, { $set: { lastLiveAt: at } });
+    }
+  }
 
   const locationLabel =
     profile?.locationLabel ||
@@ -299,9 +333,18 @@ export const updateUserStatus = asyncHandler(async (req: Request, res: Response)
   assertCanModerateUser(req.user!, user);
 
   user.status = status;
-  if (status === AccountStatus.Banned) user.bannedReason = reason;
-  if (status === AccountStatus.Suspended && suspendedUntil) {
-    user.suspendedUntil = new Date(suspendedUntil);
+  if (status === AccountStatus.Banned) {
+    user.bannedReason = reason;
+    user.suspendedUntil = undefined;
+  }
+  if (status === AccountStatus.Suspended) {
+    // Indefinite suspension when no end date is provided (admin Suspend button).
+    user.suspendedUntil = suspendedUntil ? new Date(suspendedUntil) : undefined;
+    user.bannedReason = undefined;
+  }
+  if (status === AccountStatus.Active) {
+    user.bannedReason = undefined;
+    user.suspendedUntil = undefined;
   }
   if (status !== AccountStatus.Active) user.tokenVersion += 1; // force logout everywhere
   await user.save();
@@ -987,6 +1030,7 @@ export const grantDiamonds = asyncHandler(async (req: Request, res: Response) =>
       adminEmail: admin?.email,
       adminName: admin?.displayName,
       note: note?.trim() || undefined,
+      action: 'grant',
     },
   });
 
@@ -995,7 +1039,7 @@ export const grantDiamonds = asyncHandler(async (req: Request, res: Response) =>
     type: NotificationType.Announcement,
     title: 'Diamonds received',
     body: `An admin added ${Math.floor(diamonds)} diamonds to your wallet.`,
-    data: { amount: Math.floor(diamonds) },
+    data: { amount: Math.floor(diamonds), action: 'grant' },
   });
 
   return ok(
@@ -1009,11 +1053,62 @@ export const grantDiamonds = asyncHandler(async (req: Request, res: Response) =>
   );
 });
 
+/** POST /admin/diamonds/cut — remove diamonds from a user wallet. */
+export const cutDiamonds = asyncHandler(async (req: Request, res: Response) => {
+  const { userId, amount, note } = req.body as {
+    userId: string;
+    amount: number;
+    note?: string;
+  };
+  if (!userId) throw ApiError.badRequest('userId is required');
+  const diamonds = Number(amount);
+  if (!Number.isFinite(diamonds) || diamonds <= 0 || diamonds > 1_000_000) {
+    throw ApiError.badRequest('Amount must be between 1 and 1,000,000');
+  }
+
+  const target = await User.findById(userId);
+  if (!target) throw ApiError.notFound('User not found');
+  if (target.role === Role.Admin) {
+    throw ApiError.badRequest('Cannot cut diamonds from an admin account');
+  }
+
+  const admin = await User.findById(req.user!.id).select('email displayName');
+  const result = await spendDiamonds({
+    userId: target._id,
+    amount: Math.floor(diamonds),
+    diamondReason: DiamondTxnReason.AdminAdjust,
+    meta: {
+      adminId: req.user!.id,
+      adminEmail: admin?.email,
+      adminName: admin?.displayName,
+      note: note?.trim() || undefined,
+      action: 'cut',
+    },
+  });
+
+  await notify({
+    userId: target._id.toString(),
+    type: NotificationType.Announcement,
+    title: 'Diamonds removed',
+    body: `An admin removed ${Math.floor(diamonds)} diamonds from your wallet.`,
+    data: { amount: Math.floor(diamonds), action: 'cut' },
+  });
+
+  return ok(
+    res,
+    {
+      user: (target as any).toPublic(),
+      diamondsCut: Math.floor(diamonds),
+      balance: result.diamondsLeft,
+    },
+    `Removed ${Math.floor(diamonds)} diamonds`,
+  );
+});
+
 export const listDiamondGrants = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
   const filter = {
     reason: DiamondTxnReason.AdminAdjust,
-    direction: LedgerDirection.Credit,
   };
 
   const [items, total] = await Promise.all([
@@ -1031,10 +1126,13 @@ export const listDiamondGrants = asyncHandler(async (req: Request, res: Response
       items.map((txn) => ({
         id: txn._id.toString(),
         amount: txn.amount,
+        direction: txn.direction,
         balanceAfter: txn.balanceAfter,
         note: (txn.meta as any)?.note,
         adminId: (txn.meta as any)?.adminId,
         adminEmail: (txn.meta as any)?.adminEmail,
+        adminName: (txn.meta as any)?.adminName,
+        action: (txn.meta as any)?.action ?? (txn.direction === LedgerDirection.Debit ? 'cut' : 'grant'),
         user: txn.user,
         createdAt: txn.createdAt,
       })),

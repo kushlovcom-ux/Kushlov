@@ -69,18 +69,25 @@ export function NotificationsScreen({ navigation }: Props) {
 
     if (!isCall) return;
 
+    const userId = data?.callerId || data?.senderId;
+    if (userId) {
+      navigation.navigate('PublicProfile', { userId: String(userId) });
+    }
+
     try {
       const { items: incoming } = await callsApi.incoming();
       const match =
         (data?.callId ? incoming.find((i) => i.id === data.callId) : undefined) ?? incoming[0];
       if (match) {
         setIncoming(match);
-        navigation.goBack();
+        if (!userId && match.caller?.id) {
+          navigation.navigate('PublicProfile', { userId: String(match.caller.id) });
+        }
         return;
       }
-      Alert.alert('Call ended', 'This call is no longer ringing.');
+      if (!userId) Alert.alert('Call ended', 'This call is no longer ringing.');
     } catch (err) {
-      Alert.alert('Call', getErrorMessage(err));
+      if (!userId) Alert.alert('Call', getErrorMessage(err));
     }
   };
 

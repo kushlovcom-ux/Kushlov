@@ -56,8 +56,8 @@ export function DiscoverScreen() {
   const browse = useDiscover(
     { limit: 20 },
     {
-      enabled: hasLocation && !isSearching,
-      refetchInterval: focused && hasLocation && !isSearching ? 30_000 : false,
+      enabled: !isSearching,
+      refetchInterval: focused && !isSearching ? 30_000 : false,
     },
   );
 
@@ -174,8 +174,8 @@ export function DiscoverScreen() {
               {hasLocation
                 ? location.data?.locationLabel ||
                   location.data?.city ||
-                  'Tap to update · browse hides people within 10 km'
-                : 'Needed for browse. Search by name works without it.'}
+                  'Tap to update your location'
+                : 'Optional · used to show distance to others'}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
@@ -195,14 +195,7 @@ export function DiscoverScreen() {
           />
         </View>
 
-        {!hasLocation && !isSearching ? (
-          <EmptyState
-            title="Share your location"
-            description="Set your location to browse people outside your local 10 km zone — or search anyone by name above."
-            actionLabel="Set location"
-            onAction={() => nav.navigate('LocationSetup')}
-          />
-        ) : listLoading ? (
+        {listLoading ? (
           <>
             <SkeletonRow />
             <SkeletonRow />
@@ -218,13 +211,13 @@ export function DiscoverScreen() {
             refreshControl={refreshControl}
             ListEmptyComponent={
               <EmptyState
-                title={isSearching ? 'No matches' : 'No one online nearby'}
+                title={isSearching ? 'No matches' : 'No one online'}
                 description={
                   isSearching
                     ? debounced.trim().length < 2
                       ? 'Type at least 2 characters to search.'
                       : 'No users or hosts match that name.'
-                    : 'People within 10 km are hidden on browse — search by name to find them.'
+                    : 'No one is available right now. Pull to refresh.'
                 }
               />
             }

@@ -35,10 +35,16 @@ export const liveApi = {
     apiGet<{ token: string; livekitUrl?: string; roomName?: string }>(`/live/${id}/preview-token`),
   end: (id: string) => apiPost<LiveRoom>(`/live/${id}/end`),
   join: (id: string) =>
-    apiPost<{ token?: string; livekitUrl?: string; roomName?: string; viewerCount?: number }>(
-      `/live/${id}/join`,
-    ),
-  leave: (id: string) => apiPost<{ ok: boolean; viewerCount?: number }>(`/live/${id}/leave`),
+    apiPost<{
+      token?: string;
+      livekitUrl?: string;
+      roomName?: string;
+      viewerCount?: number;
+      maxWatchSec?: number;
+      secondsPerDiamond?: number;
+    }>(`/live/${id}/join`),
+  leave: (id: string) =>
+    apiPost<{ ok: boolean; viewerCount?: number; diamondsSpent?: number }>(`/live/${id}/leave`),
   chat: (id: string, message: string) =>
     apiPost<{
       _id?: string;

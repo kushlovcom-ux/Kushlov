@@ -40,6 +40,25 @@ function issueTokens(user: { id: string; role: Role; tokenVersion: number }) {
   };
 }
 
+/** Block banned / suspended / deleted accounts from login and refresh. */
+function assertAccountAllowed(user: {
+  status: AccountStatus;
+  suspendedUntil?: Date | null;
+}) {
+  if (user.status === AccountStatus.Deleted) {
+    throw ApiError.unauthorized('Account not found');
+  }
+  if (user.status === AccountStatus.Banned) {
+    throw ApiError.forbidden('Account banned');
+  }
+  if (user.status === AccountStatus.Suspended) {
+    // No end date = indefinite suspension. Past end date = allow login again.
+    if (!user.suspendedUntil || user.suspendedUntil > new Date()) {
+      throw ApiError.forbidden('Account suspended');
+    }
+  }
+}
+
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { email, username, displayName, password, accountType = 'user', country, gender } =
     req.body;
@@ -94,6 +113,8 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     }
     throw ApiError.unauthorized('Invalid credentials');
   }
+
+  assertAccountAllowed(user);
 
   user.lastLoginAt = new Date();
   await user.save();
@@ -192,13 +213,7 @@ export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
   let user = await User.findOne({ $or: [{ firebaseUid: uid }, { email }] });
 
   if (user) {
-    if (user.status === AccountStatus.Banned) throw ApiError.forbidden('Account banned');
-    if (
-      user.status === AccountStatus.Suspended &&
-      (!user.suspendedUntil || user.suspendedUntil > new Date())
-    ) {
-      throw ApiError.forbidden('Account suspended');
-    }
+    assertAccountAllowed(user);
 
     if (!user.firebaseUid) user.firebaseUid = uid;
     if (user.authProvider === 'local' && !user.password) user.authProvider = 'google';
@@ -255,10 +270,12 @@ export const refresh = asyncHandler(async (req: Request, res: Response) => {
     throw ApiError.unauthorized('Invalid refresh token');
   }
 
-  const user = await User.findById(payload.sub).select('role tokenVersion');
+  const user = await User.findById(payload.sub).select('role status tokenVersion suspendedUntil');
   if (!user || user.tokenVersion !== payload.tokenVersion) {
     throw ApiError.unauthorized('Session expired');
   }
+
+  assertAccountAllowed(user);
 
   const tokens = issueTokens({ id: user._id.toString(), role: user.role, tokenVersion: user.tokenVersion });
   setRefreshCookie(res, tokens.refreshToken);

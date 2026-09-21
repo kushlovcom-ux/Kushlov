@@ -20,7 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { cn, formatGender } from '@/lib/utils';
+import { cn, formatGender, relativeTime } from '@/lib/utils';
 
 type AdminUserDetail = {
   user: PublicUser & { _id?: string };
@@ -442,7 +442,7 @@ export default function AdminUserDetailPage() {
           <div className="rounded-2xl border border-white/10 bg-card p-5">
             <p className="text-sm font-medium text-white/70">Balances (read-only)</p>
             <p className="mt-1 text-xs text-white/40">
-              Diamonds and gold cannot be edited here. Use Send diamonds to credit diamonds.
+              Diamonds and gold cannot be edited here. Use Diamonds to add or cut diamonds.
             </p>
             <div className="mt-4 space-y-3">
               <div className="rounded-xl bg-white/5 px-4 py-3">
@@ -495,7 +495,22 @@ export default function AdminUserDetailPage() {
 
           <div className="rounded-2xl border border-white/10 bg-card p-5 text-sm text-white/55">
             <p>Joined {u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}</p>
-            <p className="mt-1">Last seen {u.lastSeenAt ? new Date(u.lastSeenAt).toLocaleString() : '—'}</p>
+            <p className="mt-1">
+              Last online{' '}
+              {u.isOnline
+                ? 'now'
+                : u.lastSeenAt
+                  ? `${relativeTime(u.lastSeenAt)} ago (${new Date(u.lastSeenAt).toLocaleString()})`
+                  : '—'}
+            </p>
+            {u.role === Role.Host ? (
+              <p className="mt-1">
+                Last live{' '}
+                {u.lastLiveAt
+                  ? `${relativeTime(u.lastLiveAt)} ago (${new Date(u.lastLiveAt).toLocaleString()})`
+                  : 'never'}
+              </p>
+            ) : null}
           </div>
         </aside>
       </div>

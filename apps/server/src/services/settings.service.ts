@@ -106,6 +106,14 @@ export async function getSettings(): Promise<ISettings> {
     settings.rates.liveChatPerMessage = 1;
     dirty = true;
   }
+  if (settings.rates.liveSecondsPerDiamond == null) {
+    settings.rates.liveSecondsPerDiamond = 0;
+    dirty = true;
+  }
+  if (!settings.rates.liveTimeUnit) {
+    settings.rates.liveTimeUnit = 'minute';
+    dirty = true;
+  }
   if (settings.features.reviewsEnabled == null) {
     settings.features.reviewsEnabled = true;
     dirty = true;

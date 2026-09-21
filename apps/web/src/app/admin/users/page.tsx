@@ -22,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
+import { cn, relativeTime } from '@/lib/utils';
 
 type RoleFilter = 'all' | 'user' | 'host' | 'subadmin';
 
@@ -208,6 +208,8 @@ function AdminUsersPage() {
                 <th className="p-4">User</th>
                 <th className="p-4">Role</th>
                 <th className="p-4">Status</th>
+                <th className="p-4">Last online</th>
+                <th className="p-4">Last live</th>
                 <th className="p-4">Popular</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
@@ -215,7 +217,7 @@ function AdminUsersPage() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={5} className="p-4">
+                  <td colSpan={7} className="p-4">
                     <Skeleton className="h-10 w-full" />
                   </td>
                 </tr>
@@ -250,6 +252,32 @@ function AdminUsersPage() {
                     </td>
                     <td className="p-4">
                       <Badge variant={statusVariant(u.status) as any}>{u.status}</Badge>
+                    </td>
+                    <td className="p-4 text-sm text-white/60">
+                      {u.isOnline ? (
+                        <span className="text-emerald-300">Online now</span>
+                      ) : u.lastSeenAt ? (
+                        <span title={new Date(u.lastSeenAt).toLocaleString()}>
+                          {(() => {
+                            const t = relativeTime(u.lastSeenAt);
+                            return t === 'now' ? 'just now' : `${t} ago`;
+                          })()}
+                        </span>
+                      ) : (
+                        <span className="text-white/35">—</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-sm text-white/60">
+                      {u.role === Role.Host && u.lastLiveAt ? (
+                        <span title={new Date(u.lastLiveAt).toLocaleString()}>
+                          {(() => {
+                            const t = relativeTime(u.lastLiveAt);
+                            return t === 'now' ? 'just now' : `${t} ago`;
+                          })()}
+                        </span>
+                      ) : (
+                        <span className="text-white/35">—</span>
+                      )}
                     </td>
                     <td className="p-4">
                       {canMarkPopular ? (
@@ -320,7 +348,7 @@ function AdminUsersPage() {
               })}
               {!isLoading && (data?.items.length ?? 0) === 0 && (
                 <tr>
-                  <td colSpan={5} className="p-10 text-center text-white/40">
+                  <td colSpan={7} className="p-10 text-center text-white/40">
                     No accounts found.
                   </td>
                 </tr>

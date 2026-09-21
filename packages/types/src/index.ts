@@ -210,6 +210,7 @@ export enum DiamondTxnReason {
   VideoCall = 'video_call',
   AudioCall = 'audio_call',
   LiveChat = 'live_chat',
+  LiveWatch = 'live_watch',
   DirectMessage = 'direct_message',
   Gift = 'gift',
   WelcomeGift = 'welcome_gift',
@@ -221,6 +222,7 @@ export enum GoldTxnReason {
   VideoCall = 'video_call',
   AudioCall = 'audio_call',
   LiveChat = 'live_chat',
+  LiveWatch = 'live_watch',
   DirectMessage = 'direct_message',
   Gift = 'gift',
   Withdraw = 'withdraw',
@@ -392,6 +394,8 @@ export interface PublicUser {
   isSubadmin?: boolean;
   adminSections?: AdminSection[];
   lastSeenAt?: string;
+  /** Host only: last time they started a live stream. */
+  lastLiveAt?: string;
   createdAt: string;
 }
 

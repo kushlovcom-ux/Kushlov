@@ -83,8 +83,7 @@ export default function PublicProfilePage() {
   const u = data?.user;
   const profile = data?.profile;
   const distanceKm = data?.distanceKm as number | null | undefined;
-  const withinLocalRadius = distanceKm != null && distanceKm <= 10;
-  const canConnect = distanceKm != null;
+  const canConnect = true;
   const isHostProfile = u?.role === Role.Host && u?.isHostApproved;
   const isUserProfile = u?.role === Role.User;
   const canCall =
@@ -119,10 +118,7 @@ export default function PublicProfilePage() {
             ) : null}
             <OnlineStatus online={u?.isOnline} size="md" className="mt-2" />
             {distanceKm != null ? (
-              <p className="mt-2 text-sm text-brand-pink">
-                {formatDistanceKm(distanceKm)}
-                {withinLocalRadius ? ' · nearby (within 10 km)' : ''}
-              </p>
+              <p className="mt-2 text-sm text-brand-pink">{formatDistanceKm(distanceKm)}</p>
             ) : null}
 
             {isHostProfile && (

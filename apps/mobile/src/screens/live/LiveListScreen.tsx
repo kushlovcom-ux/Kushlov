@@ -75,8 +75,8 @@ export function LiveListScreen() {
             title={deferredQ ? 'No live match' : 'No one is live'}
             description={
               deferredQ
-                ? 'No live host matches that name. Nearby lives stay hidden until you search.'
-                : 'Hosts within 10 km are hidden here — search their name to watch.'
+                ? 'No live host matches that name. Try another search.'
+                : 'No one is live right now. Pull to refresh or check back soon.'
             }
           />
         ) : (

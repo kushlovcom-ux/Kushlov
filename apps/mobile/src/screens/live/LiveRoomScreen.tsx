@@ -106,6 +106,8 @@ export function LiveRoomScreen({ navigation, route }: Props) {
   const [isCoHostOverride, setIsCoHostOverride] = useState(false);
   const [coHostName, setCoHostName] = useState<string | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
+  const [watchLeftSec, setWatchLeftSec] = useState<number | null>(null);
+  const maxWatchRef = useRef(0);
 
   const onRoom = useCallback((r: Room | null) => setRoom(r), []);
 
@@ -226,6 +228,14 @@ export function LiveRoomScreen({ navigation, route }: Props) {
         } else if (live.data.viewerCount != null) {
           setViewers(live.data.viewerCount);
         }
+        const maxWatch = Number((data as { maxWatchSec?: number }).maxWatchSec) || 0;
+        if (!isHost && !isCoHost && maxWatch > 0) {
+          maxWatchRef.current = maxWatch;
+          setWatchLeftSec(maxWatch);
+        } else {
+          maxWatchRef.current = 0;
+          setWatchLeftSec(null);
+        }
       } catch (err) {
         if (!cancelled) setConnectError(getErrorMessage(err));
       } finally {
@@ -341,6 +351,24 @@ export function LiveRoomScreen({ navigation, route }: Props) {
     navigation.goBack();
   };
 
+  useEffect(() => {
+    if (!watchLeftSec || watchLeftSec <= 0 || isHost || isCoHost) return;
+    const started = Date.now();
+    const total = maxWatchRef.current || watchLeftSec;
+    const tick = setInterval(() => {
+      const left = Math.max(0, total - Math.floor((Date.now() - started) / 1000));
+      setWatchLeftSec(left);
+      if (left <= 0) {
+        clearInterval(tick);
+        Alert.alert('Watch time ended', 'Buy diamonds to keep watching live streams.', [
+          { text: 'OK', onPress: () => void leave() },
+        ]);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(watchLeftSec && watchLeftSec > 0), liveId, isHost, isCoHost]);
+
   const sendChat = async () => {
     const msg = chat.trim();
     if (!msg) return;
@@ -426,6 +454,14 @@ export function LiveRoomScreen({ navigation, route }: Props) {
                 {likes}
               </Text>
             </View>
+            {watchLeftSec != null && watchLeftSec > 0 && !isHost && !isCoHost ? (
+              <View style={[styles.statPill, { backgroundColor: 'rgba(245,158,11,0.25)' }]}>
+                <Ionicons name="time-outline" size={13} color="#FBBF24" />
+                <Text variant="caption" color="#FBBF24">
+                  {Math.floor(watchLeftSec / 60)}:{String(watchLeftSec % 60).padStart(2, '0')}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
         <View style={{ flexDirection: 'row', gap: 12 }}>

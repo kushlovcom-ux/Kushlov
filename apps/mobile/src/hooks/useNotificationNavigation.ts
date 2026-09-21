@@ -112,12 +112,22 @@ type PushData = {
 
 function handlePushData(data: PushData | undefined) {
   if (!data) return;
+  const kind = String(data.kind ?? '');
+  const type = String(data.type ?? '');
+
+  // Incoming call: open the caller's profile (and still surface the ringing UI).
+  if (kind === 'incoming_call' || type === 'AUDIO_CALL' || type === 'VIDEO_CALL') {
+    const userId = data.callerId || data.senderId;
+    if (userId) openProfile(String(userId));
+    else if (data.deepLink) parseKushlovUrl(String(data.deepLink));
+    if (data.callId) void applyCallDeepLink(String(data.callId));
+    return;
+  }
+
   if (data.deepLink) {
     parseKushlovUrl(String(data.deepLink));
     return;
   }
-  const kind = String(data.kind ?? '');
-  const type = String(data.type ?? '');
 
   if (kind === 'message' || type === 'MESSAGE') {
     if (data.conversationId) openChat(String(data.conversationId), data.callerName || data.senderName);
@@ -131,10 +141,6 @@ function handlePushData(data: PushData | undefined) {
     const userId = data.callerId || data.senderId;
     if (userId) openProfile(String(userId));
     else openCallHistory();
-    return;
-  }
-  if (kind === 'incoming_call' || type === 'AUDIO_CALL' || type === 'VIDEO_CALL') {
-    if (data.callId) void applyCallDeepLink(String(data.callId));
   }
 }
 

@@ -27,7 +27,7 @@ export const authenticate = asyncHandler(
     if (payload.tokenType !== 'access') throw ApiError.unauthorized('Invalid token type');
 
     const user = await User.findById(payload.sub).select(
-      'role status tokenVersion isSubadmin adminSections',
+      'role status tokenVersion suspendedUntil isSubadmin adminSections',
     );
     if (!user) throw ApiError.unauthorized('Account not found');
     if (user.tokenVersion !== payload.tokenVersion) {

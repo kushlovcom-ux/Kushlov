@@ -56,7 +56,6 @@ export default function DiscoverPage() {
       unwrap<Paginated<DiscoverUser>>(
         api.get('/users', { params: { q: deferredQ || undefined, limit: 24 } }),
       ),
-    enabled: location.data?.hasLocation === true,
     staleTime: 60_000,
     refetchInterval: 180_000,
     placeholderData: (prev) => prev,
@@ -89,9 +88,8 @@ export default function DiscoverPage() {
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search locals within 10 km…"
+                placeholder="Search by name…"
                 className="pl-9"
-                disabled={needsLocation}
               />
             </div>
           </div>
@@ -100,20 +98,17 @@ export default function DiscoverPage() {
 
       <div className="space-y-6 p-4 sm:p-6">
         {needsLocation && (
-          <div className="rounded-2xl border border-brand-pink/30 bg-brand-pink/5 p-4">
-            <p className="font-medium">Set your location to start discovering</p>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="font-medium">Share your location (optional)</p>
             <p className="mt-1 text-sm text-white/50">
-              Add your location so we can show you great people nearby and help you make better matches.
+              Location is only used to show distance. You can browse, chat, and call anyone without it.
             </p>
           </div>
         )}
 
-        {(needsLocation || location.data?.hasLocation) && (
-          <LocationSetup compact={location.data?.hasLocation} />
-        )}
+        <LocationSetup compact={Boolean(location.data?.hasLocation)} />
 
-        {!needsLocation && (
-          <>
+        <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
               {isLoading &&
                 Array.from({ length: 10 }).map((_, i) => (
@@ -260,8 +255,8 @@ export default function DiscoverPage() {
             {!isLoading && !error && data?.items.length === 0 && (
               <p className="py-12 text-center text-white/40">
                 {deferredQ.trim()
-                  ? 'No one within 10 km matches that name. Try another search.'
-                  : 'No matches right now. People within 10 km are hidden on browse — search by name to find them.'}
+                  ? 'No one matches that name. Try another search.'
+                  : 'No matches right now. Try again in a moment.'}
               </p>
             )}
 
@@ -269,7 +264,6 @@ export default function DiscoverPage() {
               <p className="py-8 text-center text-sm text-red-400">{apiError(error)}</p>
             )}
           </>
-        )}
       </div>
     </div>
   );

@@ -75,8 +75,8 @@ export function LocationSetupScreen({ navigation }: Props) {
     <Screen scroll>
       <Header title="Location" onBack={() => navigation.goBack()} />
       <Text muted style={{ marginBottom: spacing.lg }}>
-        Browse Discover hides people within about 10 km of you. Searching by name finds anyone,
-        nearby or far.
+        Share your location so others can see how far away you are. You can still browse, chat, and
+        call anyone without it.
       </Text>
       <Button title="Detect my location" onPress={detect} loading={loading} fullWidth />
       {coords ? (

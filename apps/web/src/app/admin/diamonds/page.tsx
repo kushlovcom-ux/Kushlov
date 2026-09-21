@@ -3,18 +3,20 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Gem } from 'lucide-react';
+import { Gem, Minus, Plus } from 'lucide-react';
 import { api, apiError, unwrap } from '@/lib/api';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { relativeTime } from '@/lib/utils';
+import { cn, relativeTime } from '@/lib/utils';
 
 type GrantRow = {
   id: string;
   amount: number;
+  direction?: 'credit' | 'debit';
+  action?: string;
   balanceAfter: number;
   note?: string;
   adminEmail?: string;
@@ -28,8 +30,11 @@ type GrantRow = {
   };
 };
 
+type Mode = 'grant' | 'cut';
+
 export default function AdminDiamondsPage() {
   const qc = useQueryClient();
+  const [mode, setMode] = useState<Mode>('grant');
   const [userQuery, setUserQuery] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedLabel, setSelectedLabel] = useState('');
@@ -51,15 +56,15 @@ export default function AdminDiamondsPage() {
       unwrap<{ items: GrantRow[] }>(api.get('/admin/diamonds/grants', { params: { limit: 50 } })),
   });
 
-  const grant = useMutation({
+  const mutate = useMutation({
     mutationFn: () =>
-      api.post('/admin/diamonds/grant', {
+      api.post(mode === 'grant' ? '/admin/diamonds/grant' : '/admin/diamonds/cut', {
         userId: selectedUserId,
         amount: Number(amount),
         note: note.trim() || undefined,
       }),
     onSuccess: (res) => {
-      toast.success(res.data?.message ?? 'Diamonds granted');
+      toast.success(res.data?.message ?? (mode === 'grant' ? 'Diamonds granted' : 'Diamonds removed'));
       setAmount('100');
       setNote('');
       setSelectedUserId('');
@@ -73,15 +78,36 @@ export default function AdminDiamondsPage() {
   return (
     <div>
       <PageHeader
-        title="Send diamonds"
-        subtitle="Credit diamonds to any user and review grant history"
+        title="Diamonds"
+        subtitle="Add or remove diamonds from any user and review adjustment history"
       />
 
       <div className="grid gap-6 p-6 lg:grid-cols-2">
         <div className="space-y-4 rounded-2xl border border-white/10 bg-card p-5">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Gem className="h-4 w-4 text-brand-pink" />
-            Grant diamonds
+            Adjust diamonds
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={mode === 'grant' ? 'default' : 'secondary'}
+              className={cn(mode === 'grant' && 'bg-brand-gradient')}
+              onClick={() => setMode('grant')}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              Add
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === 'cut' ? 'default' : 'secondary'}
+              className={cn(mode === 'cut' && 'bg-red-600 hover:bg-red-600')}
+              onClick={() => setMode('cut')}
+            >
+              <Minus className="mr-1 h-4 w-4" />
+              Cut
+            </Button>
           </div>
 
           <div className="space-y-1.5">
@@ -139,54 +165,67 @@ export default function AdminDiamondsPage() {
             <Input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Reason for this grant…"
+              placeholder={mode === 'grant' ? 'Reason for this grant…' : 'Reason for this cut…'}
             />
           </div>
 
           <Button
-            loading={grant.isPending}
+            loading={mutate.isPending}
             disabled={!selectedUserId || !Number(amount)}
-            onClick={() => grant.mutate()}
+            variant={mode === 'cut' ? 'destructive' : 'default'}
+            className={mode === 'grant' ? 'bg-brand-gradient' : undefined}
+            onClick={() => mutate.mutate()}
           >
-            Send diamonds
+            {mode === 'grant' ? 'Send diamonds' : 'Cut diamonds'}
           </Button>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-card p-5">
-          <p className="mb-4 text-sm font-medium">Recent admin grants</p>
+          <p className="mb-4 text-sm font-medium">Recent admin adjustments</p>
           {grants.isLoading &&
             Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="mb-2 h-14 w-full rounded-xl" />
             ))}
           <div className="space-y-2">
-            {grants.data?.items?.map((g) => (
-              <div
-                key={g.id}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">
-                      {g.user?.displayName ?? 'User'}{' '}
-                      <span className="text-white/40">@{g.user?.username}</span>
-                    </p>
-                    <p className="text-xs text-white/45">{g.user?.email}</p>
-                    {g.note && <p className="mt-1 text-xs text-white/60">Note: {g.note}</p>}
-                    {(g.adminEmail || g.adminName) && (
-                      <p className="mt-1 text-[11px] text-white/35">
-                        By {g.adminName || g.adminEmail}
+            {grants.data?.items?.map((g) => {
+              const isCut = g.direction === 'debit' || g.action === 'cut';
+              return (
+                <div
+                  key={g.id}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">
+                        {g.user?.displayName ?? 'User'}{' '}
+                        <span className="text-white/40">@{g.user?.username}</span>
                       </p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-brand-pink">+{g.amount}</p>
-                    <p className="text-[11px] text-white/40">{relativeTime(g.createdAt)}</p>
+                      <p className="text-xs text-white/45">{g.user?.email}</p>
+                      {g.note && <p className="mt-1 text-xs text-white/60">Note: {g.note}</p>}
+                      {(g.adminEmail || g.adminName) && (
+                        <p className="mt-1 text-[11px] text-white/35">
+                          By {g.adminName || g.adminEmail}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p
+                        className={cn(
+                          'font-semibold',
+                          isCut ? 'text-red-300' : 'text-brand-pink',
+                        )}
+                      >
+                        {isCut ? '−' : '+'}
+                        {g.amount}
+                      </p>
+                      <p className="text-[11px] text-white/40">{relativeTime(g.createdAt)}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {!grants.isLoading && (grants.data?.items?.length ?? 0) === 0 && (
-              <p className="py-8 text-center text-sm text-white/40">No diamond grants yet.</p>
+              <p className="py-8 text-center text-sm text-white/40">No diamond adjustments yet.</p>
             )}
           </div>
         </div>

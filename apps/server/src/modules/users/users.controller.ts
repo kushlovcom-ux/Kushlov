@@ -19,9 +19,7 @@ import {
   EXCLUSION_RADIUS_KM,
   assertUsersCanConnect,
   distanceBetweenUsers,
-  getDiscoverableUserIds,
-  getUsersWithinRadiusKm,
-  requireUserCoordinates,
+  getUserCoordinates,
 } from '../../services/location.service';
 import { haversineKm } from '@kushlov/utils';
 import { getUserInteractionHistory } from '../../services/interaction.service';
@@ -171,12 +169,7 @@ export const getUser = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.params.id);
   if (!user) throw ApiError.notFound('User not found');
 
-  try {
-    await assertUsersCanConnect(req.user!.id, req.params.id);
-  } catch (err) {
-    if (err instanceof ApiError && err.statusCode === 403) throw err;
-    throw ApiError.forbidden('This profile isn’t available to connect with right now.');
-  }
+  await assertUsersCanConnect(req.user!.id, req.params.id);
 
   const profile = await Profile.findOne({ user: user._id });
   const distanceKm = await distanceBetweenUsers(req.user!.id, req.params.id);
@@ -341,8 +334,7 @@ export const removeGalleryItem = asyncHandler(async (req: Request, res: Response
 
 /**
  * GET /users — Discover browse + name search.
- * Browse: outside ~10 km exclusion zone, online only.
- * Search (q): within ~10 km by name/username — locals can message / like / call.
+ * No distance restriction: anyone may see, message, like, or call anyone else.
  */
 export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
@@ -357,20 +349,13 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
 
   void sweepStalePresence();
 
-  // Browse: outside exclusion radius. Search: only people within ~10 km.
-  const candidateIds = isSearch
-    ? await getUsersWithinRadiusKm(req.user!.id, EXCLUSION_RADIUS_KM, exclude)
-    : await getDiscoverableUserIds(req.user!.id, exclude);
-
-  if (candidateIds.length === 0) {
-    return ok(res, buildPaginated([], page, limit, 0));
-  }
-
-  const [myLng, myLat] = await requireUserCoordinates(req.user!.id);
+  const myCoords = await getUserCoordinates(req.user!.id);
+  const myLng = myCoords?.[0] ?? null;
+  const myLat = myCoords?.[1] ?? null;
   const onlineCutoff = new Date(Date.now() - PRESENCE_ONLINE_MS);
 
   const userFilter: Record<string, unknown> = {
-    _id: { $nin: exclude, $in: candidateIds },
+    _id: { $nin: exclude },
     status: 'active',
   };
 
@@ -435,9 +420,10 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   }
 
   if (country) {
-    const profileUserIds = await Profile.find({ country, user: { $in: candidateIds } }).distinct(
-      'user',
-    );
+    const profileUserIds = await Profile.find({
+      country,
+      user: { $nin: exclude },
+    }).distinct('user');
     userFilter._id = { $nin: exclude, $in: profileUserIds };
   }
 
@@ -470,14 +456,13 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const items = users.map((u) => {
     const pub = (u as any).toPublic();
     const prof = profileMap.get(u._id.toString());
-    if (prof?.location?.coordinates) {
+    if (myLat != null && myLng != null && prof?.location?.coordinates) {
       const [lng, lat] = prof.location.coordinates;
       pub.distanceKm = Math.round(haversineKm(myLat, myLng, lat, lng) * 10) / 10;
     }
     pub.isBusy = busyIds.has(u._id.toString());
-    // Locals (≤10 km) and browse results with location can message / like / call.
-    pub.canInteract =
-      pub.distanceKm != null && (isSearch ? pub.distanceKm <= EXCLUSION_RADIUS_KM : true);
+    // No distance gate — chat / like / call are always allowed.
+    pub.canInteract = true;
     return pub;
   });
 
@@ -498,20 +483,16 @@ export const getMyBadges = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, { notifications, messages });
 });
 
-/** GET /users/hosts — list approved hosts outside the local exclusion zone. */
+/** GET /users/hosts — list approved hosts (no distance restriction). */
 export const listHosts = asyncHandler(async (req: Request, res: Response) => {
   const me = await User.findById(req.user!.id).select('role');
   if (!me) throw ApiError.notFound('User not found');
 
   const { page, limit, skip } = parsePagination(req.query);
   const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
-  const discoverableIds = await getDiscoverableUserIds(req.user!.id, [
-    ...blocked.map(String),
-    req.user!.id,
-  ]);
 
   const filter = {
-    _id: { $in: discoverableIds, $ne: me._id },
+    _id: { $nin: [...blocked.map(String), me._id.toString()], $ne: me._id },
     role: Role.Host,
     isHostApproved: true,
     status: 'active',
@@ -534,13 +515,9 @@ export const listTopRatedHosts = asyncHandler(async (req: Request, res: Response
 
   const { page, limit, skip } = parsePagination(req.query);
   const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
-  const discoverableIds = await getDiscoverableUserIds(req.user!.id, [
-    ...blocked.map(String),
-    req.user!.id,
-  ]);
 
   const filter = {
-    _id: { $in: discoverableIds },
+    _id: { $nin: [...blocked.map(String), me._id.toString()] },
     role: Role.Host,
     isHostApproved: true,
     status: 'active',

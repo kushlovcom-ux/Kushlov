@@ -65,6 +65,10 @@ export interface ISettings extends Document {
     hostUserVideoTimeUnit: TimeUnit;
     hostUserAudioTimeUnit: TimeUnit;
     hostUserMessagesPerDiamond: number;
+
+    /** Viewer (normal user) watching live: seconds of watch time per 1 diamond. 0 = free. */
+    liveSecondsPerDiamond: number;
+    liveTimeUnit: TimeUnit;
   };
   diamondPackages: IDiamondPackage[];
   withdraw: {
@@ -113,6 +117,8 @@ const settingsSchema = new Schema<ISettings>(
       hostUserVideoTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
       hostUserAudioTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
       hostUserMessagesPerDiamond: { type: Number, default: 5 },
+      liveSecondsPerDiamond: { type: Number, default: 0 },
+      liveTimeUnit: { type: String, enum: ['second', 'minute', 'hour'], default: 'minute' },
     },
     diamondPackages: {
       type: [

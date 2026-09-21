@@ -16,7 +16,7 @@ export type SearchUsersParams = {
 export const usersApi = {
   search: (params?: SearchUsersParams) =>
     apiGet<Paginated<PublicUser>>('/users', { params }),
-  /** Name search across connectable users (not limited to ~10 km browse radius). */
+  /** Name search across all users. */
   searchContacts: async (q: string) => {
     const res = await apiGet<{ items: PublicUser[] }>('/users/me/search-contacts', {
       params: { q },

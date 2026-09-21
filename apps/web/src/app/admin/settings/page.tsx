@@ -45,6 +45,8 @@ const DEFAULT_RATES = {
   hostUserVideoTimeUnit: 'minute' as TimeUnit,
   hostUserAudioTimeUnit: 'minute' as TimeUnit,
   hostUserMessagesPerDiamond: 5,
+  liveSecondsPerDiamond: 0,
+  liveTimeUnit: 'minute' as TimeUnit,
 };
 
 const DEFAULT_FEATURES = {
@@ -108,6 +110,10 @@ function conversionInputs(rates: typeof DEFAULT_RATES) {
       rates.hostUserAudioSecondsPerDiamond,
       rates.hostUserAudioTimeUnit,
     ),
+    liveValue:
+      rates.liveSecondsPerDiamond > 0
+        ? secondsToUnit(rates.liveSecondsPerDiamond, rates.liveTimeUnit)
+        : 0,
   };
 }
 
@@ -144,6 +150,7 @@ export default function AdminSettingsPage() {
   const [hostHostAudioValue, setHostHostAudioValue] = useState(2);
   const [hostUserVideoValue, setHostUserVideoValue] = useState(1);
   const [hostUserAudioValue, setHostUserAudioValue] = useState(2);
+  const [liveValue, setLiveValue] = useState(0);
 
   const applySettings = (payload: unknown) => {
     const next = buildForm(payload);
@@ -157,6 +164,7 @@ export default function AdminSettingsPage() {
     setHostHostAudioValue(values.hostHostAudioValue);
     setHostUserVideoValue(values.hostUserVideoValue);
     setHostUserAudioValue(values.hostUserAudioValue);
+    setLiveValue(values.liveValue);
   };
 
   useEffect(() => {
@@ -173,6 +181,7 @@ export default function AdminSettingsPage() {
       const hhAudioUnit = (form.rates.hostHostAudioTimeUnit ?? 'minute') as TimeUnit;
       const huVideoUnit = (form.rates.hostUserVideoTimeUnit ?? 'minute') as TimeUnit;
       const huAudioUnit = (form.rates.hostUserAudioTimeUnit ?? 'minute') as TimeUnit;
+      const liveUnit = (form.rates.liveTimeUnit ?? 'minute') as TimeUnit;
       return unwrap(
         api.patch('/admin/settings', {
           goldConversionRatio: form.goldConversionRatio,
@@ -194,6 +203,9 @@ export default function AdminSettingsPage() {
             hostUserAudioTimeUnit: huAudioUnit,
             hostUserVideoSecondsPerDiamond: unitToSeconds(hostUserVideoValue, huVideoUnit),
             hostUserAudioSecondsPerDiamond: unitToSeconds(hostUserAudioValue, huAudioUnit),
+            liveTimeUnit: liveUnit,
+            liveSecondsPerDiamond:
+              liveValue > 0 ? unitToSeconds(liveValue, liveUnit) : 0,
           },
           features: form.features,
           withdraw: form.withdraw,
@@ -266,6 +278,52 @@ export default function AdminSettingsPage() {
                 value={form.rates.liveChatPerMessage ?? 0}
                 onChange={(e) => setRate('liveChatPerMessage', Math.max(0, +e.target.value || 0))}
               />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2 border-emerald-500/30">
+          <CardHeader>
+            <CardTitle>Live watch time per diamond</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-white/45">
+              How long a normal user can watch a live stream for 1 diamond. Hosts and co-hosts are
+              never charged. Set to 0 for free watching.
+            </p>
+            <div className="max-w-md space-y-1.5">
+              <Label>1 Diamond equals</Label>
+              <div className="grid grid-cols-[1fr_140px] gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={liveValue}
+                  onChange={(e) => setLiveValue(Math.max(0, +e.target.value || 0))}
+                />
+                <select
+                  className={selectClass}
+                  value={form.rates.liveTimeUnit ?? 'minute'}
+                  onChange={(e) => {
+                    const next = e.target.value as TimeUnit;
+                    if (liveValue > 0) {
+                      const seconds = unitToSeconds(liveValue, form.rates.liveTimeUnit as TimeUnit);
+                      setLiveValue(secondsToUnit(seconds, next));
+                    }
+                    setRate('liveTimeUnit', next);
+                  }}
+                >
+                  {TIME_UNITS.map((u) => (
+                    <option key={u.value} value={u.value} className={optionClass}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-xs text-white/40">
+                Example: 5 minutes means each diamond buys 5 minutes of watching. Users without enough
+                diamonds cannot join.
+              </p>
             </div>
           </CardContent>
         </Card>

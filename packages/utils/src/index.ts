@@ -147,7 +147,7 @@ export const formatDistanceKm = (km: number): string => {
   return `${km.toFixed(1)} km`;
 };
 
-export const DEFAULT_DISCOVERY_RADIUS_KM = 10; // local exclusion zone (km)
+export const DEFAULT_DISCOVERY_RADIUS_KM = 10; // legacy default; distance is no longer enforced
 
 /** Deterministic LiveKit room name prefix for a 1:1 call between two user ids. */
 export const directRoomName = (userIdA: string, userIdB: string): string =>

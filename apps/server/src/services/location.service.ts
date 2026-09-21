@@ -1,12 +1,11 @@
 import { Types } from 'mongoose';
-import { Role } from '@kushlov/types';
 import { haversineKm, DEFAULT_DISCOVERY_RADIUS_KM } from '@kushlov/utils';
-import { Profile, User } from '../models';
+import { Profile } from '../models';
 import { ApiError } from '../utils/ApiError';
 
 /**
- * Local exclusion zone (km). Users closer than this are hidden on Discover browse
- * (privacy). Name search ignores this and can find anyone.
+ * Kept for API compatibility / optional distance display only.
+ * There is no longer a hard 10 km exclusion or interaction radius.
  */
 export const EXCLUSION_RADIUS_KM = Number(
   process.env.DISCOVERY_RADIUS_KM ?? DEFAULT_DISCOVERY_RADIUS_KM,
@@ -23,9 +22,18 @@ export async function requireUserCoordinates(userId: string): Promise<[number, n
   const profile = await Profile.findOne({ user: userId }).select('location');
   if (!profile?.location?.coordinates?.length) {
     throw ApiError.badRequest(
-      'Please set your location using the map to discover users outside your local area.',
+      'Please set your location using the map to see distances to other users.',
     );
   }
+  return profile.location.coordinates as [number, number];
+}
+
+/** Optional coordinates — returns null when the user has not shared a location. */
+export async function getUserCoordinates(
+  userId: string,
+): Promise<[number, number] | null> {
+  const profile = await Profile.findOne({ user: userId }).select('location');
+  if (!profile?.location?.coordinates?.length) return null;
   return profile.location.coordinates as [number, number];
 }
 
@@ -42,62 +50,25 @@ export async function getAllLocatedUserIds(
 }
 
 /**
- * Discover browse: users OUTSIDE the local exclusion zone (~10 km).
- * Nearby / same-location users are intentionally hidden until searched by name.
+ * Discoverable users — no distance filter. Prefer located users when available;
+ * otherwise callers should list all active accounts.
  */
 export async function getDiscoverableUserIds(
   userId: string,
   excludeIds: (string | Types.ObjectId)[] = [],
 ): Promise<Types.ObjectId[]> {
-  const [lng, lat] = await requireUserCoordinates(userId);
-  const exclude = [userId, ...excludeIds.map(String)];
-  const radiusRadians = EXCLUSION_RADIUS_KM / 6378.1;
-
-  const nearbyIds = await Profile.find({
-    user: { $nin: exclude },
-    location: {
-      $geoWithin: {
-        $centerSphere: [[lng, lat], radiusRadians],
-      },
-    },
-  }).distinct('user');
-
-  const nearbySet = new Set(nearbyIds.map(String));
-  const blocked = new Set([...exclude, ...nearbySet]);
-
-  const candidates = await Profile.find({
-    user: { $nin: [...blocked] },
-    'location.coordinates.0': { $exists: true },
-  })
-    .select('user')
-    .lean();
-
-  return candidates.map((p) => p.user as Types.ObjectId);
+  return getAllLocatedUserIds([userId, ...excludeIds]);
 }
 
 /**
- * Users WITHIN the local radius (~10 km) — used for name search so locals
- * can message / like / call after finding each other by name.
+ * @deprecated Radius is no longer enforced. Returns all located users.
  */
 export async function getUsersWithinRadiusKm(
   userId: string,
-  radiusKm: number = EXCLUSION_RADIUS_KM,
+  _radiusKm: number = EXCLUSION_RADIUS_KM,
   excludeIds: (string | Types.ObjectId)[] = [],
 ): Promise<Types.ObjectId[]> {
-  const [lng, lat] = await requireUserCoordinates(userId);
-  const exclude = [userId, ...excludeIds.map(String)];
-  const radiusRadians = radiusKm / 6378.1;
-
-  const ids = await Profile.find({
-    user: { $nin: exclude },
-    location: {
-      $geoWithin: {
-        $centerSphere: [[lng, lat], radiusRadians],
-      },
-    },
-  }).distinct('user');
-
-  return ids as Types.ObjectId[];
+  return getAllLocatedUserIds([userId, ...excludeIds]);
 }
 
 /** @deprecated Use getDiscoverableUserIds */
@@ -119,23 +90,14 @@ export async function distanceBetweenUsers(
 }
 
 /**
- * Require both users to have shared location so they can message / like / call.
- * Admins bypass this check.
+ * No distance or location gate — any user may message / like / call another.
+ * Kept as a named hook so call sites stay stable.
  */
 export async function assertUsersCanConnect(
   userId: string,
   targetUserId: string,
 ): Promise<void> {
   if (userId === targetUserId) return;
-
-  const actor = await User.findById(userId).select('role');
-  if (actor?.role === Role.Admin) return;
-
-  await requireUserCoordinates(userId);
-  const targetProfile = await Profile.findOne({ user: targetUserId }).select('location');
-  if (!targetProfile?.location?.coordinates) {
-    throw ApiError.forbidden('This user has not shared their location yet.');
-  }
 }
 
 /** @deprecated Use assertUsersCanConnect */

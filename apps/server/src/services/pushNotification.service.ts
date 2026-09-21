@@ -294,7 +294,7 @@ export async function sendIncomingAudioCall(params: {
       callerName: params.callerName,
       callerAvatar: params.callerAvatar,
       interrupt: params.interrupt === true,
-      deepLink: `kushlov://call/${params.callId}?type=audio`,
+      deepLink: `kushlov://profile/${params.callerId}`,
     },
   });
 }
@@ -324,7 +324,7 @@ export async function sendIncomingVideoCall(params: {
       callerName: params.callerName,
       callerAvatar: params.callerAvatar,
       interrupt: params.interrupt === true,
-      deepLink: `kushlov://call/${params.callId}?type=video`,
+      deepLink: `kushlov://profile/${params.callerId}`,
     },
   });
 }

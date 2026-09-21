@@ -167,7 +167,7 @@ export default function LivePage() {
           <p className="mt-3">
             {deferredQ
               ? 'No live host matches that name.'
-              : 'No live streams right now. Hosts within 10 km stay hidden — search their name to watch.'}
+              : 'No live streams right now. Pull to refresh or check back soon.'}
           </p>
         </div>
       )}

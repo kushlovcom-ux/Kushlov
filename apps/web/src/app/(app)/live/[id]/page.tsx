@@ -78,6 +78,8 @@ export default function LiveRoomPage() {
   const [showViewers, setShowViewers] = useState(false);
   const [showColive, setShowColive] = useState(false);
   const [coHostName, setCoHostName] = useState<string | null>(null);
+  const [watchLeftSec, setWatchLeftSec] = useState<number | null>(null);
+  const maxWatchRef = useRef(0);
   const [isCoHostOverride, setIsCoHostOverride] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const lastChatIdRef = useRef<string | undefined>(undefined);
@@ -190,6 +192,14 @@ export default function LiveRoomPage() {
         if (res.data.data.livekitUrl) setLivekitUrl(res.data.data.livekitUrl);
         if (res.data.data.viewerCount != null) setViewers(res.data.data.viewerCount);
         if (res.data.data.role === 'cohost') setIsCoHostOverride(true);
+        const maxWatch = Number(res.data.data.maxWatchSec) || 0;
+        if (role === 'viewer' && maxWatch > 0) {
+          maxWatchRef.current = maxWatch;
+          setWatchLeftSec(maxWatch);
+        } else {
+          maxWatchRef.current = 0;
+          setWatchLeftSec(null);
+        }
       } catch (e) {
         if (!cancelled) toast.error(apiError(e));
       }
@@ -301,6 +311,25 @@ export default function LiveRoomPage() {
     router.push('/live');
   };
 
+  // Auto-leave when paid watch time runs out.
+  useEffect(() => {
+    if (!watchLeftSec || watchLeftSec <= 0 || isHost || isCoHost) return;
+    const started = Date.now();
+    const total = maxWatchRef.current || watchLeftSec;
+    const tick = window.setInterval(() => {
+      const left = Math.max(0, total - Math.floor((Date.now() - started) / 1000));
+      setWatchLeftSec(left);
+      if (left <= 0) {
+        window.clearInterval(tick);
+        toast.message('Watch time ended — buy diamonds to keep watching');
+        void leave();
+      }
+    }, 1000);
+    return () => window.clearInterval(tick);
+    // leave is stable enough for this room; avoid re-arming every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(watchLeftSec && watchLeftSec > 0), id, isHost, isCoHost]);
+
   const sendChat = async () => {
     if (!text.trim()) return;
     const message = text.trim();
@@ -377,6 +406,11 @@ export default function LiveRoomPage() {
         ) : (
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs">👁 {viewers}</span>
         )}
+        {watchLeftSec != null && watchLeftSec > 0 && !isHost && !isCoHost ? (
+          <span className="rounded-full bg-amber-500/30 px-2 py-0.5 text-xs text-amber-100">
+            {Math.floor(watchLeftSec / 60)}:{String(watchLeftSec % 60).padStart(2, '0')} left
+          </span>
+        ) : null}
         {isHost ? (
           <button
             type="button"

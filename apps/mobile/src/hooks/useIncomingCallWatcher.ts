@@ -41,6 +41,7 @@ export function useIncomingCallWatcher() {
       callerName?: string,
       interrupt?: boolean,
       callerAvatar?: string,
+      callerId?: string,
     ) => {
       if (notifiedId.current === callId) return;
       notifiedId.current = callId;
@@ -49,6 +50,7 @@ export function useIncomingCallWatcher() {
         await presentIncomingCallNotification({
           callId,
           callType,
+          callerId,
           callerName,
           callerAvatar,
           interrupt,
@@ -80,6 +82,7 @@ export function useIncomingCallWatcher() {
           next.caller?.displayName,
           Boolean(next.interrupt),
           next.caller?.avatarUrl,
+          next.caller?.id,
         );
       } catch {
         // soft fail
@@ -110,6 +113,7 @@ export function useIncomingCallWatcher() {
           void presentIncomingCallNotification({
             callId: incoming.id,
             callType: String(incoming.type),
+            callerId: incoming.caller?.id,
             callerName: incoming.caller?.displayName,
             callerAvatar: incoming.caller?.avatarUrl,
             interrupt: Boolean(incoming.interrupt),
@@ -132,6 +136,7 @@ export function useIncomingCallWatcher() {
           state.incoming?.caller?.displayName,
           Boolean(state.incoming?.interrupt),
           state.incoming?.caller?.avatarUrl,
+          state.incoming?.caller?.id,
         );
       }
       if (!nextId && prevIncomingId) {

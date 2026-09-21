@@ -47,7 +47,7 @@ const nav = [
   { href: '/admin/reports', label: 'Reports', icon: Flag, section: AdminSection.Reports },
   { href: '/admin/payments', label: 'Payments', icon: CreditCard, section: AdminSection.Payments },
   { href: '/admin/revenue', label: 'Revenue', icon: IndianRupee, section: AdminSection.Revenue },
-  { href: '/admin/diamonds', label: 'Send diamonds', icon: Gem, section: AdminSection.Diamonds },
+  { href: '/admin/diamonds', label: 'Diamonds', icon: Gem, section: AdminSection.Diamonds },
   { href: '/admin/withdrawals', label: 'Withdrawals', icon: Banknote, section: AdminSection.Withdrawals },
   { href: '/admin/gifts', label: 'Gifts', icon: Gift, section: AdminSection.Gifts },
   { href: '/admin/inquiries', label: 'Inquiries', icon: MessageSquare, section: AdminSection.Inquiries },

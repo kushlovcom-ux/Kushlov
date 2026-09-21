@@ -3,6 +3,7 @@ import { LiveStream, User } from '../models';
 import type { ILiveStream } from '../models/live.model';
 import { closeRoom, isIdentityInRoom } from './livekit.service';
 import { emitToRoom } from '../socket/io';
+import { billOpenViewersForLive } from './live-billing.service';
 
 const roomOf = (id: string) => `live:${id}`;
 
@@ -18,6 +19,11 @@ export async function markLiveEnded(live: ILiveStream): Promise<void> {
     { _id: live._id },
     { $unset: { pendingColiveInvite: 1, coHost: 1 } },
   );
+  try {
+    await billOpenViewersForLive(live);
+  } catch {
+    /* ignore billing failures on end */
+  }
   try {
     await closeRoom(live.roomName);
   } catch {

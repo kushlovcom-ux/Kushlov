@@ -8,7 +8,7 @@ import {
   SocketEvents,
 } from '@kushlov/types';
 import { buildPaginated, parsePagination } from '@kushlov/utils';
-import { Follower, Gift, LiveChat, LiveParticipant, LiveStream, User, Block } from '../../models';
+import { Follower, Gift, LiveChat, LiveParticipant, LiveStream, User, Block, Wallet } from '../../models';
 import { ApiError } from '../../utils/ApiError';
 import { asyncHandler } from '../../utils/asyncHandler';
 import { ok, created } from '../../utils/response';
@@ -27,9 +27,11 @@ import { spendDiamonds } from '../../services/wallet.service';
 import { getSettings } from '../../services/settings.service';
 import { notify } from '../../services/notification.service';
 import { emitToRoom, emitToUser } from '../../socket/io';
-import { assertUsersCanConnect, getDiscoverableUserIds } from '../../services/location.service';
+import { assertUsersCanConnect } from '../../services/location.service';
 import { refId } from '../../utils/refId';
 import { getLiveKitPublicUrl } from '../../config/env';
+import { maxAffordableCallSeconds } from '../../services/pricing.service';
+import { billLiveWatchIfNeeded } from '../../services/live-billing.service';
 
 const roomOf = (id: string) => `live:${id}`;
 
@@ -136,6 +138,8 @@ export const startLive = asyncHandler(async (req: Request, res: Response) => {
     startedAt: new Date(),
   });
 
+  await User.updateOne({ _id: req.user!.id }, { $set: { lastLiveAt: live.startedAt } });
+
   const token = await createLiveKitToken({
     identity: req.user!.id,
     roomName,
@@ -233,11 +237,7 @@ export const endLive = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, live, 'Stream ended');
 });
 
-/** GET /live — list currently live streams.
- *  Browse: hosts outside the ~10 km exclusion zone (same privacy as Discover).
- *  Search (?q=): match host name/username or title, including nearby hosts —
- *  locals who type the host's name can find and join the stream.
- */
+/** GET /live — list currently live streams (no distance restriction). */
 export const listLive = asyncHandler(async (req: Request, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
@@ -258,9 +258,6 @@ export const listLive = asyncHandler(async (req: Request, res: Response) => {
       $or: [{ displayName: rx }, { username: rx }],
     }).distinct('_id');
     filter.$or = [{ host: { $in: matchedHosts } }, { title: rx }];
-  } else {
-    const discoverableIds = await getDiscoverableUserIds(req.user!.id, blocked);
-    filter.host = { $in: discoverableIds };
   }
 
   const [items, total] = await Promise.all([
@@ -327,20 +324,54 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
   await LiveParticipant.updateOne(
     { liveStream: live._id, user: req.user!.id },
     {
-      $set: { joinedAt: new Date(), role: 'viewer' },
+      $set: {
+        joinedAt: new Date(),
+        role: 'viewer',
+        billed: false,
+        diamondsSpent: 0,
+        secondsPerDiamond: 0,
+        maxWatchSec: 0,
+      },
       $unset: { leftAt: '' },
     },
     { upsert: true },
   );
+
+  // Normal users pay for watch time when admin configured a live rate.
+  const viewerUser = await User.findById(req.user!.id).select('displayName role');
+  let maxWatchSec = 0;
+  let secondsPerDiamond = 0;
+  if (viewerUser?.role === Role.User) {
+    const settings = await getSettings();
+    secondsPerDiamond = Math.max(0, Number(settings.rates.liveSecondsPerDiamond) || 0);
+    if (secondsPerDiamond > 0) {
+      const wallet = await Wallet.findOne({ user: req.user!.id });
+      const diamonds = wallet?.diamonds ?? 0;
+      maxWatchSec = maxAffordableCallSeconds({
+        diamonds,
+        ratePerMinute: 0,
+        secondsPerDiamond,
+      });
+      if (diamonds < 1 || maxWatchSec < 1) {
+        throw ApiError.badRequest(
+          `Not enough diamonds to watch this live. Need at least 1 diamond (${secondsPerDiamond}s per diamond).`,
+        );
+      }
+      await LiveParticipant.updateOne(
+        { liveStream: live._id, user: req.user!.id },
+        { $set: { secondsPerDiamond, maxWatchSec } },
+      );
+    }
+  }
+
   const viewerCount = await countActiveViewers(live._id);
   live.viewerCount = viewerCount;
   live.peakViewers = Math.max(live.peakViewers, viewerCount);
   await live.save();
 
-  const viewer = await User.findById(req.user!.id).select('displayName');
   const token = await createLiveKitToken({
     identity: req.user!.id,
-    name: viewer?.displayName,
+    name: viewerUser?.displayName,
     roomName: live.roomName,
     canPublish: false,
     canSubscribe: true,
@@ -349,22 +380,43 @@ export const joinLive = asyncHandler(async (req: Request, res: Response) => {
   });
 
   await emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
-  return ok(res, { token, roomName: live.roomName, viewerCount, livekitUrl: getLiveKitPublicUrl() });
+  return ok(res, {
+    token,
+    roomName: live.roomName,
+    viewerCount,
+    livekitUrl: getLiveKitPublicUrl(),
+    maxWatchSec,
+    secondsPerDiamond,
+  });
 });
 
 /** POST /live/:id/leave — viewer leaves. */
 export const leaveLive = asyncHandler(async (req: Request, res: Response) => {
   const live = await LiveStream.findById(req.params.id);
   if (!live) throw ApiError.notFound('Stream not found');
-  await LiveParticipant.updateOne(
-    { liveStream: live._id, user: req.user!.id },
-    { $set: { leftAt: new Date() } },
-  );
+
+  const participant = await LiveParticipant.findOne({
+    liveStream: live._id,
+    user: req.user!.id,
+    leftAt: { $exists: false },
+  });
+  if (participant) {
+    await billLiveWatchIfNeeded({ live, participant, endedAt: new Date() });
+  } else {
+    await LiveParticipant.updateOne(
+      { liveStream: live._id, user: req.user!.id },
+      { $set: { leftAt: new Date() } },
+    );
+  }
+
   const viewerCount = await countActiveViewers(live._id);
   live.viewerCount = viewerCount;
   await live.save();
   await emitLiveEvent(live, SocketEvents.LiveViewerCount, { viewerCount });
-  return ok(res, { viewerCount });
+  return ok(res, {
+    viewerCount,
+    diamondsSpent: participant?.diamondsSpent ?? 0,
+  });
 });
 
 /** POST /live/:id/chat — send a live chat message (billed per message). */

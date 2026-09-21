@@ -71,6 +71,11 @@ export interface ILiveParticipant extends Document {
   joinedAt: Date;
   leftAt?: Date;
   isMuted: boolean;
+  /** Watch billing (normal users). */
+  secondsPerDiamond: number;
+  maxWatchSec: number;
+  diamondsSpent: number;
+  billed: boolean;
 }
 
 const liveParticipantSchema = new Schema<ILiveParticipant>(
@@ -85,6 +90,10 @@ const liveParticipantSchema = new Schema<ILiveParticipant>(
     joinedAt: { type: Date, default: Date.now },
     leftAt: Date,
     isMuted: { type: Boolean, default: false },
+    secondsPerDiamond: { type: Number, default: 0 },
+    maxWatchSec: { type: Number, default: 0 },
+    diamondsSpent: { type: Number, default: 0 },
+    billed: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

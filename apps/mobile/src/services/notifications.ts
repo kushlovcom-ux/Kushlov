@@ -263,6 +263,7 @@ export async function setAppBadgeCount(count: number): Promise<void> {
 export type IncomingCallNotifyPayload = {
   callId: string;
   callType: string;
+  callerId?: string;
   callerName?: string;
   callerAvatar?: string;
   interrupt?: boolean;
@@ -289,6 +290,9 @@ export async function presentIncomingCallNotification(
             fullScreenIntent: true,
           }
         : {};
+    const callerDeepLink = payload.callerId
+      ? `kushlov://profile/${payload.callerId}`
+      : `kushlov://call/${payload.callId}?type=${payload.callType}`;
     const id = await Notifications.scheduleNotificationAsync({
       identifier: `call-${payload.callId}`,
       content: {
@@ -304,10 +308,11 @@ export async function presentIncomingCallNotification(
           type: payload.callType === 'video' ? 'VIDEO_CALL' : 'AUDIO_CALL',
           callId: payload.callId,
           callType: payload.callType,
+          callerId: payload.callerId,
           callerName: payload.callerName,
           callerAvatar: payload.callerAvatar,
           interrupt: payload.interrupt === true,
-          deepLink: `kushlov://call/${payload.callId}?type=${payload.callType}`,
+          deepLink: callerDeepLink,
         },
         categoryIdentifier: CALL_NOTIFICATION_CATEGORY,
         sound: Platform.OS === 'ios' ? 'defaultRingtone' : 'default',
