@@ -10,6 +10,7 @@ nodeLinker: hoisted
 # (web) does not typecheck against mobile's Zod 4 while schemas use Zod 3.
 overrides:
   zod: 3.25.76
+  expo-constants: 57.0.20
   # Single React across web + Expo so pnpm does not nest 19.2.3 under every RN package.
   react: 19.2.3
   react-dom: 19.2.3

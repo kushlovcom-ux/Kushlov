@@ -3,6 +3,9 @@
 packages:
   - '.'
 
+overrides:
+  expo-constants: 57.0.20
+
 allowBuilds:
   esbuild: true
   sharp: true
