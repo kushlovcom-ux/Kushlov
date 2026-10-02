@@ -23,6 +23,7 @@ import {
   Video,
   X,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { CallType, Role, SocketEvents } from '@kushlov/types';
 import { api, apiError, unwrap } from '@/lib/api';
@@ -234,9 +235,13 @@ function DraggableWaitingCard({
  * Global incoming/outgoing call UI, plus optional post-call host review for normal users.
  */
 export function CallOverlay() {
+  const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const { socket, connected } = useSocket();
   const user = useAuthStore((s) => s.user);
   const [incoming, setIncoming] = useState<IncomingInvite | null>(null);
+  const [viewingCaller, setViewingCaller] = useState(false);
   const [outgoing, setOutgoing] = useState<{
     callId: string;
     type: CallType;
@@ -271,6 +276,16 @@ export function CallOverlay() {
   const waitingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useCallRingtone(Boolean(incoming));
+
+  const openCallerProfile = useCallback((id?: string) => {
+    if (!id) return;
+    setViewingCaller(true);
+    routerRef.current.push(`/u/${id}`);
+  }, []);
+
+  useEffect(() => {
+    setViewingCaller(false);
+  }, [incoming?.callId]);
 
   useEffect(() => {
     activeRef.current = active;
@@ -628,6 +643,12 @@ export function CallOverlay() {
       setIncoming(payload);
       toast(payload.interrupt ? 'Call waiting' : 'Incoming call', {
         description: `${payload.from?.displayName ?? 'Someone'} is calling (${payload.type})`,
+        action: payload.from?.id
+          ? {
+              label: 'View profile',
+              onClick: () => openCallerProfile(payload.from.id),
+            }
+          : undefined,
       });
     };
 
@@ -954,6 +975,12 @@ export function CallOverlay() {
             if (prev?.callId === next.callId) return prev;
             toast(next.interrupt ? 'Call waiting' : 'Incoming call', {
               description: `${next.from?.displayName ?? 'Someone'} is calling (${next.type})`,
+              action: next.from?.id
+                ? {
+                    label: 'View profile',
+                    onClick: () => openCallerProfile(next.from.id),
+                  }
+                : undefined,
             });
             return next;
           });
@@ -1298,7 +1325,7 @@ export function CallOverlay() {
 
   return (
     <>
-      {(incoming || outgoing || active) && (
+      {((incoming && !viewingCaller) || outgoing || active) && (
         <div
           className={cn(
             'fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm',
@@ -1307,14 +1334,24 @@ export function CallOverlay() {
         >
           {incoming && !active && (
             <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-card p-6 text-center shadow-2xl">
-              <UserAvatar
-                name={incoming.from?.displayName}
-                src={incoming.from?.avatarUrl}
-                className="mx-auto h-20 w-20 text-2xl"
-              />
-              <p className="mt-4 text-lg font-semibold">
-                {incoming.from?.displayName ?? 'Incoming call'}
-              </p>
+              <button
+                type="button"
+                className="mx-auto block"
+                disabled={!incoming.from?.id}
+                onClick={() => openCallerProfile(incoming.from?.id)}
+              >
+                <UserAvatar
+                  name={incoming.from?.displayName}
+                  src={incoming.from?.avatarUrl}
+                  className="mx-auto h-20 w-20 text-2xl"
+                />
+                <p className="mt-4 text-lg font-semibold">
+                  {incoming.from?.displayName ?? 'Incoming call'}
+                </p>
+                {incoming.from?.id ? (
+                  <p className="mt-1 text-xs text-brand-pink">View profile</p>
+                ) : null}
+              </button>
               <p className="mt-1 flex items-center justify-center gap-2 text-sm text-white/50">
                 {incoming.type === CallType.Video ? (
                   <Video className="h-4 w-4" />
@@ -1665,6 +1702,41 @@ export function CallOverlay() {
           )}
         </div>
       )}
+
+      {incoming && viewingCaller && !active && !outgoing ? (
+        <div className="fixed inset-x-3 bottom-4 z-[80] mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-white/10 bg-card/95 p-3 shadow-2xl backdrop-blur">
+          <UserAvatar
+            name={incoming.from?.displayName}
+            src={incoming.from?.avatarUrl}
+            className="h-11 w-11 shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">
+              {incoming.from?.displayName ?? 'Incoming call'}
+            </p>
+            <p className="truncate text-xs capitalize text-white/50">
+              Incoming {incoming.type} call
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="h-9 w-9 shrink-0 rounded-full p-0"
+            onClick={() => void reject()}
+            aria-label="Decline"
+          >
+            <PhoneOff className="h-4 w-4" />
+          </Button>
+          <Button
+            size="sm"
+            className="h-9 w-9 shrink-0 rounded-full bg-emerald-500 p-0 hover:bg-emerald-600"
+            onClick={() => void accept()}
+            aria-label="Accept"
+          >
+            <Phone className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : null}
 
       <PostCallReviewDialog
         open={!!reviewPrompt}

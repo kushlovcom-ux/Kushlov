@@ -9,6 +9,7 @@ import {
   useState,
   ReactNode,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -69,7 +70,38 @@ function useMessageTone() {
 }
 
 /** Establishes Socket.io when available, plus HTTP presence heartbeat (works on Vercel). */
+function callerFromNotification(n: {
+  type?: string;
+  actor?: string | { _id?: string; id?: string };
+  data?: { kind?: string; type?: string; callerId?: string; senderId?: string };
+}): string | undefined {
+  const data = n.data ?? {};
+  const kind = String(data.kind ?? '');
+  const type = String(data.type ?? n.type ?? '');
+  const isCall =
+    n.type === 'call' ||
+    n.type === 'missed_call' ||
+    kind === 'incoming_call' ||
+    kind === 'missed_call' ||
+    type === 'AUDIO_CALL' ||
+    type === 'VIDEO_CALL' ||
+    type === 'MISSED_AUDIO_CALL' ||
+    type === 'MISSED_VIDEO_CALL';
+  if (!isCall) return undefined;
+  if (data.callerId) return String(data.callerId);
+  if (data.senderId) return String(data.senderId);
+  if (typeof n.actor === 'string') return n.actor;
+  if (n.actor && typeof n.actor === 'object') {
+    const id = n.actor._id || n.actor.id;
+    if (id) return String(id);
+  }
+  return undefined;
+}
+
 export function SocketProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const accessToken = useAuthStore((s) => s.accessToken);
   const qc = useQueryClient();
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -134,11 +166,29 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     next.on('connect', onConnect);
     next.on('disconnect', onDisconnect);
 
-    next.on(SocketEvents.Notification, (n: { title: string; body?: string }) => {
-      toast(n.title, { description: n.body });
-      qc.invalidateQueries({ queryKey: ['nav-badges'] });
-      qc.invalidateQueries({ queryKey: ['notifications'] });
-    });
+    next.on(
+      SocketEvents.Notification,
+      (n: {
+        title: string;
+        body?: string;
+        type?: string;
+        actor?: string | { _id?: string; id?: string };
+        data?: { kind?: string; type?: string; callerId?: string; senderId?: string };
+      }) => {
+        const profileId = callerFromNotification(n);
+        toast(n.title, {
+          description: n.body,
+          action: profileId
+            ? {
+                label: 'View profile',
+                onClick: () => routerRef.current.push(`/u/${profileId}`),
+              }
+            : undefined,
+        });
+        qc.invalidateQueries({ queryKey: ['nav-badges'] });
+        qc.invalidateQueries({ queryKey: ['notifications'] });
+      },
+    );
 
     next.on(SocketEvents.MessageNew, () => {
       playMessageTone();

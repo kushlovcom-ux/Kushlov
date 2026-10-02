@@ -4,7 +4,9 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import { Button } from '@/components/ui/Button';
+import { CountrySelect } from '@/components/ui/CountrySelect';
 import { Input } from '@/components/ui/Input';
+import { Text } from '@/components/ui/Text';
 import { Header } from '@/components/common/Header';
 import { Screen } from '@/components/common/Screen';
 import { usersApi } from '@/api/users';
@@ -24,6 +26,7 @@ export function EditProfileScreen({ navigation }: Props) {
   });
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [bio, setBio] = useState(user?.bio ?? '');
+  const [country, setCountry] = useState(user?.country ?? '');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -33,7 +36,11 @@ export function EditProfileScreen({ navigation }: Props) {
   const save = async () => {
     setLoading(true);
     try {
-      const updated = await usersApi.updateMe({ displayName: displayName.trim(), bio });
+      const updated = await usersApi.updateMe({
+        displayName: displayName.trim(),
+        bio,
+        ...(country.trim() ? { country: country.trim() } : {}),
+      });
       await usersApi.updateProfile({ bio });
       setUser(updated);
       await refreshMe();
@@ -66,6 +73,11 @@ export function EditProfileScreen({ navigation }: Props) {
       <Button title="Change Your Profile" variant="primary" onPress={uploadAvatar} fullWidth />
       <View style={{ height: spacing.lg }} />
       <Input label="Display name" value={displayName} onChangeText={setDisplayName} />
+      <View style={{ height: spacing.md }} />
+      <CountrySelect label="Country" value={country} onChange={setCountry} />
+      <Text muted variant="caption" style={{ marginTop: 6 }}>
+        India uses ₹. Other countries use $.
+      </Text>
       <View style={{ height: spacing.md }} />
       <Input
         label="Bio"

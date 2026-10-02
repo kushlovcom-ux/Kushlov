@@ -8,10 +8,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, useScreenRefresh } from '@/components/common/Screen';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { CountrySelect } from '@/components/ui/CountrySelect';
 import { Text } from '@/components/ui/Text';
 import { Badge } from '@/components/ui/Badge';
 import { GlassCard, PressableScale } from '@/design-system';
-import { authApi, walletApi } from '@/api';
+import { authApi, getErrorMessage, usersApi, walletApi } from '@/api';
 import { clearStoredPushToken } from '@/hooks/usePushTokenSync';
 import { queryKeys } from '@/constants/queryKeys';
 import { useAuthStore } from '@/store/auth';
@@ -43,6 +44,7 @@ const ALL_LINKS: Array<{
 export function ProfileScreen() {
   const c = useThemeColors();
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const clear = useAuthStore((s) => s.clear);
   const nav = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
 
@@ -72,6 +74,19 @@ export function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const changeCountry = async (country: string) => {
+    if (!user || !country || country === user.country) return;
+    const previous = user;
+    setUser({ ...user, country });
+    try {
+      const updated = await usersApi.updateMe({ country });
+      setUser(updated);
+    } catch (err) {
+      setUser(previous);
+      Alert.alert('Could not update country', getErrorMessage(err));
+    }
   };
 
   const isHost =
@@ -125,6 +140,18 @@ export function ProfileScreen() {
             style={{ marginTop: spacing.md }}
           />
         </View>
+
+        <GlassCard style={{ marginBottom: spacing.lg }}>
+          <CountrySelect
+            label="Country"
+            value={user?.country ?? ''}
+            onChange={(country) => void changeCountry(country)}
+            placeholder="Select your country"
+          />
+          <Text muted variant="caption" style={{ marginTop: 6 }}>
+            Used for pricing. India uses ₹, other countries use $.
+          </Text>
+        </GlassCard>
 
         <GlassCard glow style={{ marginBottom: spacing.lg }}>
           <View style={styles.walletRow}>
