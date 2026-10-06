@@ -180,6 +180,11 @@ userSchema.index({ role: 1, isHostApproved: 1, averageRating: -1, totalReviews: 
 userSchema.index({ role: 1, isOnline: -1, lastSeenAt: -1 });
 userSchema.index({ isPopularHost: 1, popularSortOrder: 1, averageRating: -1 });
 
+export function getPremiumAvatar(seed?: string, id?: string): string {
+  const clean = encodeURIComponent((seed || id || 'kushlov-user').trim().toLowerCase());
+  return `https://api.dicebear.com/9.x/lorelei/png?seed=${clean}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf&size=512`;
+}
+
 /** Serialize a user into the public API shape (never leaks secrets). */
 userSchema.methods.toPublic = function toPublic() {
   const u = this as IUser;
@@ -193,7 +198,9 @@ userSchema.methods.toPublic = function toPublic() {
     displayName: u.displayName,
     role: u.role,
     status: u.status,
-    avatarUrl: u.avatarUrl,
+    avatarUrl: u.avatarUrl?.trim()
+      ? u.avatarUrl
+      : getPremiumAvatar(u.displayName || u.username, u._id.toString()),
     coverUrl: u.coverUrl,
     bio: u.bio,
     gender: u.gender,

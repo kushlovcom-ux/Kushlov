@@ -209,15 +209,20 @@ export const hostToken = asyncHandler(async (req: Request, res: Response) => {
 export const previewToken = asyncHandler(async (req: Request, res: Response) => {
   const live = await LiveStream.findById(req.params.id);
   if (!live || live.status !== LiveStatus.Live) throw ApiError.notFound('Stream is not live');
-  if (live.host.toString() !== req.user!.id) {
-    await assertUsersCanConnect(req.user!.id, live.host.toString());
+  const currentUser = req.user;
+  if (currentUser && live.host.toString() !== currentUser.id) {
+    await assertUsersCanConnect(currentUser.id, live.host.toString());
   }
-  if (live.bannedUsers.some((u) => u.toString() === req.user!.id)) {
+  if (currentUser && live.bannedUsers.some((u) => u.toString() === currentUser.id)) {
     throw ApiError.forbidden('You are banned from this stream');
   }
 
+  const identity = currentUser
+    ? `preview_${currentUser.id}_${live._id.toString()}`
+    : `preview_guest_${Math.random().toString(36).slice(2, 9)}_${live._id.toString()}`;
+
   const token = await createLiveKitToken({
-    identity: `preview_${req.user!.id}_${live._id.toString()}`,
+    identity,
     roomName: live.roomName,
     canPublish: false,
     canSubscribe: true,
@@ -243,8 +248,13 @@ export const listLive = asyncHandler(async (req: Request, res: Response) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   await pruneStaleLiveStreams();
 
-  const blocked = await Block.find({ blocker: req.user!.id }).distinct('blocked');
-  const exclude = [...blocked.map(String), req.user!.id];
+  const adminIds = await User.find({ role: Role.Admin }).distinct('_id');
+  const blocked = req.user
+    ? await Block.find({ blocker: req.user.id }).distinct('blocked')
+    : [];
+  const exclude = req.user
+    ? [...blocked.map(String), req.user.id, ...adminIds.map(String)]
+    : [...adminIds.map(String)];
 
   const filter: Record<string, unknown> = {
     status: LiveStatus.Live,

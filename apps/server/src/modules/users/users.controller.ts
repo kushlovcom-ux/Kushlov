@@ -357,6 +357,7 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
   const userFilter: Record<string, unknown> = {
     _id: { $nin: exclude },
     status: 'active',
+    role: { $ne: Role.Admin },
   };
 
   // The explicit "online" filter still means online only.
@@ -372,7 +373,7 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
     ];
   }
 
-  // Visibility: normal users see hosts + users; hosts see users + other hosts.
+  // Visibility: normal users see hosts + users; hosts see users + other hosts. Admin is never visible.
   if (me.role === Role.Host) {
     if (role === Role.User) {
       userFilter.role = Role.User;
@@ -397,8 +398,13 @@ export const searchUsers = asyncHandler(async (req: Request, res: Response) => {
         { role: Role.Host, isHostApproved: true },
       ];
     }
-  } else if (role && Object.values(Role).includes(role as Role)) {
+  } else if (role && Object.values(Role).includes(role as Role) && role !== Role.Admin) {
     userFilter.role = role;
+  } else {
+    userFilter.$or = [
+      { role: Role.User },
+      { role: Role.Host, isHostApproved: true },
+    ];
   }
 
   if (gender) userFilter.gender = gender;

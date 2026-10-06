@@ -1,6 +1,11 @@
 import { createServer } from 'node:http';
 import { env } from './config/env';
 import { logger } from './config/logger';
+
+// Catch unhandled errors at boot time
+process.on('unhandledRejection', (reason) => logger.error({ reason }, 'Unhandled rejection'));
+process.on('uncaughtException', (err) => logger.error({ err }, 'Uncaught exception'));
+
 import { connectDatabase, disconnectDatabase } from './config/db';
 import { getRedis } from './config/redis';
 import { createApp } from './app';

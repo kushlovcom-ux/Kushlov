@@ -1,5 +1,10 @@
 import type { Request, Response } from 'express';
-import rateLimit, { type Options, type RateLimitRequestHandler } from 'express-rate-limit';
+import rateLimit, {
+  MemoryStore,
+  type Store,
+  type Options,
+  type RateLimitRequestHandler,
+} from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import { env } from '../config/env';
 import { getRedis } from '../config/redis';
@@ -97,23 +102,153 @@ function retryAfterSeconds(res: Response, windowMs: number): number {
   return Math.max(1, Math.ceil(windowMs / 1000));
 }
 
-function createStore(prefix: string): Options['store'] | undefined {
-  const redis = getRedis();
-  if (!redis) return undefined;
-  try {
-    return new RedisStore({
-      prefix,
-      // ioredis supports Redis command arrays via .call(...)
-      sendCommand: (...args: string[]) =>
-        (redis.call as (...a: string[]) => unknown).apply(redis, args),
-    });
-  } catch (err) {
-    logger.warn(
-      { prefix, err: err instanceof Error ? err.message : String(err) },
-      'rate-limit-redis unavailable, using memory store',
-    );
+/**
+ * Resilient rate-limit store:
+ * Starts with MemoryStore immediately so boot-time evaluation never crashes or stalls
+ * if Redis is connecting, offline, or unavailable. When Redis is ready, it seamlessly
+ * routes rate-limiting through Redis; if Redis errors or disconnects, it degrades
+ * gracefully to memory without breaking user traffic.
+ */
+class AdaptiveStore implements Store {
+  public prefix: string;
+  public localKeys = false;
+  private memoryStore: InstanceType<typeof MemoryStore>;
+  private redisStore: RedisStore | null = null;
+  private options?: Options;
+
+  constructor(prefix: string) {
+    this.prefix = prefix;
+    this.memoryStore = new MemoryStore();
+    this.setupRedis();
+  }
+
+  init(options: Options) {
+    this.options = options;
+    this.memoryStore.init(options);
+    if (this.redisStore) {
+      this.redisStore.init(options);
+    }
+  }
+
+  private setupRedis() {
+    const redis = getRedis();
+    if (!redis) return;
+
+    const tryInit = () => {
+      if (this.redisStore || redis.status !== 'ready') return;
+      try {
+        const store = new RedisStore({
+          prefix: this.prefix,
+          sendCommand: ((...args: string[]) =>
+            (redis.call as (...a: string[]) => Promise<any>).apply(redis, args)) as any,
+        });
+
+        // Suppress unhandled rejections from background script loading if Redis drops
+        const s = store as unknown as {
+          incrementScriptSha?: Promise<unknown>;
+          getScriptSha?: Promise<unknown>;
+        };
+        if (s.incrementScriptSha && typeof s.incrementScriptSha.catch === 'function') {
+          s.incrementScriptSha.catch(() => {});
+        }
+        if (s.getScriptSha && typeof s.getScriptSha.catch === 'function') {
+          s.getScriptSha.catch(() => {});
+        }
+
+        if (this.options) {
+          store.init(this.options);
+        }
+        this.redisStore = store;
+        logger.info({ prefix: this.prefix }, 'Redis rate limit store initialized');
+      } catch (err) {
+        logger.warn(
+          { prefix: this.prefix, err: err instanceof Error ? err.message : String(err) },
+          'Failed to initialize RedisStore, using memory store',
+        );
+      }
+    };
+
+    if (redis.status === 'ready') {
+      tryInit();
+    } else {
+      redis.on('ready', tryInit);
+      redis.on('close', () => {
+        this.redisStore = null;
+      });
+      redis.on('end', () => {
+        this.redisStore = null;
+      });
+    }
+  }
+
+  async increment(key: string) {
+    const redis = getRedis();
+    if (this.redisStore && redis && redis.status === 'ready') {
+      try {
+        return await this.redisStore.increment(key);
+      } catch (err) {
+        logger.warn(
+          { prefix: this.prefix, err: err instanceof Error ? err.message : String(err) },
+          'Redis rate limit increment failed, falling back to memory store',
+        );
+      }
+    }
+    return this.memoryStore.increment(key);
+  }
+
+  async decrement(key: string) {
+    const redis = getRedis();
+    if (this.redisStore && redis && redis.status === 'ready') {
+      try {
+        return await this.redisStore.decrement(key);
+      } catch {
+        // Fall back gracefully
+      }
+    }
+    return this.memoryStore.decrement(key);
+  }
+
+  async resetKey(key: string) {
+    const redis = getRedis();
+    if (this.redisStore && redis && redis.status === 'ready') {
+      try {
+        return await this.redisStore.resetKey(key);
+      } catch {
+        // Fall back gracefully
+      }
+    }
+    return this.memoryStore.resetKey(key);
+  }
+
+  async resetAll() {
+    if (typeof this.memoryStore.resetAll === 'function') {
+      return this.memoryStore.resetAll();
+    }
+  }
+
+  async get(key: string) {
+    const redis = getRedis();
+    if (
+      this.redisStore &&
+      redis &&
+      redis.status === 'ready' &&
+      typeof this.redisStore.get === 'function'
+    ) {
+      try {
+        return await this.redisStore.get(key);
+      } catch {
+        // Fall back gracefully
+      }
+    }
+    if (typeof this.memoryStore.get === 'function') {
+      return this.memoryStore.get(key);
+    }
     return undefined;
   }
+}
+
+function createStore(prefix: string): Store {
+  return new AdaptiveStore(prefix);
 }
 
 type BuildOpts = Partial<Options> & {
@@ -139,6 +274,7 @@ function buildLimiter(opts: BuildOpts): RateLimitRequestHandler {
     standardHeaders: true,
     legacyHeaders: false,
     store,
+    passOnStoreError: true,
     keyGenerator: clientKey,
     skip: (req) => req.method === 'OPTIONS',
     handler: (req, res, _next, options) => {

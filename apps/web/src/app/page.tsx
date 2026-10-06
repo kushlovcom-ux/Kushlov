@@ -1,57 +1,96 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Video, Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { LandingHeader } from '@/components/layout/landing-header';
 import { LandingHeroStats, LandingFeatureGrid } from '@/components/landing/landing-platform-stats';
 import { LandingShowcaseCarousel } from '@/components/landing/landing-showcase-carousel';
 import { LandingPopularHosts } from '@/components/landing/landing-popular-hosts';
+import { LandingLiveStreams } from '@/components/landing/landing-live-streams';
+import { LandingActiveNow } from '@/components/landing/landing-active-now';
 
 export default function LandingPage() {
   return (
     <div className="relative">
       <LandingHeader />
 
-      {/* Hero — overflow clipped here so the header Open app control is never cut off */}
-      <section className="container relative overflow-hidden grid items-center gap-10 py-16 md:grid-cols-2 md:py-24">
-        <div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-white/70">
-            <ShieldCheck className="h-4 w-4 text-brand-pink" /> Verified hosts · Secure payments
-          </span>
-          <h1 className="mt-6 text-5xl font-extrabold leading-tight tracking-tight md:text-6xl">
-            Meet. Match.{' '}
-            <span className="text-gradient">Go Live With Video Call.</span>
-          </h1>
-          <p className="mt-5 max-w-md text-lg text-white/60">
-            Kushlov blends dating, real-time chat and live streaming into one premium experience.
-            Connect through calls, watch your favorite hosts live, and send gifts.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-4">
+      {/* Hero */}
+      <section className="container relative overflow-hidden py-8 sm:py-12 md:py-16">
+        <h1 className="sr-only">Kushlov - Meet New People Through Video Chat</h1>
+
+        {/* Ambient atmospheric glow behind hero banner */}
+        <div className="pointer-events-none absolute inset-x-0 top-1/4 -z-10 mx-auto h-72 max-w-4xl rounded-full bg-brand-gradient opacity-20 blur-3xl" />
+
+        <div className="flex flex-col items-center text-center">
+          {/* Trust badge */}
+          <div className="mb-6">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-white/70 backdrop-blur-md">
+              <ShieldCheck className="h-4 w-4 text-brand-pink" /> Verified hosts · Secure payments · 100% Anonymous
+            </span>
+          </div>
+
+          {/* Hero Banner Image */}
+          <div className="group relative w-full max-w-6xl overflow-hidden rounded-2xl border border-white/10 bg-card/40 shadow-2xl shadow-brand-pink/15 transition-all hover:border-white/20 sm:rounded-3xl">
+            <Link
+              href="/discover"
+              className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-pink"
+              aria-label="Start Video Chat on Kushlov"
+            >
+              <div className="relative aspect-[1983/793] w-full overflow-hidden">
+                <Image
+                  src="/kh1.png"
+                  alt="Kushlov - Meet New People Through Video Chat"
+                  width={1983}
+                  height={793}
+                  priority
+                  className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.015]"
+                />
+              </div>
+            </Link>
+          </div>
+
+          {/* Hero Actions */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+            <Link href="/discover">
+              <Button
+                size="lg"
+                className="gap-2.5 px-6 sm:px-8 text-base font-semibold shadow-xl shadow-brand-pink/25 hover:shadow-brand-pink/40"
+              >
+                <Video className="h-5 w-5" />
+                Start Video Chat
+              </Button>
+            </Link>
             <Link href="/register">
-              <Button size="lg">Create your profile</Button>
+              <Button
+                size="lg"
+                variant="secondary"
+                className="px-6 sm:px-8 text-base font-semibold"
+              >
+                Create your profile
+              </Button>
             </Link>
             <Link href="/discover">
-              <Button size="lg" variant="secondary">
+              <Button
+                size="lg"
+                variant="secondary"
+                className="gap-2 px-6 sm:px-8 text-base font-semibold"
+              >
+                <Compass className="h-4 w-4 text-white/70" />
                 Explore
               </Button>
             </Link>
           </div>
-          <LandingHeroStats />
-        </div>
 
-        <div className="relative flex justify-center">
-          <div className="absolute inset-0 -z-10 animate-float rounded-full bg-brand-gradient opacity-30 blur-3xl" />
-          <Image
-            src="/kush.webp"
-            alt="Kushlov"
-            width={420}
-            height={420}
-            priority
-            className="animate-float drop-shadow-2xl"
-          />
+          {/* Platform Stats */}
+          <div className="mt-4 flex justify-center">
+            <LandingHeroStats />
+          </div>
         </div>
       </section>
+
+      {/* Active Now Section */}
+      <LandingActiveNow />
 
       {/* Features */}
       <section id="features" className="container py-16 scroll-mt-20">
@@ -60,6 +99,9 @@ export default function LandingPage() {
         </h2>
         <LandingFeatureGrid />
       </section>
+
+      {/* Live Broadcasts Section */}
+      <LandingLiveStreams />
 
       <LandingPopularHosts />
 

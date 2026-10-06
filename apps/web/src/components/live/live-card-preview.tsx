@@ -25,11 +25,7 @@ function PreviewVideo() {
   const remote = cameraTracks.find((t) => !t.participant.isLocal) ?? cameraTracks[0];
 
   if (!remote) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-brand-purple/40 to-brand-pink/30">
-        <Radio className="h-8 w-8 animate-pulse text-white/50" />
-      </div>
-    );
+    return null;
   }
 
   return <VideoTrack trackRef={remote} className="h-full w-full object-cover" muted />;
@@ -66,33 +62,38 @@ export function LiveCardPreview({
   const token = preview.data?.token;
   const url = preview.data?.livekitUrl || clientEnv.livekitUrl || settingsUrl;
 
-  if (!active || failed || !token || !url) {
-    if (thumbnailUrl) {
-      // eslint-disable-next-line @next/next/no-img-element
-      return <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />;
-    }
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-brand-purple/40 to-brand-pink/30">
-        <Radio className="h-10 w-10 text-white/60" />
-      </div>
-    );
-  }
-
   return (
-    <div className="pointer-events-none absolute inset-0 h-full w-full overflow-hidden">
-      <LiveKitRoom
-        key={token}
-        token={token}
-        serverUrl={url}
-        connect
-        video={false}
-        audio={false}
-        style={{ height: '100%', width: '100%' }}
-        options={{ adaptiveStream: true, dynacast: true }}
-        onError={() => setFailed(true)}
-      >
-        <PreviewVideo />
-      </LiveKitRoom>
+    <div className="relative h-full w-full overflow-hidden bg-black">
+      {thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbnailUrl}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-brand-purple/40 to-brand-pink/30">
+          <Radio className="h-8 w-8 text-white/50" />
+        </div>
+      )}
+
+      {active && !failed && token && url ? (
+        <div className="pointer-events-none absolute inset-0 h-full w-full overflow-hidden">
+          <LiveKitRoom
+            key={token}
+            token={token}
+            serverUrl={url}
+            connect
+            video={false}
+            audio={false}
+            style={{ height: '100%', width: '100%' }}
+            options={{ adaptiveStream: true, dynacast: true }}
+            onError={() => setFailed(true)}
+          >
+            <PreviewVideo />
+          </LiveKitRoom>
+        </div>
+      ) : null}
     </div>
   );
 }

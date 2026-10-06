@@ -33,7 +33,19 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (sessionChecked && accessToken) {
-      router.replace(user?.role === 'admin' ? '/admin' : '/discover');
+      if (user?.role === 'admin') {
+        router.replace('/admin');
+      } else {
+        const next =
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('next')
+            : null;
+        if (next && next.startsWith('/') && !next.startsWith('/login') && !next.startsWith('/admin')) {
+          router.replace(next);
+        } else {
+          router.replace('/discover');
+        }
+      }
     }
   }, [sessionChecked, accessToken, user, router]);
 

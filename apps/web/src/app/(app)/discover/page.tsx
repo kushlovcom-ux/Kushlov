@@ -22,6 +22,7 @@ import { OnlineStatus } from '@/components/common/online-status';
 import { GroupCallDialog } from '@/components/calls/group-call-dialog';
 import { useAuthStore } from '@/store/auth';
 import { cn } from '@/lib/utils';
+import { getPremiumAvatar } from '@/lib/avatar';
 
 type DiscoverUser = PublicUser & {
   distanceKm?: number;
@@ -115,7 +116,9 @@ export default function DiscoverPage() {
                   <Skeleton key={i} className="h-[220px] rounded-2xl sm:h-[240px]" />
                 ))}
 
-              {data?.items.map((u) => {
+              {data?.items
+                .filter((u) => (u.role as string) !== 'admin')
+                .map((u) => {
                 const showCallActions =
                   (isNormalUser &&
                     ((u.role === Role.Host && u.isHostApproved) || u.role === Role.User)) ||
@@ -132,18 +135,12 @@ export default function DiscoverPage() {
                       href={`/u/${u.id}`}
                       className="relative block aspect-[4/3] shrink-0 overflow-hidden bg-gradient-to-br from-brand-purple/30 to-brand-pink/20"
                     >
-                      {u.avatarUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={u.avatarUrl}
-                          alt={u.displayName}
-                          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <UserAvatar name={u.displayName} className="h-12 w-12 text-lg sm:h-14 sm:w-14" />
-                        </div>
-                      )}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={(u.avatarUrl && u.avatarUrl.trim()) || getPremiumAvatar(u.displayName || u.username, u.id)}
+                        alt={u.displayName}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                      />
                       {u.role === Role.Host && u.isHostApproved && (
                         <Badge
                           variant="success"

@@ -17,12 +17,16 @@ interface AuthResult {
 }
 
 function redirectAfterLogin(router: ReturnType<typeof useRouter>, user: PublicUser) {
+  if (user.role === 'admin') {
+    router.push('/admin');
+    return;
+  }
   const next =
     typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
-  if (next && next.startsWith('/')) {
+  if (next && next.startsWith('/') && !next.startsWith('/login') && !next.startsWith('/admin')) {
     router.push(next);
   } else {
-    router.push(user.role === 'admin' ? '/admin' : '/discover');
+    router.push('/discover');
   }
 }
 

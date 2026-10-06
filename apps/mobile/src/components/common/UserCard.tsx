@@ -14,6 +14,7 @@ import { elevation, radius, spacing } from '@/theme';
 import type { PublicUser } from '@/types';
 import { formatDistance } from '@/utils/distance';
 import { ageFromDob } from '@/utils/age';
+import { getPremiumAvatar } from '@/utils/avatar';
 
 type Props = {
   user: PublicUser;
@@ -27,7 +28,7 @@ type Props = {
 export function UserCard({ user, onPress, variant = 'row', onLike, onMessage }: Props) {
   const c = useThemeColors();
   const age = ageFromDob(user.dob);
-  const isHost = user.role === 'host' && user.isHostApproved;
+  const isHost = Boolean(user.role === 'host' && user.isHostApproved);
   const compact = variant === 'portraitCompact';
 
   if (variant === 'portrait' || compact) {
@@ -138,13 +139,14 @@ function PortraitMedia({
   return (
     <>
       <View style={[styles.media, compact && styles.mediaCompact]}>
-        {user.avatarUrl ? (
-          <Image source={{ uri: user.avatarUrl }} style={styles.cover} />
-        ) : (
-          <LinearGradient colors={[c.purple + '55', c.pink + '44']} style={styles.cover}>
-            <Avatar uri={undefined} name={user.displayName} size={compact ? 40 : 56} />
-          </LinearGradient>
-        )}
+        <Image
+          source={{
+            uri:
+              user.avatarUrl?.trim() ||
+              getPremiumAvatar(user.displayName || user.username, user.id),
+          }}
+          style={styles.cover}
+        />
         <LinearGradient
           colors={['transparent', 'rgba(5,5,16,0.72)']}
           style={styles.mediaFade}

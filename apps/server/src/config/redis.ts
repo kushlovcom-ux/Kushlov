@@ -36,11 +36,17 @@ export function getRedis(): Redis | null {
       enableOfflineQueue: false,
       retryStrategy: (times: number) => (times > 3 ? null : Math.min(times * 200, 1000)),
     });
+    client.setMaxListeners(50);
 
     client.on('connect', () => logger.info('🔌 Redis connected'));
     client.on('error', (err: Error) => {
       // Log and continue — rate limiting / optional features degrade gracefully.
       logger.warn({ err: err.message }, 'Redis error (continuing without)');
+    });
+    client.on('end', () => {
+      redisDisabled = true;
+      client = null;
+      logger.info('Redis connection closed; continuing with in-memory store');
     });
 
     return client;

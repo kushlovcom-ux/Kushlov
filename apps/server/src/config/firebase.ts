@@ -179,5 +179,5 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedIdT
     email_verified: payload.email_verified,
     name: payload.name,
     picture: payload.picture,
-  } as DecodedIdToken;
+  } as unknown as DecodedIdToken;
 }

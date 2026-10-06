@@ -113,15 +113,63 @@ router.get(
     const people = await User.find({
       isPopularHost: true,
       status: 'active',
+      role: { $ne: Role.Admin },
       $or: [
         { role: Role.User },
         { role: Role.Host, isHostApproved: true },
       ],
     })
-      .sort({ popularSortOrder: 1, averageRating: -1, totalReviews: -1 })
+      .sort({ isOnline: -1, popularSortOrder: 1, averageRating: -1, totalReviews: -1 })
       .limit(24);
     return ok(res, {
       items: people.map((h) => (h as any).toPublic()),
+    });
+  }),
+);
+
+/** GET /settings/active-users — active / online members and hosts for the homepage "Active Now" section. */
+router.get(
+  '/active-users',
+  asyncHandler(async (_req, res) => {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const active = await User.find({
+      status: 'active',
+      role: { $ne: Role.Admin },
+      $or: [
+        { role: Role.User },
+        { role: Role.Host, isHostApproved: true },
+      ],
+      $and: [
+        {
+          $or: [
+            { isOnline: true },
+            { lastSeenAt: { $gte: cutoff } },
+          ],
+        },
+      ],
+    })
+      .sort({ isOnline: -1, lastSeenAt: -1, averageRating: -1 })
+      .limit(24);
+
+    let items = active;
+    if (items.length < 12) {
+      const existingIds = items.map((u) => u._id);
+      const backfill = await User.find({
+        _id: { $nin: existingIds },
+        status: 'active',
+        role: { $ne: Role.Admin },
+        $or: [
+          { role: Role.User },
+          { role: Role.Host, isHostApproved: true },
+        ],
+      })
+        .sort({ isOnline: -1, lastSeenAt: -1, averageRating: -1, createdAt: -1 })
+        .limit(16 - items.length);
+      items = [...items, ...backfill];
+    }
+
+    return ok(res, {
+      items: items.map((u) => (u as any).toPublic()),
     });
   }),
 );

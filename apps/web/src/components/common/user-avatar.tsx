@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn, initials } from '@/lib/utils';
+import { getPremiumAvatar } from '@/lib/avatar';
 
 interface Props {
   name?: string;
@@ -9,10 +10,12 @@ interface Props {
 }
 
 export function UserAvatar({ name, src, online, className }: Props) {
+  const effectiveSrc = (src && src.trim()) ? src : getPremiumAvatar(name);
+
   return (
     <div className="relative inline-block">
       <Avatar className={className}>
-        {src && <AvatarImage src={src} alt={name} />}
+        <AvatarImage src={effectiveSrc} alt={name} />
         <AvatarFallback>{initials(name)}</AvatarFallback>
       </Avatar>
       {online !== undefined && (

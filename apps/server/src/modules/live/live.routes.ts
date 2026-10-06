@@ -1,20 +1,21 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate, requireApprovedHost } from '../../middleware/auth';
+import { authenticate, optionalAuth, requireApprovedHost } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
 import { uploadImage } from '../../middleware/upload';
 import * as ctrl from './live.controller';
 
 const router = Router();
 
-router.use(authenticate);
+// GET /live and GET /:id/preview-token are public / optionalAuth so homepage visitors can view currently live streams and video previews
+router.get('/', optionalAuth, ctrl.listLive);
+router.get('/:id/preview-token', optionalAuth, ctrl.previewToken);
 
-router.get('/', ctrl.listLive);
+router.use(authenticate);
 /** Must be registered before `/:id` so "colive" is not parsed as an id.
  *  Authenticated for all users; non-hosts get an empty list (no 403 spam). */
 router.get('/colive/incoming', ctrl.listColiveIncoming);
 router.get('/:id/viewers', ctrl.listViewers);
-router.get('/:id/preview-token', ctrl.previewToken);
 router.get('/:id/chat', ctrl.listLiveChat);
 router.get('/:id', ctrl.getLive);
 

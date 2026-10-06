@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Image, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { useThemeColors } from '@/hooks/useThemeColors';
 import { initials } from '@/utils/format';
+import { getPremiumAvatar } from '@/utils/avatar';
 
 type Props = {
   uri?: string | null;
@@ -13,11 +14,15 @@ type Props = {
 export function Avatar({ uri, name, size = 44, style }: Props) {
   const c = useThemeColors();
   const radius = size / 2;
+  const [loadError, setLoadError] = useState(false);
 
-  if (uri) {
+  const effectiveUri = uri?.trim() ? uri : getPremiumAvatar(name);
+
+  if (effectiveUri && !loadError) {
     return (
       <Image
-        source={{ uri }}
+        source={{ uri: effectiveUri }}
+        onError={() => setLoadError(true)}
         style={[{ width: size, height: size, borderRadius: radius }, style as object]}
       />
     );
